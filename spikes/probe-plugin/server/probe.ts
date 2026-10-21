@@ -191,6 +191,28 @@ export function startProbe(server: PluginServerContext) {
         };
       }
     }
+    if (title.includes("[probe-claude-sbx]")) {
+      const commonDir = gitCommonDir(config.cwd);
+      const sandbox = {
+        enabled: true,
+        failIfUnavailable: true,
+        autoAllowBashIfSandboxed: true,
+        allowUnsandboxedCommands: false,
+        filesystem: { allowWrite: commonDir ? [commonDir] : [] },
+        network: { allowedDomains: [], allowLocalBinding: false },
+      };
+      log("s10a.claude_sandbox", { cwd: config.cwd, commonDir, sandbox });
+      next = {
+        ...next,
+        config: {
+          ...next.config,
+          providerOptions: {
+            ...(next.config.providerOptions as Record<string, unknown> | undefined),
+            sandbox,
+          } as any,
+        },
+      };
+    }
     return next;
   });
 
@@ -277,12 +299,14 @@ export function startProbe(server: PluginServerContext) {
   server.on("agent.permission_requested", async ({ agent, request }, { paseo }) => {
     const r: any = request;
     const command: string | null = r?.input?.command ?? r?.detail?.command ?? null;
+    const filePath: string | null = r?.input?.file_path ?? r?.input?.path ?? null;
+    if (filePath) log("permission.file_path", { agentId: agent.id, name: r?.name, filePath });
     log("agent.permission_requested", {
       agentId: agent.id,
       title: agent.title,
       provider: agent.provider,
       name: r?.name,
-      kind: r?.kind,
+      requestKind: r?.kind,
       command,
       detailType: r?.detail?.type ?? null,
     });

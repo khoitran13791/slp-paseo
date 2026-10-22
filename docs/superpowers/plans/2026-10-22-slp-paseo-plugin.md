@@ -396,7 +396,7 @@ export function providerString(role: Role, model: string | undefined): string {
   "projects": {
     "my-app": { "repo": "/Users/you/Documents/Projects/my-app", "baseBranch": "origin/main", "verify": ["npm test"], "maxWriters": 2 }
   },
-  "models": { "allowed": ["claude-sonnet-5", "claude-opus-5-5"] },
+  "models": { "allowed": ["claude-sonnet-5-5", "claude-opus-5-5"] },
   "ship": { "remote": "origin", "openPr": true }
 }
 ```

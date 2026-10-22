@@ -51,6 +51,21 @@ describe("isLimitTurn", () => {
   it("detects a failed API 429 rate_limit_error", () => {
     expect(isLimitTurn({ kind: "failed", error: { message: "API Error: 429 {\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\"}}" } }, null)).toBe(true);
   });
+  it("does not flag a turn that says it tested the limit banner", () => {
+    expect(isLimitTurn({ kind: "completed" }, "Tested the usage limit reached banner.")).toBe(false);
+  });
+  it("does not flag a turn that reports testing passed on the limit path", () => {
+    expect(isLimitTurn({ kind: "completed" }, "All testing passed; the rate limit exceeded path is covered.")).toBe(false);
+  });
+  it("does not flag a turn that wrote a tester for the limit banner", () => {
+    expect(isLimitTurn({ kind: "completed" }, "Wrote a tester for the usage limit reached banner.")).toBe(false);
+  });
+  it("does not flag a turn that fixed a limit-related bug", () => {
+    expect(isLimitTurn({ kind: "completed" }, "Fixed the session limit exceeded bug in the auth flow.")).toBe(false);
+  });
+  it("does not flag a turn that fixed the HTTP 429 retry", () => {
+    expect(isLimitTurn({ kind: "completed" }, "Fixed the HTTP 429 retry in the client.")).toBe(false);
+  });
 });
 
 describe("usage windows and resume time", () => {

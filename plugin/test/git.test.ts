@@ -1,0 +1,131 @@
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { addWorktree, changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, NoChangesError, removeWorktree, startMerge, trackedChanges, trustRepo, unsafeGitDrivers, UntrustedGitDirError } from "../server/git";
+import { initRepo, sh, tmpDir } from "./helpers";
+
+function withHusky(repo: string, marker: string): void {
+  mkdirSync(join(repo, ".husky"), { recursive: true });
+  for (const h of ["pre-commit", "commit-msg", "post-commit", "pre-merge-commit", "post-merge", "post-checkout"]) {
+    writeFileSync(join(repo, ".husky", h), `#!/bin/sh\necho ${h} >> "${marker}"\n`); chmodSync(join(repo, ".husky", h), 0o755);
+  }
+  sh(repo, "git", ["add", ".husky"]); sh(repo, "git", ["commit", "-qm", "husky"]);
+  sh(repo, "git", ["config", "core.hooksPath", ".husky"]);
+}
+function repo(): string { const r = initRepo(); trustRepo(r); return r; }
+function worktree(r: string, branch: string): string {
+  const wt = join(tmpDir(), branch.replaceAll("/", "-"));
+  sh(r, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "-b", branch, wt, "main"]);
+  return wt;
+}
+
+describe("git helpers", () => {
+  it("lists changed files including untracked names with spaces", () => {
+    const r = repo();
+    writeFileSync(join(r, "README.md"), "changed\n"); writeFileSync(join(r, "a file.txt"), "x");
+    expect(changedFiles(r).sort()).toEqual(["README.md", "a file.txt"]);
+    expect(trackedChanges(r)).toEqual(["README.md"]);
+  });
+  it("refuses directories that are not a registered repo or one of its worktrees", () => {
+    expect(() => headOf(tmpDir())).toThrow(UntrustedGitDirError);
+    expect(() => headOf(initRepo())).toThrow(UntrustedGitDirError);
+  });
+  it("ignores a forged .git file in a worktree and never runs fsmonitor", () => {
+    const r = repo(); const wt = worktree(r, "slp/f/T1-1"); const marker = join(tmpDir(), "fsmonitor.log");
+    const rogue = join(wt, "rogue"); mkdirSync(rogue);
+    sh(rogue, "git", ["init", "-q", "--bare", "."]);
+    writeFileSync(join(wt, "evil.sh"), `#!/bin/sh\necho ran >> "${marker}"\n`); chmodSync(join(wt, "evil.sh"), 0o755);
+    sh(rogue, "git", ["config", "--file", join(rogue, "config"), "core.fsmonitor", join(wt, "evil.sh")]);
+    writeFileSync(join(wt, ".git"), `gitdir: ${rogue}\n`);
+    writeFileSync(join(wt, "src.ts"), "x");
+    expect(changedFiles(wt)).toContain("src.ts");
+    expect(currentBranch(wt)).toBe("slp/f/T1-1");
+    expect(existsSync(marker)).toBe(false);
+  });
+  it("commits with trailers, never runs repo hooks, and excludes given paths", () => {
+    const r = repo(); const marker = join(tmpDir(), "hooks.log"); withHusky(r, marker);
+    writeFileSync(join(r, "src.ts"), "x"); writeFileSync(join(r, ".env"), "SECRET=1");
+    const hash = commitAll(r, { message: "T1: add src", trailers: { "SLP-Task": "T1", "SLP-Agent": "a1" }, exclude: [".env"] });
+    expect(headOf(r)).toBe(hash);
+    expect(sh(r, "git", ["log", "-1", "--format=%B"])).toBe("T1: add src\n\nSLP-Task: T1\nSLP-Agent: a1");
+    expect(commitTrailer(r, hash, "SLP-Task")).toBe("T1");
+    expect(commitTrailer(r, "HEAD~1", "SLP-Task")).toBeNull();
+    expect(sh(r, "git", ["show", "--name-only", "--format=", "HEAD"])).toBe("src.ts");
+    expect(existsSync(marker)).toBe(false);
+    expect(() => commitAll(r, { message: "m", trailers: {}, exclude: [".env"] })).toThrow(NoChangesError);
+  });
+  it("merges without hooks and reports conflicts, leaving the tree clean", () => {
+    const r = repo(); const marker = join(tmpDir(), "hooks.log"); withHusky(r, marker);
+    sh(r, "git", ["-c", "core.hooksPath=/dev/null", "checkout", "-qb", "side"]); writeFileSync(join(r, "README.md"), "side\n"); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "side"]);
+    sh(r, "git", ["-c", "core.hooksPath=/dev/null", "checkout", "-q", "main"]); writeFileSync(join(r, "other.txt"), "o"); sh(r, "git", ["add", "."]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "main"]);
+    const ok = mergeNoHooks(r, "side", "Merge side");
+    expect(ok.ok).toBe(true);
+    expect(existsSync(marker)).toBe(false);
+    sh(r, "git", ["-c", "core.hooksPath=/dev/null", "checkout", "-qb", "c1", "HEAD~1"]); writeFileSync(join(r, "README.md"), "c1\n"); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "c1"]);
+    sh(r, "git", ["-c", "core.hooksPath=/dev/null", "checkout", "-q", "main"]); writeFileSync(join(r, "README.md"), "main\n"); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "m2"]);
+    expect(mergeNoHooks(r, "c1", "Merge c1")).toEqual({ ok: false, conflicts: ["README.md"] });
+    expect(changedFiles(r)).toEqual([]);
+  });
+  it("starts a merge that leaves conflict markers for a Peer, and commitAll then records a merge commit", () => {
+    const r = repo();
+    sh(r, "git", ["checkout", "-qb", "other"]); writeFileSync(join(r, "README.md"), "other\n"); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "other"]);
+    sh(r, "git", ["-c", "core.hooksPath=/dev/null", "checkout", "-q", "main"]);
+    const wt = worktree(r, "slp/f/T2-1"); writeFileSync(join(wt, "README.md"), "mine\n"); sh(wt, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "mine"]);
+    expect(startMerge(wt, "other")).toEqual(["README.md"]);
+    writeFileSync(join(wt, "README.md"), "resolved\n");
+    const hash = commitAll(wt, { message: "T2: resolve", trailers: {}, exclude: [] });
+    expect(sh(wt, "git", ["rev-list", "--parents", "-n", "1", hash]).split(" ")).toHaveLength(3);
+  });
+  it("classifies sensitive and protected paths and touch-set outsiders, and finds hooks", () => {
+    expect(["a/.env", ".env.local", "k.pem", "x.key", "id_rsa", "id_ed25519.pub", "c.p12", "credentials.json"].every(isSensitivePath)).toBe(true);
+    expect(isSensitivePath("src/env.ts")).toBe(false);
+    expect(["paseo.json", ".husky/pre-commit", ".githooks/x", "hooks/pre-push", ".claude/settings.json", ".codex/config.toml", ".mcp.json"].map((p) => isProtectedPath(p, "hooks"))).toEqual([true, true, true, true, true, true, true]);
+    expect(["src/paseo.json", "src/hooks/a.ts", "src/.mcp.json", "docs/.claude/x.md"].map((p) => isProtectedPath(p, "hooks"))).toEqual([false, false, false, false]);
+    expect(filesOutside(["src/a.ts", "test/a.test.ts", "package.json"], ["src/", "test/**"])).toEqual(["package.json"]);
+    const r = repo(); const marker = join(tmpDir(), "h.log"); withHusky(r, marker);
+    expect(hooksDir(r)).toBe(".husky");
+    expect(hookFile(r, "pre-commit")).toBe(join(r, ".husky", "pre-commit"));
+    expect(hookFile(repo(), "pre-commit")).toBeNull();
+    expect(git(r, ["config", "--get", "core.fsmonitor"], true).code).toBe(0);
+  });
+  it("creates and removes SLP worktrees with hooks off, keeping the branch", () => {
+    const r = repo(); const marker = join(tmpDir(), "pc.log"); withHusky(r, marker);
+    writeFileSync(join(r, "paseo.json"), JSON.stringify({ worktree: { setup: "touch SETUP_RAN" } })); sh(r, "git", ["add", "."]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "cfg"]);
+    const path = join(tmpDir(), "wts", "demo", "slp-f-T1-1");
+    addWorktree(r, path, "slp/f/T1-1", "main");
+    expect(currentBranch(path)).toBe("slp/f/T1-1");
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(join(path, "SETUP_RAN"))).toBe(false);
+    expect(removeWorktree(r, path)).toBe(true);
+    expect(existsSync(path)).toBe(false);
+    expect(sh(r, "git", ["branch", "--list", "slp/f/T1-1"])).toContain("slp/f/T1-1");
+    const theirs = join(tmpDir(), "theirs"); mkdirSync(theirs); writeFileSync(join(theirs, "keep.txt"), "x");
+    expect(() => addWorktree(r, theirs, "slp/f/T2-1", "main")).toThrow(/already exists/);
+    expect(removeWorktree(r, theirs)).toBe(false);
+    expect(existsSync(join(theirs, "keep.txt"))).toBe(true);
+  });
+  it("lists git filters and drivers that would run repo files, but not git-lfs", () => {
+    const r = repo();
+    expect(unsafeGitDrivers(r)).toEqual([]);
+    sh(r, "git", ["config", "filter.lfs.clean", "git-lfs clean -- %f"]);
+    expect(unsafeGitDrivers(r)).toEqual([]);
+    sh(r, "git", ["config", "filter.fmt.clean", "node scripts/filter.js"]); sh(r, "git", ["config", "merge.ours.driver", "./scripts/merge.sh %O %A %B"]);
+    expect(unsafeGitDrivers(r)).toEqual(["filter.fmt.clean node scripts/filter.js", "merge.ours.driver ./scripts/merge.sh %O %A %B"]);
+    const lfs = repo();
+    sh(lfs, "git", ["config", "filter.lfs.clean", "git-lfs clean -- %f; node scripts/filter.js"]);
+    expect(unsafeGitDrivers(lfs)).toEqual(["filter.lfs.clean git-lfs clean -- %f; node scripts/filter.js"]);
+  });
+  it("checks the new worktree's own config, including branch-conditional includes, before checking anything out", () => {
+    const r = repo(); const marker = join(tmpDir(), "smudge-ran");
+    writeFileSync(join(r, ".gitattributes"), "*.txt filter=fmt\n"); writeFileSync(join(r, "a.txt"), "a\n");
+    sh(r, "git", ["add", "."]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "attrs"]);
+    writeFileSync(join(r, ".git", "slp.inc"), `[filter "fmt"]\n\tsmudge = "touch ${marker} && cat"\n`); // no ";": it starts a comment in git config
+    sh(r, "git", ["config", "includeIf.onbranch:slp/**.path", "slp.inc"]);
+    expect(unsafeGitDrivers(r)).toEqual([]);
+    const path = join(tmpDir(), "wts", "demo", "slp-f-T9-1");
+    expect(() => addWorktree(r, path, "slp/f/T9-1", "main")).toThrow(/filter\.fmt\.smudge/);
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(path)).toBe(false);
+    expect(sh(r, "git", ["branch", "--list", "slp/f/T9-1"])).toBe("");
+  });
+});

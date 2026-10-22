@@ -1,12 +1,12 @@
 import { normalizeModel } from "./roles";
 import type { PlanTask, PremiseState } from "./store/derive";
 import type { SlpEvent } from "./store/events";
+import { normTouch } from "./touch";
 
 export interface PlanIssue { severity: "error" | "warning"; code: string; message: string; task?: string }
 
-const norm = (e: string) => e.replace(/\/\*\*$/, "/");
 export function touchOverlaps(a: string, b: string): boolean {
-  const x = norm(a); const y = norm(b);
+  const x = normTouch(a); const y = normTouch(b);
   if (x === y) return true;
   return (x.endsWith("/") && y.startsWith(x)) || (y.endsWith("/") && x.startsWith(y));
 }

@@ -5,6 +5,7 @@ import { trackedChanges } from "./git";
 import type { TimelineItemLike } from "./human";
 import type { Identity } from "./identity";
 import { decidePermission, type PermissionLike } from "./permissions";
+import type { Address } from "./router";
 import { deriveFeature } from "./store/derive";
 import { finalizeReview, pipelineDeps, processReportFor, retireAgent } from "./tools/work";
 import { watchTick } from "./watch";
@@ -31,6 +32,20 @@ async function scheduleResume(ctx: Ctx, ident: Identity): Promise<void> {
   const at = resumeAt(windows, vendor, ctx.now(), attempt);
   ctx.resumes.schedule({ agentId: ident.agentId, vendor, at: at.toISOString(), attempt });
   appendPlugin(ctx, ident.project, ident.feature, { kind: "ops", data: { type: "limit_hit", agentId: ident.agentId, vendor, resumeAt: at.toISOString(), attempt, summary: `${vendor} limit; resume ${at.toISOString().slice(11, 16)} (${attempt}/${ctx.config.limits.resumeMaxAttempts})` } });
+}
+
+/** Where the router finds this agent. Plugin messages to an SLP agent go through the router, which waits for `idle`; a direct send would interrupt a running turn. */
+const addressOf = (i: Identity): Address => ({ role: i.role, project: i.project, feature: i.feature, task: i.task });
+
+/** Best effort and last: a sibling feature's unreadable log must not stop the Lead's notice or the Peer's "Verify failed". */
+function alertTouchingSupervisors(ctx: Ctx, ident: Identity, commit: string): void {
+  try {
+    const feature = ident.feature!;
+    const commitEv = [...ctx.stores.feature(ident.project, feature).all()].reverse().find((e) => e.kind === "commit" && e.data.hash === commit);
+    for (const other of featuresTouching(ctx, ident.project, feature, (commitEv?.data.files as string[] | undefined) ?? [])) {
+      if (ctx.identities.current("supervisor", ident.project, other.slug)) notify(ctx, supervisorAddress(ident.project, other.slug), `${feature} ${ident.task} committed files in your touch set: ${other.files.join(", ")}. Check with your Lead whether the plans collide.`);
+    }
+  } catch (error) { ctx.log("touch-set alert failed", error); }
 }
 
 const REPORT_EXCERPT = 3000;
@@ -64,20 +79,18 @@ async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean)
     const flags = out.flags.outsideTouchSet.length ? ` Outside touch set: ${out.flags.outsideTouchSet.join(", ")}.` : "";
     const excluded = out.flags.excludedSensitive.length ? ` Excluded sensitive files: ${out.flags.excludedSensitive.join(", ")}.` : "";
     const protectedFiles = out.flags.excludedProtected.length ? ` Not committed (git hooks, paseo.json or agent settings; a human must change these): ${out.flags.excludedProtected.join(", ")}.` : "";
-    const commitEv = [...ctx.stores.feature(ident.project, feature).all()].reverse().find((e) => e.kind === "commit" && e.data.hash === out.commit);
-    for (const other of featuresTouching(ctx, ident.project, feature, (commitEv?.data.files as string[] | undefined) ?? [])) {
-      if (ctx.identities.current("supervisor", ident.project, other.slug)) notify(ctx, supervisorAddress(ident.project, other.slug), `${feature} ${ident.task} committed files in your touch set: ${other.files.join(", ")}. Check with your Lead whether the plans collide.`);
-    }
     if (out.runnerError) {
       notify(ctx, supervisorAddress(ident.project, feature), `The sandbox runner is broken, so ${feature} ${ident.task} @${out.commit.slice(0, 7)} cannot be verified: ${out.runnerError}. Fix sandbox.runner in ~/.slp/config.json; the plugin re-verifies on the Peer's next turn or on restart.`);
       notify(ctx, leadAddress(ident.project, feature), `${ident.task} committed ${out.commit.slice(0, 7)}; verification waits on the sandbox runner (the Supervisor has been told).${flags}${excluded}${protectedFiles}${said}`);
+      alertTouchingSupervisors(ctx, ident, out.commit);
       return;
     }
     notify(ctx, leadAddress(ident.project, feature), `${ident.task} committed ${out.commit.slice(0, 7)}, verify exit ${out.evidenceOk === null ? "skipped" : out.evidenceOk ? "0 ✓" : "non-zero ✗"}.${flags}${excluded}${protectedFiles}${said}`);
     if (out.evidenceOk === false) {
       const ev = [...ctx.stores.feature(ident.project, feature).all()].reverse().find((e) => e.kind === "evidence" && e.data.commit === out.commit);
-      await ctx.paseo().agents.ref(ident.agentId!).send(`[SLP plugin] Verify failed on ${out.commit.slice(0, 7)} (exit ${String(ev?.data.exitCode)}):\n${String(ev?.data.stderrTail ?? "").slice(-1500)}\nFix it and slp_report again.`, { messageId: ctx.router.issue() });
+      notify(ctx, addressOf(ident), `Verify failed on ${out.commit.slice(0, 7)} (exit ${String(ev?.data.exitCode)}):\n${String(ev?.data.stderrTail ?? "").slice(-1500)}\nFix it and slp_report again.`);
     }
+    alertTouchingSupervisors(ctx, ident, out.commit);
     return;
   }
   if (out?.outcome === "blocked") {
@@ -86,7 +99,7 @@ async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean)
     return;
   }
   if (out?.outcome === "rejected") {
-    await ctx.paseo().agents.ref(ident.agentId!).send(`[SLP plugin] Your report was not committed: ${out.reason}. Fix it and slp_report again.`, { messageId: ctx.router.issue() });
+    notify(ctx, addressOf(ident), `Your report was not committed: ${out.reason}. Fix it and slp_report again.`);
     return;
   }
   if (!calledTool) await nudgeOrEscalate(ctx, ident);
@@ -94,7 +107,7 @@ async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean)
 
 async function nudgeOrEscalate(ctx: Ctx, ident: Identity): Promise<void> {
   if (ctx.nudges.shouldNudge(ident.agentId!, ctx.config.limits.noReportNudges)) {
-    await ctx.paseo().agents.ref(ident.agentId!).send("[SLP plugin] You ended your turn without slp_report, slp_challenge or slp_ask. Finish with one of them.", { messageId: ctx.router.issue() });
+    notify(ctx, addressOf(ident), "You ended your turn without slp_report, slp_challenge or slp_ask. Finish with one of them.");
   } else {
     notify(ctx, leadAddress(ident.project, ident.feature!), `${ident.role} ${ident.task} stopped without reporting.`);
   }
@@ -119,10 +132,11 @@ async function maybeAskForCheckpoint(ctx: Ctx, ident: Identity): Promise<void> {
   const ratio = u.contextWindowUsedTokens / u.contextWindowMaxTokens;
   if (ratio < ctx.config.rotation.contextRatio || ctx.flags.checkpointAsked.has(ident.tokenHash)) return;
   ctx.flags.checkpointAsked.add(ident.tokenHash);
-  await ref.send(`[SLP plugin] Your context is at ${Math.round(ratio * 100)}%. Call slp_checkpoint now, then end your turn.`, { messageId: ctx.router.issue() });
+  notify(ctx, addressOf(ident), `Your context is at ${Math.round(ratio * 100)}%. Call slp_checkpoint now, then end your turn.`);
 }
 
-type TurnEnded = { agent: { id: string }; outcome: { kind: string; error?: { message: string } } };
+/** `replay`: reconcile, after a restart, replays a turn end for an idle agent; the in-memory tool-call marks are gone, so it must not read as "ended without reporting". */
+type TurnEnded = { agent: { id: string }; outcome: { kind: string; error?: { message: string } }; replay?: boolean };
 const chains = new WeakMap<Ctx, Map<string, Promise<void>>>();
 
 /** Runs one agent's turn-end handling at a time, so a real turn_ended and reconcile never process the same report together. */
@@ -145,8 +159,8 @@ async function turnEnded(ctx: Ctx, ev: TurnEnded): Promise<void> {
   ctx.resumes.clear(ev.agent.id);
   ctx.pendingPermissions.delete(ev.agent.id);
   const lastCall = ctx.toolCalls.get(ev.agent.id);
-  // Only report tools mark a call (m1); a turn the human canceled is not "stopped without reporting".
-  const calledTool = (lastCall !== undefined && lastCall >= (ctx.turnStarts.get(ev.agent.id) ?? 0)) || ev.outcome.kind === "canceled";
+  // Only report tools mark a call (m1); a turn the human canceled, or one replayed by reconcile, is not "stopped without reporting".
+  const calledTool = (lastCall !== undefined && lastCall >= (ctx.turnStarts.get(ev.agent.id) ?? 0)) || ev.outcome.kind === "canceled" || ev.replay === true;
   if (ident.role === "peer-impl") await afterPeerImplTurn(ctx, ident, calledTool);
   if (ident.role === "peer-review") await afterReviewTurn(ctx, ident, calledTool);
   if (ident.role === "supervisor" || ident.role === "lead") await maybeAskForCheckpoint(ctx, ident);
@@ -232,14 +246,21 @@ async function tickOnce(ctx: Ctx): Promise<void> {
 
 export async function reconcile(ctx: Ctx): Promise<void> {
   for (const project of Object.keys(ctx.config.projects)) {
+    // Opening a store is what logs a cut-off last line (store/registry.ts); after a restart nothing else opens a feature without agents.
+    for (const feature of ctx.stores.features(project)) {
+      try { ctx.stores.feature(project, feature); } catch (error) { ctx.log(`could not open the log of ${project}/${feature}`, error); }
+    }
     for (const ident of ctx.identities.active(project)) {
       if (!ident.agentId) continue;
-      const ref = ctx.paseo().agents.ref(ident.agentId);
-      const snapshot = await ref.refresh().catch(() => undefined); // undefined: could not ask; keep the agent
-      if (snapshot === null || ref.status === "closed") { retireLost(ctx, ident); continue; }
-      // An agent waiting for a usage-limit resume has nothing new to process; replaying its old limit reply would burn a resume attempt (review Codex 2026-10-22, round 2).
-      const waiting = ctx.resumes.jobs().some((j) => j.agentId === ident.agentId);
-      if (ref.status === "idle" && ident.role === "peer-impl" && !waiting) await onTurnEnded(ctx, { agent: { id: ident.agentId }, outcome: { kind: "completed" } });
+      // One agent's failure (a missing worktree, an untrusted git dir) must not stop the others or the other projects.
+      try {
+        const ref = ctx.paseo().agents.ref(ident.agentId);
+        const snapshot = await ref.refresh().catch(() => undefined); // undefined: could not ask; keep the agent
+        if (snapshot === null || ref.status === "closed") { retireLost(ctx, ident); continue; }
+        // An agent waiting for a usage-limit resume has nothing new to process; replaying its old limit reply would burn a resume attempt (review Codex 2026-10-22, round 2).
+        const waiting = ctx.resumes.jobs().some((j) => j.agentId === ident.agentId);
+        if (ref.status === "idle" && ident.role === "peer-impl" && !waiting) await onTurnEnded(ctx, { agent: { id: ident.agentId }, outcome: { kind: "completed" }, replay: true });
+      } catch (error) { ctx.log(`reconcile of ${ident.role} ${ident.agentId} failed`, error); }
     }
     appendPlugin(ctx, project, null, { kind: "ops", data: { type: "reconcile", queued: ctx.router.pending().length, resumes: ctx.resumes.jobs().length } });
   }

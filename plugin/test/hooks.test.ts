@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { onAgentArchived, onAgentClosed, onPermissionRequested, onPermissionResolved, onTurnEnded, onTurnStarted, reconcile, tick } from "../server/hooks";
@@ -278,5 +278,124 @@ describe("permissions, archive, tick", () => {
     for (const f of ["cache", "login"]) w.ctx.stores.feature("demo", f).append({ feature: f, kind: "challenge", by_role: "peer-impl", by_agent: "p", idPrefix: "C", data: { target: "T1", level: "plan" } }, old);
     await tick(w.ctx);
     expect(w.paseo.sent.filter((s) => s.text.includes("C1 has waited")).map((s) => s.agentId).sort()).toEqual(["lead-1", "lead-2"]);
+  });
+});
+
+describe("reconcile after a restart", () => {
+  it("opens every feature store, so a torn last line is logged even when no agent is left", async () => {
+    const w = makeCtx();
+    const dir = w.ctx.stores.featureDir("demo", "cache"); mkdirSync(dir, { recursive: true });
+    const file = join(dir, "events.jsonl");
+    appendFileSync(file, '{"seq":1,"ts":"2026'); // the plugin died mid-append
+    await reconcile(w.ctx);
+    // Read the file, not the store: asking the registry would open the store and log the cut itself.
+    expect(readFileSync(file, "utf8")).toContain('"type":"log_truncated"');
+    expect(w.ctx.stores.feature("demo", "cache").all().some((e) => e.kind === "ops" && e.data.type === "log_truncated")).toBe(true);
+  });
+  it("opens the other feature stores even when one feature's log is corrupt", async () => {
+    const w = makeCtx();
+    const logs: string[] = []; w.ctx.log = (m) => { logs.push(m); };
+    const bad = w.ctx.stores.featureDir("demo", "aaa"); mkdirSync(bad, { recursive: true });
+    writeFileSync(join(bad, "events.jsonl"), "not json\n");
+    const torn = w.ctx.stores.featureDir("demo", "bbb"); mkdirSync(torn, { recursive: true });
+    appendFileSync(join(torn, "events.jsonl"), '{"seq":1,"ts":"2026');
+    await expect(reconcile(w.ctx)).resolves.toBeUndefined();
+    expect(logs.some((m) => m.includes("demo/aaa"))).toBe(true);
+    expect(readFileSync(join(torn, "events.jsonl"), "utf8")).toContain('"type":"log_truncated"');
+    expect(w.ctx.stores.project("demo").all().some((e) => e.kind === "ops" && e.data.type === "reconcile")).toBe(true);
+  });
+  it("keeps reconciling the other agents when one agent's reconcile throws", async () => {
+    const w = world();
+    const logs: string[] = []; w.ctx.log = (m) => { logs.push(m); };
+    writeFileSync(join(w.wt, "a.ts"), "x");
+    w.store.append({ feature: "cache", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done", message: "add a" } });
+    rmSync(w.wt, { recursive: true, force: true }); // the first Peer's worktree is gone
+    bound(w.ctx, { role: "supervisor", project: "demo", feature: "login", task: null, worktree: null, reviewCommit: null, parentAgentId: null }, "sup-2");
+    bound(w.ctx, { role: "lead", project: "demo", feature: "login", task: null, worktree: w.repo, reviewCommit: null, parentAgentId: "sup-2" }, "lead-2");
+    const wt2 = join(w.home, "wt-login-T1"); sh(w.repo, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "-b", "slp/login/T1-1", wt2, "main"]);
+    bound(w.ctx, { role: "peer-impl", project: "demo", feature: "login", task: "T1", worktree: wt2, reviewCommit: null, parentAgentId: "lead-2" }, "peer-2");
+    const login = w.ctx.stores.feature("demo", "login");
+    login.append({ feature: "login", kind: "plan", by_role: "lead", by_agent: "lead-2", data: { version: 1, sha256: "q", path: "q", tasks: [{ id: "T1", title: "t", dependsOn: [], verifies: [], touchSet: ["b.ts"], verify: "test -f b.ts" }] } });
+    login.append({ feature: "login", kind: "assign", by_role: "lead", by_agent: "lead-2", data: { task: "T1", agentId: "peer-2", worktree: wt2, branch: "slp/login/T1-1", base: "base", attempt: 1 } });
+    writeFileSync(join(wt2, "b.ts"), "y");
+    login.append({ feature: "login", kind: "report", by_role: "peer-impl", by_agent: "peer-2", data: { task: "T1", status: "done", message: "add b" } });
+    await expect(reconcile(w.ctx)).resolves.toBeUndefined();
+    expect(logs.some((m) => m.includes("reconcile of peer-impl peer-1 failed"))).toBe(true);
+    expect(login.all().some((e) => e.kind === "commit")).toBe(true);
+    expect(w.ctx.stores.project("demo").all().some((e) => e.kind === "ops" && e.data.type === "reconcile")).toBe(true);
+  });
+  it("does not nudge an idle Peer for a missing report after a restart, and keeps its nudge budget", async () => {
+    const w = world(); // fresh ctx maps: toolCalls and turnStarts are empty, as after a restart
+    await reconcile(w.ctx);
+    expect(w.paseo.sent.filter((s) => s.agentId === "peer-1")).toEqual([]);
+    expect(w.paseo.sent.some((s) => s.agentId === "lead-1")).toBe(false);
+    await onTurnStarted(w.ctx, "peer-1");
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    expect(w.paseo.sent.at(-1)).toMatchObject({ agentId: "peer-1", text: expect.stringContaining("without slp_report") });
+  });
+});
+
+describe("messages to SLP agents go through the router", () => {
+  function reportFailingVerify(w: ReturnType<typeof world>) {
+    onTurnStarted(w.ctx, "peer-1");
+    writeFileSync(join(w.wt, "b.ts"), "x"); // verify wants a.ts
+    w.store.append({ feature: "cache", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done", message: "add b" } });
+    w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+  }
+  const heldFor = (w: ReturnType<typeof world>, agentId: string, role: string, needle: string) => ({
+    sentNow: w.paseo.sent.filter((s) => s.agentId === agentId),
+    pending: w.ctx.router.pending().some((p) => p.to.role === role && p.text.startsWith("[SLP plugin] ") && p.text.includes(needle)),
+  });
+  it("holds a failing-verify message for a Peer that is running again, then delivers it when idle", async () => {
+    const w = world();
+    reportFailingVerify(w);
+    w.paseo.statuses.set("peer-1", "running");
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    expect(heldFor(w, "peer-1", "peer-impl", "Verify failed")).toEqual({ sentNow: [], pending: true });
+    w.paseo.statuses.set("peer-1", "idle");
+    await w.ctx.router.flush();
+    expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("Verify failed"))).toBe(true);
+    expect(w.ctx.router.pending()).toEqual([]);
+  });
+  it("holds a rejected-report message for a Peer that is running again", async () => {
+    const w = world();
+    onTurnStarted(w.ctx, "peer-1");
+    w.store.append({ feature: "cache", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done", message: "nothing" } }); // no changes: rejected
+    w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+    w.paseo.statuses.set("peer-1", "running");
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    expect(heldFor(w, "peer-1", "peer-impl", "was not committed")).toEqual({ sentNow: [], pending: true });
+    w.paseo.statuses.set("peer-1", "idle");
+    await w.ctx.router.flush();
+    expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("was not committed"))).toBe(true);
+  });
+  it("holds the no-report nudge for a Peer that is running again", async () => {
+    const w = world();
+    onTurnStarted(w.ctx, "peer-1");
+    w.paseo.statuses.set("peer-1", "running");
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    expect(heldFor(w, "peer-1", "peer-impl", "without slp_report")).toEqual({ sentNow: [], pending: true });
+    w.paseo.statuses.set("peer-1", "idle");
+    await w.ctx.router.flush();
+    expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("without slp_report"))).toBe(true);
+  });
+  it("holds the checkpoint request for a Lead that is running again", async () => {
+    const w = world();
+    w.paseo.usageOf.set("lead-1", { contextWindowUsedTokens: 130_000, contextWindowMaxTokens: 200_000 });
+    w.paseo.statuses.set("lead-1", "running");
+    await onTurnEnded(w.ctx, { agent: { id: "lead-1" }, outcome: done });
+    expect(heldFor(w, "lead-1", "lead", "slp_checkpoint")).toEqual({ sentNow: [], pending: true });
+    w.paseo.statuses.set("lead-1", "idle");
+    await w.ctx.router.flush();
+    expect(w.paseo.sent.filter((s) => s.agentId === "lead-1" && s.text.includes("slp_checkpoint"))).toHaveLength(1);
+  });
+  it("still tells the Lead and the Peer when the touch-set alert cannot read a sibling feature's log", async () => {
+    const w = world();
+    const dir = w.ctx.stores.featureDir("demo", "login"); mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "events.jsonl"), "not json\n"); // a corrupt sibling log makes featuresTouching throw
+    reportFailingVerify(w);
+    await expect(onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done })).resolves.toBeUndefined();
+    expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && /T1 committed [0-9a-f]{7}, verify exit non-zero/.test(s.text))).toBe(true);
+    expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("Verify failed"))).toBe(true);
   });
 });

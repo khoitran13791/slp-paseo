@@ -1,0 +1,1 @@
+{ "id": "slp", "name": "SLP", "requirements": { "paseo": ">=0.12.0" } }

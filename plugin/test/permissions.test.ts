@@ -1,5 +1,5 @@
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Identity } from "../server/identity";
@@ -61,6 +61,34 @@ describe("decidePermission", () => {
       expect(decidePermission({ id: "r", name: "Write", input: { file_path: p } }, peer).action, p).toBe("deny");
     }
     expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, "src", ".claude-notes.md") } }, peer)).toEqual({ action: "allow" });
+  });
+  it("denies writes through dangling symlinks, symlink loops and raw .. segments", () => {
+    const root = tmpDir(); const wt = join(root, "wt"); const outside = join(root, "outside");
+    mkdirSync(join(wt, "src"), { recursive: true }); mkdirSync(outside);
+    writeFileSync(join(wt, "src", "real.ts"), "");
+    symlinkSync(join(outside, "nonexistent.txt"), join(wt, "dangling.txt"));
+    symlinkSync(join(outside, "nonexistent-dir"), join(wt, "dangdir"));
+    symlinkSync(join(wt, "loop"), join(wt, "loop"));
+    symlinkSync(outside, join(wt, "escape"));
+    symlinkSync(join(wt, "src", "real.ts"), join(wt, "alias.ts"));
+    const peer = ident("peer-impl", wt);
+    const write = (file_path: string) => decidePermission({ id: "r", name: "Write", input: { file_path } }, peer).action;
+    expect(write(join(wt, "dangling.txt"))).toBe("deny");
+    expect(write(join(wt, "dangdir", "x.ts"))).toBe("deny");
+    expect(write(join(wt, "loop"))).toBe("deny");
+    expect(write(join(wt, "loop", "x.ts"))).toBe("deny");
+    expect(write(`${wt}/escape/../x.ts`)).toBe("deny");
+    expect(write(join(wt, "alias.ts"))).toBe("allow");
+  });
+  it("denies state dirs however the path is spelled: ~, case, Unicode, relative", () => {
+    const home = homedir();
+    const opts = { deniedRoots: [join(home, ".paseo")], realpath: (p: string) => p };
+    const read = (file_path: string) => decidePermission({ id: "r", name: "Read", input: { file_path } }, ident("peer-impl", "/w"), opts).action;
+    expect(read("~/.paseo/agents/a.json")).toBe("deny");
+    expect(read(`${home}/.PASEO/x`)).toBe("deny");
+    expect(read(`${home}/.paſeo/x`)).toBe("deny");
+    const wt = tmpDir();
+    expect(decidePermission({ id: "r", name: "Read", input: { file_path: ".slp/x" } }, ident("lead", wt), { deniedRoots: [join(wt, ".slp")], realpath: (p: string) => p }).action).toBe("deny");
   });
   it("accepts /tmp paths that resolve inside a /private/tmp worktree", () => {
     const viaTmp = mkdtempSync("/tmp/slp-wt-");          // on macOS /tmp is a symlink to /private/tmp

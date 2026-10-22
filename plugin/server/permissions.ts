@@ -1,5 +1,6 @@
-import { realpathSync } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { lstatSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isProtectedPath } from "./git";
 import type { Identity } from "./identity";
 
@@ -16,11 +17,15 @@ const RESERVED = [
   /dangerouslyDisableSandbox/,
 ];
 
+const UNRESOLVABLE = "\0unresolvable:";
+
 function resolveExisting(p: string, realpath: (p: string) => string): string {
   let cur = resolve(p);
   const rest: string[] = [];
   for (;;) {
     try { return join(realpath(cur), ...rest.reverse()); } catch { /* walk up */ }
+    // The entry exists but does not resolve (dangling symlink, loop, unreadable): it is not absent, so never walk past it.
+    try { lstatSync(cur); return UNRESOLVABLE + resolve(p); } catch { /* does not exist: walk up */ }
     const parent = dirname(cur);
     if (parent === cur) return resolve(p);
     rest.push(basename(cur));
@@ -33,11 +38,13 @@ export function decidePermission(req: PermissionLike, ident: Identity | null, op
   if (!ident) return { action: "ignore" };
   const realpath = opts.realpath ?? realpathSync;
   const name = req.name ?? "";
+  const expand = (p: string) => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : isAbsolute(p) ? p : resolve(ident.worktree ?? process.cwd(), p));
+  const fold = (s: string) => s.toUpperCase().toLowerCase();
   for (const key of ["file_path", "path", "notebook_path"]) {
     const v = req.input?.[key];
     if (typeof v !== "string" || !v) continue;
-    const target = resolveExisting(v, realpath);
-    if (opts.deniedRoots.some((root) => inside(target, resolveExisting(root, realpath)))) return { action: "deny", message: "SLP: plugin and Paseo state are off limits. Use slp_state." };
+    const target = fold(resolveExisting(expand(v), realpath));
+    if (opts.deniedRoots.some((root) => inside(target, fold(resolveExisting(root, realpath))))) return { action: "deny", message: "SLP: plugin and Paseo state are off limits. Use slp_state." };
   }
   if (name === "WebFetch" && typeof req.input?.url === "string") {
     let host = "";
@@ -53,6 +60,7 @@ export function decidePermission(req: PermissionLike, ident: Identity | null, op
   if (WRITE.has(name)) {
     if (ident.role !== "peer-impl" || !ident.worktree) return { action: "deny", message: `SLP: role ${ident.role} does not edit files.` };
     const target = String(req.input?.file_path ?? req.input?.notebook_path ?? "");
+    if (target.split(/[\\/]+/).includes("..")) return { action: "deny", message: `SLP: ${target} is outside your worktree.` };
     const wt = resolveExisting(ident.worktree, realpath);
     const abs = resolveExisting(target, realpath);
     const rel = relative(wt, abs).split(sep).join("/");

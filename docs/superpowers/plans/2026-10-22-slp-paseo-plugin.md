@@ -5247,10 +5247,13 @@ describe("slp_spawn", () => {
     expect(readFileSync(join(theirs, "keep.txt"), "utf8")).toBe("mine");
     expect(sh(r.repo, "git", ["branch", "--list", "slp/cache/T1-1"])).toBe("");
   });
-  it("refuses to start agents when the repo's git config has a filter that runs repo files", async () => {
+  it("refuses to start agents when the repo's git config has a filter that runs repo files, also in a reused workspace", async () => {
     const r = await withLeadAndPlan();
+    await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" });
+    const peer = r.ctx.identities.byAgent(r.paseo.created[1]!.id)!;
+    r.ctx.identities.retire(peer.tokenHash);
     sh(r.repo, "git", ["config", "filter.fmt.clean", "node scripts/filter.js"]);
-    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/filter\.fmt\.clean/);
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "go on" })).text).toMatch(/filter\.fmt\.clean/);
   });
   it("never lets Paseo run the repo's setup or hooks for an SLP worktree", async () => {
     const r = await withLeadAndPlan();

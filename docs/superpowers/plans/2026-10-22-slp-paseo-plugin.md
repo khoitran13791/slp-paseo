@@ -10,7 +10,7 @@
 
 **Spec:** [`docs/superpowers/specs/2026-10-21-slp-paseo-design.md`](../specs/2026-10-21-slp-paseo-design.md) (rev 4). Bằng chứng nền: [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md).
 
-**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention: Lead thấy status/nội dung report của Peer, quote check theo trọn từ và mệnh đề):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 240 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 33 lần gỡ thử từng phần sửa mới (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
+**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 263 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 61 lần gỡ thử từng phần sửa mới (rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
 
 **Core mechanism:** mỗi ý tưởng một Supervisor (brief đầu tiên gắn nó với feature) → `slp_spawn` → Paseo tạo worktree và agent → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng, `toolPolicy`) và ghi worktree thật vào identity → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `turn_started`/`turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer (hook tắt, git dir tin cậy), chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh → mỗi `watch.intervalMinutes` plugin dựng gói kiểm (trạng thái, tool call gần nhất, lặp lại, file đang đổi) gửi Supervisor của feature; Supervisor steer Lead khi cần.
 
@@ -46,7 +46,7 @@
 - Provider ID: `slp-supervisor`, `slp-lead`, `slp-peer-impl`, `slp-peer-review`. Vendor mặc định: Supervisor, Lead, Peer-impl = `claude`; Peer-review = `codex`. Reviewer phải khác vendor với Peer-impl khi `flags.crossVendorReview` bật. [Spec §2, §4, §8]
 - State nằm ở `~/.slp/<project>/` (đổi được qua biến môi trường `SLP_HOME`, chỉ để test). Mỗi feature có `events.jsonl` chỉ ghi thêm; plugin là writer duy nhất. Repo của project không chứa file SLP nào. [Spec §5]
 - Plugin không bao giờ chạy code của repo ngoài sandbox. Mọi lệnh git của plugin dùng `-c core.hooksPath=/dev/null -c core.fsmonitor=false` và `--git-dir`/`--work-tree` cố định từ common dir tin cậy; commit/merge/push thêm `--no-verify`. Verify và hook chạy qua `sandbox.runner` (mặc định `["codex","sandbox","-P",":workspace","-C","{worktree}","--"]`). Runner hỏng thì fail closed và báo Supervisor. [Spec §7 luật chung, §9]
-- Vai Claude chạy mode `default`, kèm `providerOptions.sandbox = { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite, denyRead: ["~/.slp", "~/.paseo"] }, network: { allowLocalBinding: false, allowedDomains } }`. Chỉ Peer-impl có `allowedDomains = sandbox.claudeAllowedDomains` (mặc định `["registry.npmjs.org","pypi.org","files.pythonhosted.org"]`) và `denyWrite: [<worktree>/.git]`; các vai Claude khác dùng `[]` và `denyWrite: [cwd]`. Codex reviewer dùng `sandbox_mode: "workspace-write"`, `approval_policy: "on-request"`, `sandbox_workspace_write.network_access: false`. Tool `slp_*` được duyệt sẵn qua `toolPolicy.preapproved`. [Spec §4]
+- Vai Claude chạy mode `default`, kèm `providerOptions.sandbox = { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite, denyRead: ["~/.slp", mọi mục trong "~/.paseo" trừ "worktrees/"] }, network: { allowLocalBinding: false, allowedDomains } }`. Chỉ Peer-impl có `allowedDomains = sandbox.claudeAllowedDomains` (mặc định `["registry.npmjs.org","pypi.org","files.pythonhosted.org"]`) và `denyWrite: [<worktree>/.git]`; các vai Claude khác dùng `[]` và `denyWrite: [cwd]`. Codex reviewer dùng `sandbox_mode: "workspace-write"`, `approval_policy: "on-request"`, `sandbox_workspace_write.network_access: false`. Tool `slp_*` được duyệt sẵn qua `toolPolicy.preapproved`. [Spec §4]
 - MCP server `slp` dạng `http` tại `http://127.0.0.1:<mcp.port>/mcp` (mặc định port `47320`), header `Authorization: Bearer <token riêng của agent>`. [Spec §7.1]
 - Tin do plugin gửi mang `messageId` có tiền tố `slp-`. Tin tới một agent đang chạy phải chờ tới khi agent `idle` (Paseo mặc định *ngắt* turn đang chạy). Ngoại lệ duy nhất: `slp_send` với `mode: "steer" | "interrupt"` từ Supervisor tới Lead của feature mình, hoặc từ Lead tới Peer của mình. [Spec §7.1 Router, §7.3]
 - Mỗi Supervisor đúng một feature; mọi cạnh router nằm trong một feature; Supervisor không ghi được feature khác. [Spec §2, §7.3]
@@ -619,10 +619,10 @@ git commit -m "feat(plugin): append-only event store with per-prefix ids"
 
 **Interfaces:**
 - Consumes: `SlpEvent` (T2)
-- Produces: `PlanTask { id; title; dependsOn: string[]; verifies: string[]; touchSet: string[]; verify: string; model?: string; waitsOn?: string[] }`, `WatchResult { tick; ts; verdicts: Array<{ agent; verdict; note? }> }`, `PremiseState`, `TaskStatus`, `TaskState`, `ChallengeState`, `DocState`, `FeatureState`, `deriveFeature(slug, events): FeatureState`, `acceptanceBlockers(state, events, head): string[]`
+- Produces: `PlanTask { id; title; dependsOn: string[]; verifies: string[]; touchSet: string[]; verify: string; model?: string; waitsOn?: string[] }`, `WatchResult { tick; ts; verdicts: Array<{ agent; verdict; note? }> }`, `PremiseState`, `TaskStatus`, `TaskState`, `ChallengeState`, `DocState`, `FeatureState`, `deriveFeature(slug, events): FeatureState`, `evidencePassed(data): boolean`, `taskDef(task)`, `acceptanceBlockers(state, events, head): string[]`
 
 Quy ước dữ liệu event, các task sau phải ghi đúng như vậy:
-- `brief` / `spec` / `plan`: `data { version, sha256, path }`. Riêng `plan` có thêm `tasks: PlanTask[]`.
+- `brief` / `spec` / `plan`: `data { version, sha256, path }`. Riêng `plan` có thêm `tasks: PlanTask[]`; file plan chứa cả markdown lẫn khối JSON của `tasks`, nên `sha256` phủ đúng thứ plugin sẽ chạy. Riêng `spec` có thêm `premises: string[]`: premise của Lead mà version đó dựa vào (mới đề xuất, hoặc premise cũ còn `proposed` được nhắc ID trong spec); duyệt spec chỉ kích hoạt các premise này.
 - `premise`: `id` là D#/H#, `data { kind: "decision"|"hypothesis", title, verify_by? }`.
 - `human_decision`: `data { decides: "approve_brief"|"approve_spec"|"approve_ship"|"supersede"|"keep"|"change_goal", target, quote }`.
 - `supersede`: `supersedes` = ID cũ, `refs[0]` = ID mới.
@@ -632,9 +632,10 @@ Quy ước dữ liệu event, các task sau phải ghi đúng như vậy:
 - `report`: `data { task, status, message, reportPath }`. `status` của report mới nhất từ lần assign gần nhất nằm ở `TaskState.reportStatus`.
 - `commit`: `data { task, hash, base, files, flags, reportSeq, scope? }`; nếu `scope = "challenge"` thì không tính là bàn giao.
 - `evidence`: `data { scope: "task"|"feature"|"challenge", task?, commit, command, exitCode, timedOut }`.
-- `review`: `data { task, commit, blocking, findings, verdict }`.
+- `review`: `data { task, commit, blocking, findings, verdict }`. Chỉ tính sau `ops` loại `review_checked` `data { task, commit, agentId, reviewSeq }`, do plugin ghi khi turn của reviewer kết thúc mà worktree sạch; `reviewOk` cần `verdict === "pass"` **và** `blocking === 0` (review Codex 2026-10-22).
 - `ops` loại `review_invalidated`: `data { type, task, commit }`.
-- `release`: `data { task, outcome: "accepted"|"returned" }`.
+- `evidence` chỉ xanh khi `evidencePassed`: exit 0, không timeout, `dirty` rỗng (lệnh verify không làm đổi file tracked hay HEAD).
+- `release`: `data { task, outcome: "accepted"|"returned", commit?, def? }`. `def` = `taskDef` lúc accept; plan sau đổi `verify`, `touchSet`, `dependsOn` hay `verifies` của task thì task thành `stale`.
 - `challenge`: `id` C#, `data { target, level: "plan"|"spec", claim, ... }`.
 - `challenge_resolved`: `refs[0]` = C#, `data { outcome }`.
 - `ruling`: `data { decision, reason, cost_if_wrong, drop? }`.
@@ -663,19 +664,28 @@ const accepted = (t: string, commit: string) => [
   ev("report", { task: t, status: "done", message: "m" }, { by_role: "peer-impl" }),
   ev("commit", { task: t, hash: commit }, { by_role: "plugin" }),
   ev("evidence", { scope: "task", task: t, commit, exitCode: 0, timedOut: false }, { by_role: "plugin" }),
-  ev("review", { task: t, commit, blocking: 0 }, { by_role: "peer-review" }),
+  ev("review", { task: t, commit, blocking: 0, verdict: "pass" }, { by_role: "peer-review", by_agent: `r-${t}` }),
+  ev("ops", { type: "review_checked", task: t, commit, agentId: `r-${t}` }, { by_role: "plugin" }),
   ev("release", { task: t, outcome: "accepted" }),
 ];
 
 describe("deriveFeature", () => {
   it("tracks premise statuses, including lead proposals activated by spec approval", () => {
-    const events = [premise("D1", "decision"), premise("H1", "hypothesis"), ev("spec", { version: 1, sha256: "s1", path: "p" }), premise("D2", "decision", "lead"),
+    const events = [premise("D1", "decision"), premise("H1", "hypothesis"), premise("D2", "decision", "lead"), ev("spec", { version: 1, sha256: "s1", path: "p", premises: ["D2"] }),
       ev("human_decision", { decides: "approve_spec", target: "s1" }, { by_role: "supervisor" })];
     const st = deriveFeature("f", events);
     expect(st.premises.get("D1")?.status).toBe("active");
     expect(st.premises.get("H1")?.status).toBe("open");
     expect(st.premises.get("D2")?.status).toBe("active");
     expect(deriveFeature("f", events.slice(0, 4)).premises.get("D2")?.status).toBe("proposed");
+  });
+  it("does not activate a premise proposed with a spec version that was dropped", () => {
+    const events = [premise("D2", "decision", "lead"), ev("spec", { version: 1, sha256: "s1", path: "p", premises: ["D2"] }),
+      premise("D3", "decision", "lead"), ev("spec", { version: 2, sha256: "s2", path: "p", premises: ["D3"] }),
+      ev("human_decision", { decides: "approve_spec", target: "s2" }, { by_role: "supervisor" })];
+    const st = deriveFeature("f", events);
+    expect(st.premises.get("D2")?.status).toBe("proposed");
+    expect(st.premises.get("D3")?.status).toBe("active");
   });
 
   it("marks accepted work stale when a premise it depends on is superseded later, directly or via a task", () => {
@@ -711,6 +721,10 @@ describe("deriveFeature", () => {
     expect(st.tasks.get("T2")?.status).toBe("pending");
     st = deriveFeature("f", [...open, ev("challenge_resolved", { outcome: "rejected" }, { refs: ["C1"] })]);
     expect(st.tasks.get("T1")?.status).toBe("pending");
+    const contract = [ev("plan", { version: 1, sha256: "p", path: "p", tasks: [{ ...task("T1"), touchSet: ["contract:auth-api"] }, task("T2")] }),
+      ev("challenge", { target: "contract:auth-api", level: "spec", claim: "c" }, { id: "C1", by_role: "peer-impl" })];
+    expect(deriveFeature("f", contract).tasks.get("T1")?.status).toBe("parked");
+    expect(deriveFeature("f", contract).tasks.get("T2")?.status).toBe("pending");
   });
 
   it("drops tasks named by a ruling", () => {
@@ -727,11 +741,31 @@ describe("deriveFeature", () => {
     let t = deriveFeature("f", events).tasks.get("T1")!;
     expect(t).toMatchObject({ lastCommit: "new", evidenceOk: false });
     const more = [...events, ev("evidence", { scope: "task", task: "T1", commit: "new", exitCode: 0, timedOut: false }, { by_role: "plugin" }),
-      ev("review", { task: "T1", commit: "new", blocking: 0 }, { by_role: "peer-review" })];
+      ev("review", { task: "T1", commit: "new", blocking: 0, verdict: "pass" }, { by_role: "peer-review", by_agent: "r1" })];
     t = deriveFeature("f", more).tasks.get("T1")!;
-    expect(t).toMatchObject({ evidenceOk: true, reviewOk: true });
-    t = deriveFeature("f", [...more, ev("ops", { type: "review_invalidated", task: "T1", commit: "new" }, { by_role: "plugin" })]).tasks.get("T1")!;
+    expect(t).toMatchObject({ evidenceOk: true, reviewOk: false });
+    const checked = [...more, ev("ops", { type: "review_checked", task: "T1", commit: "new", agentId: "r1" }, { by_role: "plugin" })];
+    expect(deriveFeature("f", checked).tasks.get("T1")!.reviewOk).toBe(true);
+    t = deriveFeature("f", [...checked, ev("ops", { type: "review_invalidated", task: "T1", commit: "new" }, { by_role: "plugin" })]).tasks.get("T1")!;
     expect(t.reviewOk).toBe(false);
+  });
+  it("never counts a failing verdict, a dirty verify, or an unchecked review", () => {
+    const base = [ev("plan", { version: 1, sha256: "p", path: "p", tasks: [task("T1")] }),
+      ev("assign", { task: "T1", agentId: "p1", worktree: "/w", branch: "b", base: "base", attempt: 1 }), ev("commit", { task: "T1", hash: "c" }, { by_role: "plugin" })];
+    const failNoFindings = [...base, ev("review", { task: "T1", commit: "c", blocking: 0, verdict: "fail" }, { by_role: "peer-review", by_agent: "r1" }), ev("ops", { type: "review_checked", task: "T1", commit: "c", agentId: "r1" }, { by_role: "plugin" })];
+    expect(deriveFeature("f", failNoFindings).tasks.get("T1")!.reviewOk).toBe(false);
+    const dirty = [...base, ev("evidence", { scope: "task", task: "T1", commit: "c", exitCode: 0, timedOut: false, dirty: ["src.ts"] }, { by_role: "plugin" })];
+    expect(deriveFeature("f", dirty).tasks.get("T1")!.evidenceOk).toBe(false);
+  });
+  it("marks accepted work stale when a later plan changes what the task promises", () => {
+    const def = { verify: "npm test", touchSet: ["src/"], dependsOn: [], verifies: [] };
+    const acc = [...accepted("T1", "c1").slice(0, -1), ev("release", { task: "T1", outcome: "accepted", def })];
+    const v1 = [ev("plan", { version: 1, sha256: "p1", path: "p", tasks: [task("T1")] }), ...acc];
+    expect(deriveFeature("f", v1).tasks.get("T1")!.status).toBe("accepted");
+    const v2 = [...v1, ev("plan", { version: 2, sha256: "p2", path: "p", tasks: [{ ...task("T1"), verify: "npm test -- --strict" }] })];
+    expect(deriveFeature("f", v2).tasks.get("T1")!.status).toBe("stale");
+    const v3 = [...v1, ev("plan", { version: 3, sha256: "p3", path: "p", tasks: [{ ...task("T1"), title: "renamed" }] })];
+    expect(deriveFeature("f", v3).tasks.get("T1")!.status).toBe("accepted");
   });
 
   it("flags reopened work and lists what waits on the human", () => {
@@ -798,11 +832,18 @@ export interface FeatureState {
 }
 
 const TASK_KINDS = new Set(["assign", "report", "commit", "evidence", "review", "release", "ops"]);
+
+/** Green evidence: exit 0, no timeout, and the run left the commit's tracked files and HEAD as they were (review Codex 2026-10-22). */
+export const evidencePassed = (d: Record<string, unknown>): boolean => d.exitCode === 0 && d.timedOut !== true && !(Array.isArray(d.dirty) && d.dirty.length > 0);
+
+/** What a task promises; accepted work goes stale when a later plan changes it. */
+export const taskDef = (t: PlanTask) => ({ verify: t.verify, touchSet: [...t.touchSet].sort(), dependsOn: [...t.dependsOn].sort(), verifies: [...t.verifies].sort() });
 const str = (v: unknown): string | null => (v == null ? null : String(v));
 
 export function deriveFeature(slug: string, events: readonly SlpEvent[]): FeatureState {
   const st: FeatureState = { slug, brief: null, spec: null, plan: null, premises: new Map(), tasks: new Map(), challenges: new Map(), halted: false, waitingOnHuman: [], lastWatch: null };
   let planTasks: PlanTask[] = [];
+  const specPremises = new Map<string, string[]>(); // spec sha256 → Lead premises that version relies on
   const dropped = new Set<string>();
 
   for (const e of events) {
@@ -810,6 +851,7 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
       case "brief": case "spec": case "plan":
         st[e.kind] = { version: Number(e.data.version), sha256: String(e.data.sha256), path: String(e.data.path), seq: e.seq, ts: e.ts, approved: false };
         if (e.kind === "plan") planTasks = (e.data.tasks as PlanTask[] | undefined) ?? [];
+        if (e.kind === "spec") specPremises.set(String(e.data.sha256), (e.data.premises as string[] | undefined) ?? []);
         break;
       case "premise": {
         const kind = e.data.kind === "hypothesis" ? "hypothesis" : "decision";
@@ -820,7 +862,9 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
         if (e.data.decides === "approve_brief" && st.brief && st.brief.sha256 === e.data.target) st.brief.approved = true;
         if (e.data.decides === "approve_spec" && st.spec && st.spec.sha256 === e.data.target) {
           st.spec.approved = true;
-          for (const p of st.premises.values()) if (p.status === "proposed" && p.seq < e.seq) p.status = p.kind === "hypothesis" ? "open" : "active";
+          // Only the premises this spec version lists; a premise proposed with an abandoned version stays proposed (review Codex 2026-10-22).
+          const listed = specPremises.get(String(e.data.target)) ?? [];
+          for (const p of st.premises.values()) if (p.status === "proposed" && listed.includes(p.id)) p.status = p.kind === "hypothesis" ? "open" : "active";
         }
         if (e.data.decides === "change_goal") st.halted = true;
         break;
@@ -868,6 +912,8 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
   for (const pt of planTasks) {
     const ts: TaskState = { ...pt, status: "pending", closure: closureOf(pt.id), agentId: null, worktree: null, branch: null, base: null, attempt: 0, lastCommit: null, evidenceOk: false, reviewOk: false, reopened: false, acceptedAtSeq: null };
     let wasAccepted = false;
+    let acceptedDef: string | null = null;
+    const reviews = new Map<string, { commit: string; ok: boolean }>(); // by reviewer; counted only after the turn-end check
     for (const e of events) {
       if (!TASK_KINDS.has(e.kind) || e.data.task !== pt.id) continue;
       if (e.kind === "assign") {
@@ -876,15 +922,16 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
       } else if (e.kind === "report") {
         if (ts.status === "assigned" || ts.status === "reported") { ts.status = "reported"; ts.reportStatus = e.data.status as TaskState["reportStatus"]; }
       } else if (e.kind === "commit") {
-        if (e.data.scope !== "challenge") { ts.lastCommit = str(e.data.hash); ts.evidenceOk = false; ts.reviewOk = false; }
+        if (e.data.scope !== "challenge") { ts.lastCommit = str(e.data.hash); ts.evidenceOk = false; ts.reviewOk = false; reviews.clear(); }
       } else if (e.kind === "evidence") {
-        if (e.data.scope === "task" && e.data.commit === ts.lastCommit) ts.evidenceOk = e.data.exitCode === 0 && e.data.timedOut !== true;
+        if (e.data.scope === "task" && e.data.commit === ts.lastCommit) ts.evidenceOk = evidencePassed(e.data);
       } else if (e.kind === "review") {
-        if (e.data.commit === ts.lastCommit) ts.reviewOk = Number(e.data.blocking ?? 1) === 0;
+        if (e.data.commit === ts.lastCommit) { reviews.set(String(e.by_agent), { commit: String(e.data.commit), ok: e.data.verdict === "pass" && Number(e.data.blocking ?? 1) === 0 }); ts.reviewOk = false; }
       } else if (e.kind === "ops") {
+        if (e.data.type === "review_checked" && e.data.commit === ts.lastCommit) { const r = reviews.get(String(e.data.agentId)); ts.reviewOk = r?.commit === ts.lastCommit && r.ok; }
         if (e.data.type === "review_invalidated" && e.data.commit === ts.lastCommit) ts.reviewOk = false;
       } else if (e.kind === "release") {
-        if (e.data.outcome === "accepted") { ts.status = "accepted"; ts.acceptedAtSeq = e.seq; wasAccepted = true; }
+        if (e.data.outcome === "accepted") { ts.status = "accepted"; ts.acceptedAtSeq = e.seq; wasAccepted = true; acceptedDef = e.data.def ? JSON.stringify(e.data.def) : null; }
         else { ts.status = "pending"; ts.agentId = null; }
       }
     }
@@ -892,9 +939,10 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
       const p = st.premises.get(d);
       return p?.status === "superseded" && (p.supersededAtSeq ?? 0) > (ts.acceptedAtSeq ?? 0);
     });
+    const changedSinceAccept = acceptedDef !== null && acceptedDef !== JSON.stringify(taskDef(pt));
     if (dropped.has(pt.id)) ts.status = "dropped";
-    else if (ts.status === "accepted" && supersededAfterAccept) ts.status = "stale";
-    else if (ts.status !== "accepted" && (openSpecTargets.has(pt.id) || ts.closure.some((d) => openSpecTargets.has(d)))) ts.status = "parked";
+    else if (ts.status === "accepted" && (supersededAfterAccept || changedSinceAccept)) ts.status = "stale";
+    else if (ts.status !== "accepted" && (openSpecTargets.has(pt.id) || ts.closure.some((d) => openSpecTargets.has(d)) || ts.touchSet.some((e) => openSpecTargets.has(e)))) ts.status = "parked";
     st.tasks.set(pt.id, ts);
   }
 
@@ -908,10 +956,11 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
 
 export function acceptanceBlockers(st: FeatureState, events: readonly SlpEvent[], head: string): string[] {
   const out: string[] = [];
+  if (st.halted) out.push("the feature is halted (the human changed the goal)");
   for (const t of st.tasks.values()) if (t.status !== "accepted" && t.status !== "dropped") out.push(`${t.id} is ${t.status}`);
   for (const c of st.challenges.values()) if (c.open) out.push(`${c.id} is open`);
   const ev = [...events].reverse().find((e) => e.kind === "evidence" && e.data.scope === "feature" && e.data.commit === head);
-  if (!ev || ev.data.exitCode !== 0 || ev.data.timedOut === true) out.push(`no green full-suite evidence on ${head.slice(0, 7)}`);
+  if (!ev || !evidencePassed(ev.data)) out.push(`no green full-suite evidence on ${head.slice(0, 7)}`);
   return out;
 }
 ```
@@ -939,9 +988,14 @@ git commit -m "feat(plugin): derive premise, task and challenge state from event
 **Interfaces:**
 - Consumes: `Actor`, `EventKind`, `SlpEvent` (T2)
 - Produces: `canWrite(actor, kind): boolean`, `assertCanWrite(actor, kind): void`, `class AuthorityError`
-- Produces: `findHumanQuote(messages: readonly SlpEvent[], opts: { agentId: string; quote: string; after: string }): QuoteResult`, `verifyShipApproval(featureEvents, messages, opts: { agentId; quote; commit }): QuoteResult`, `type QuoteResult = { ok: true; seq: number } | { ok: false; reason: string }`
+- Produces: `findHumanQuote(messages: readonly SlpEvent[], opts: { agentId: string; quote: string; after: string; affirm?: boolean; extraWords?: string[] }): QuoteResult`, `messageUsed(featureEvents, messageId, decides, target): boolean`, `verifyShipApproval(featureEvents, messages, opts: { agentId; quote; commit; extraWords? }): QuoteResult`, `type QuoteResult = { ok: true; seq: number; messageId: string } | { ok: false; reason: string }`
 
-Quote chỉ được tính khi nằm trọn từ trong tin mới nhất của anh có chứa nó, mệnh đề chứa quote không có từ phủ định (`không`, `ko`, `chưa`, `đừng`, `no`, `not`…) và không phải câu hỏi. Lý do: kiểm chuỗi con trần để Supervisor trích "duyệt" từ "chưa duyệt" (report human attention 2026-10-22). Sai thì từ chối, Supervisor hỏi lại anh; không bao giờ đoán là duyệt.
+Quy tắc kiểm quote (report human attention và review Codex 2026-10-22):
+- Chỉ **tin mới nhất** của anh gửi agent đó, sau item cần duyệt, được xét. Câu "duyệt" rồi "khoan, chưa duyệt" hay "wait, stop" thì không duyệt gì.
+- Quote nằm trọn từ trong tin đó, ở một mệnh đề không có từ phủ định (`không`, `ko`, `chưa`, `đừng`, `no`, `not`…) và không phải câu hỏi.
+- Với cổng duyệt (brief, spec, ship), mệnh đề đó phải là một câu "đồng ý" thuần: có ít nhất một từ duyệt (`duyệt`, `ok`, `ship`, `đồng ý`, `lgtm`…) và chỉ gồm từ duyệt, từ đệm (`đi`, `nhé`, `luôn`, `brief`, `spec`…), số version và tên feature. "Please explain the risks" hay "ok để mình nghĩ thêm" không duyệt gì.
+- Mỗi tin của anh chỉ đứng sau một quyết định (`messageId` ghi trong `human_decision`); ghi lại đúng quyết định đó cho đúng target (ship thử lại) thì được.
+Sai thì từ chối, Supervisor hỏi lại anh một câu rõ; plugin không bao giờ đoán là duyệt. Plugin vẫn không hiểu ngữ nghĩa: các luật trên chỉ chặn những cách trích sai dễ gặp.
 
 `human_message` có dạng `data { agentId, text, messageId }`. Với tin anh gửi Supervisor, event nằm trong store của project; với tin gửi Lead/Peer, event nằm trong store của feature. Vì đối chiếu xuyên hai store, thứ tự được so bằng `ts` (ISO), không bằng `seq`.
 
@@ -980,7 +1034,7 @@ describe("authority matrix (spec §5.2)", () => {
 ```ts
 import { describe, expect, it } from "vitest";
 import type { SlpEvent } from "../server/store/events";
-import { findHumanQuote, verifyShipApproval } from "../server/quote";
+import { findHumanQuote, messageUsed, verifyShipApproval } from "../server/quote";
 
 const msg = (seq: number, ts: string, agentId: string, text: string): SlpEvent =>
   ({ seq, ts, feature: null, kind: "human_message", id: null, by_role: "plugin", by_agent: null, refs: [], supersedes: null, data: { agentId, text, messageId: `m${seq}` } });
@@ -988,7 +1042,7 @@ const msg = (seq: number, ts: string, agentId: string, text: string): SlpEvent =
 describe("findHumanQuote", () => {
   const messages = [msg(1, "2026-10-22T01:00:00.000Z", "sup", "chưa, sửa lại"), msg(2, "2026-10-22T03:00:00.000Z", "sup", "OK  duyệt   brief này")];
   it("finds a quote sent after the item, normalizing whitespace and case", () => {
-    expect(findHumanQuote(messages, { agentId: "sup", quote: "ok duyệt brief", after: "2026-10-22T02:00:00.000Z" })).toEqual({ ok: true, seq: 2 });
+    expect(findHumanQuote(messages, { agentId: "sup", quote: "ok duyệt brief", after: "2026-10-22T02:00:00.000Z" })).toEqual({ ok: true, seq: 2, messageId: "m2" });
   });
   it("matches Vietnamese text written in decomposed Unicode", () => {
     expect(findHumanQuote(messages, { agentId: "sup", quote: "duyệt".normalize("NFD"), after: "2026-10-22T02:00:00.000Z" }).ok).toBe(true);
@@ -1002,15 +1056,34 @@ describe("findHumanQuote", () => {
     const at = (text: string) => [msg(3, "2026-10-22T04:00:00.000Z", "sup", text)];
     const cases: Array<[string, string]> = [["chưa duyệt", "duyệt"], ["Ko duyệt nhé", "duyệt"], ["duyệt không?", "duyệt"], ["ship được chưa", "ship"], ["don’t ship yet", "ship"], ["relationship ổn", "ship"], ["ok?", "ok"]];
     for (const [text, quote] of cases) {
-      expect(findHumanQuote(at(text), { agentId: "sup", quote, after: "2026-10-22T02:00:00.000Z" })).toEqual({ ok: false, reason: expect.stringMatching(/ask the human to confirm plainly/) });
+      expect(findHumanQuote(at(text), { agentId: "sup", quote, after: "2026-10-22T02:00:00.000Z" })).toEqual({ ok: false, reason: expect.stringMatching(/confirm plainly/) });
     }
   });
   it("accepts the quote from its own clause, and lets a later retraction win", () => {
     const one = [msg(3, "2026-10-22T04:00:00.000Z", "sup", "Không vấn đề gì. Duyệt, ship đi")];
-    expect(findHumanQuote(one, { agentId: "sup", quote: "duyệt", after: "2026-10-22T02:00:00.000Z" })).toEqual({ ok: true, seq: 3 });
-    expect(findHumanQuote(one, { agentId: "sup", quote: "duyệt, ship đi", after: "2026-10-22T02:00:00.000Z" })).toEqual({ ok: true, seq: 3 });
+    expect(findHumanQuote(one, { agentId: "sup", quote: "duyệt", after: "2026-10-22T02:00:00.000Z", affirm: true })).toMatchObject({ ok: true, seq: 3 });
+    expect(findHumanQuote(one, { agentId: "sup", quote: "duyệt, ship đi", after: "2026-10-22T02:00:00.000Z", affirm: true })).toMatchObject({ ok: true, seq: 3 });
     const retracted = [msg(3, "2026-10-22T04:00:00.000Z", "sup", "duyệt"), msg(4, "2026-10-22T04:05:00.000Z", "sup", "khoan, chưa duyệt")];
     expect(findHumanQuote(retracted, { agentId: "sup", quote: "duyệt", after: "2026-10-22T02:00:00.000Z" }).ok).toBe(false);
+    const stopped = [msg(3, "2026-10-22T04:00:00.000Z", "sup", "ship"), msg(4, "2026-10-22T04:05:00.000Z", "sup", "wait, stop")];
+    expect(findHumanQuote(stopped, { agentId: "sup", quote: "ship", after: "2026-10-22T02:00:00.000Z" })).toEqual({ ok: false, reason: expect.stringMatching(/latest message does not contain/) });
+  });
+  it("approves only with a plain yes: not a request, not a yes followed by more, but the feature name and a version are fine", () => {
+    const at = (text: string) => [msg(3, "2026-10-22T04:00:00.000Z", "sup", text)];
+    const yes = (text: string, quote: string) => findHumanQuote(at(text), { agentId: "sup", quote, after: "2026-10-22T02:00:00.000Z", affirm: true, extraWords: ["cache-layer"] }).ok;
+    expect(yes("please explain the risks", "explain the risks")).toBe(false);
+    expect(yes("ok để mình nghĩ thêm", "ok")).toBe(false);
+    expect(yes("Duyệt spec cache layer v2 nhé", "duyệt spec cache layer v2")).toBe(true);
+    expect(yes("đồng ý, nhưng thêm test X sau", "đồng ý")).toBe(true);
+    expect(findHumanQuote(at("please explain the risks"), { agentId: "sup", quote: "explain the risks", after: "2026-10-22T02:00:00.000Z" }).ok).toBe(true);
+  });
+  it("lets one message back only one decision, except the same decision on the same target", () => {
+    const d = (messageId: string, decides: string, target: string): SlpEvent =>
+      ({ seq: 1, ts: "2026-10-22T04:00:00.000Z", feature: "f", kind: "human_decision", id: null, by_role: "supervisor", by_agent: "sup", refs: [], supersedes: null, data: { decides, target, quote: "ok", messageId } });
+    const events = [d("m3", "approve_spec", "s1")];
+    expect(messageUsed(events, "m3", "approve_ship", "c1")).toBe(true);
+    expect(messageUsed(events, "m3", "approve_spec", "s1")).toBe(false);
+    expect(messageUsed(events, "m4", "approve_ship", "c1")).toBe(false);
   });
 });
 
@@ -1086,7 +1159,7 @@ export function assertCanWrite(actor: Actor, kind: EventKind): void {
 ```ts
 import type { SlpEvent } from "./store/events";
 
-export type QuoteResult = { ok: true; seq: number } | { ok: false; reason: string };
+export type QuoteResult = { ok: true; seq: number; messageId: string } | { ok: false; reason: string };
 
 const norm = (s: string) => s.normalize("NFC").replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim().toLowerCase();
 const WORD = /[\p{L}\p{M}\p{N}']/u;
@@ -1094,9 +1167,15 @@ const CLAUSE_BREAK = /[.!?;,:…]/;
 /** A clause holding one of these is not an approval: "chưa duyệt", "duyệt không", "don't ship". */
 const NEGATIONS = new Set(["không", "khong", "ko", "k", "hông", "chưa", "chua", "đừng", "chẳng", "chả", "khoan", "đợi", "chờ", "no", "not", "don't", "dont", "never", "wait"]);
 
-/** True when some occurrence of `q` is whole words, in a clause with no negation, and not in a question. */
-function approves(text: string, q: string): boolean {
-  if (q.includes("?")) return false;
+/** An approval clause needs one of these and nothing but these, FILLER, version numbers and the feature's name. */
+const APPROVE = new Set(["duyệt", "ok", "oke", "okay", "okie", "ổn", "đồng", "ý", "được", "chốt", "ship", "push", "approve", "approved", "yes", "lgtm", "go"]);
+const FILLER = new Set(["đi", "nhé", "nha", "luôn", "rồi", "này", "đó", "đấy", "cái", "cho", "mình", "em", "anh", "bạn", "thôi", "vậy", "ạ", "á", "à", "ừ", "vâng", "dạ", "brief", "spec", "plan", "it", "this", "the", "please"]);
+const words = (s: string) => s.split(/[^\p{L}\p{M}\p{N}']+/u).filter(Boolean);
+
+/** The clause around each whole-word occurrence of `q` that is neither negated nor a question. */
+function clausesWith(text: string, q: string): string[] {
+  const out: string[] = [];
+  if (q.includes("?")) return out;
   for (let i = text.indexOf(q); i !== -1; i = text.indexOf(q, i + 1)) {
     const end = i + q.length;
     if (WORD.test(text[i - 1] ?? "") || WORD.test(text[end] ?? "")) continue;
@@ -1105,34 +1184,51 @@ function approves(text: string, q: string): boolean {
     let stop = end;
     while (stop < text.length && !CLAUSE_BREAK.test(text[stop]!)) stop += 1;
     if (text[stop] === "?") continue;
-    if (text.slice(start, stop).split(/[^\p{L}\p{M}\p{N}']+/u).some((w) => NEGATIONS.has(w))) continue;
-    return true;
+    const clause = text.slice(start, stop);
+    if (words(clause).some((w) => NEGATIONS.has(w))) continue;
+    out.push(clause);
   }
-  return false;
+  return out;
 }
 
-/** The human's newest message that contains the quote decides, so "duyệt" followed by "khoan, chưa duyệt" approves nothing. */
-export function findHumanQuote(messages: readonly SlpEvent[], opts: { agentId: string; quote: string; after: string }): QuoteResult {
+const saysYes = (clause: string, extra: ReadonlySet<string>): boolean => {
+  const ws = words(clause);
+  return ws.some((w) => APPROVE.has(w)) && ws.every((w) => APPROVE.has(w) || FILLER.has(w) || extra.has(w) || /^v?\d+$/.test(w));
+};
+
+/**
+ * The human's latest message after the item decides, so a later "khoan, chưa duyệt" or "wait, stop" overrides an earlier "duyệt".
+ * The quote must sit in it as whole words, in a clause with no negation and no question mark. With `affirm` (approvals) that
+ * clause must say yes and nothing else, so "explain the risks" or "ok để mình nghĩ thêm" approve nothing (review 2026-10-22).
+ */
+export function findHumanQuote(messages: readonly SlpEvent[], opts: { agentId: string; quote: string; after: string; affirm?: boolean; extraWords?: string[] }): QuoteResult {
   const q = norm(opts.quote);
   if (q.length < 2) return { ok: false, reason: "quote too short" };
   const after = Date.parse(opts.after);
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const e = messages[i]!;
-    if (e.kind !== "human_message" || e.data.agentId !== opts.agentId) continue;
-    if (Date.parse(e.ts) <= after) continue;
-    const text = norm(String(e.data.text ?? ""));
-    if (!text.includes(q)) continue;
-    if (approves(text, q)) return { ok: true, seq: e.seq };
-    return { ok: false, reason: "in the human's latest message with that quote, it is part of a word, negated, or a question; ask the human to confirm plainly" };
+  const latest = [...messages].reverse().find((e) => e.kind === "human_message" && e.data.agentId === opts.agentId && Date.parse(e.ts) > after);
+  if (!latest) return { ok: false, reason: "no message from the human after the item under approval" };
+  const text = norm(String(latest.data.text ?? ""));
+  if (!text.includes(q)) return { ok: false, reason: "the human's latest message does not contain that quote; quote their latest answer, or ask them to confirm plainly" };
+  const clauses = clausesWith(text, q);
+  const extra = new Set((opts.extraWords ?? []).flatMap((w) => words(norm(w))));
+  if (!clauses.length || (opts.affirm && !clauses.some((c) => saysYes(c, extra)))) {
+    return { ok: false, reason: "in the human's latest message that quote is part of a word, negated, a question, or more than a plain yes; ask them to confirm plainly, e.g. \"duyệt\"" };
   }
-  return { ok: false, reason: "no message from the human after the item under approval contains that quote" };
+  return { ok: true, seq: latest.seq, messageId: String(latest.data.messageId ?? latest.seq) };
 }
 
-export function verifyShipApproval(featureEvents: readonly SlpEvent[], messages: readonly SlpEvent[], opts: { agentId: string; quote: string; commit: string }): QuoteResult {
+/** One human message backs one decision; the same decision on the same target may be recorded again (a retried ship). */
+export function messageUsed(featureEvents: readonly SlpEvent[], messageId: string, decides: string, target: string): boolean {
+  return featureEvents.some((e) => e.kind === "human_decision" && e.data.messageId === messageId && !(e.data.decides === decides && e.data.target === target));
+}
+
+export function verifyShipApproval(featureEvents: readonly SlpEvent[], messages: readonly SlpEvent[], opts: { agentId: string; quote: string; commit: string; extraWords?: string[] }): QuoteResult {
   const pkg = [...featureEvents].reverse().find((e) => e.kind === "ship_package");
   if (!pkg) return { ok: false, reason: "no ship package" };
   if (pkg.data.commit !== opts.commit) return { ok: false, reason: `commit ${opts.commit} is not the latest ship package (${String(pkg.data.commit)})` };
-  return findHumanQuote(messages, { agentId: opts.agentId, quote: opts.quote, after: pkg.ts });
+  const q = findHumanQuote(messages, { agentId: opts.agentId, quote: opts.quote, after: pkg.ts, affirm: true, extraWords: opts.extraWords });
+  if (q.ok && messageUsed(featureEvents, q.messageId, "approve_ship", opts.commit)) return { ok: false, reason: "that message already backs another decision; ask the human about the ship separately" };
+  return q;
 }
 ```
 
@@ -1161,9 +1257,9 @@ git commit -m "feat(plugin): authority matrix and human quote verification"
 - Produces: `PlanIssue { severity: "error"|"warning"; code: string; message: string; task?: string }`, `checkPlan(tasks, ctx: { premises: Map<string, PremiseState>; others: Array<{ slug: string; touchSet: string[] }>; modelsAllowed: string[]; heldBy?: Map<string, string> }): PlanIssue[]`, `touchOverlaps(a: string, b: string): boolean`
 - Produces: `contractsOf(tasks): string[]`, `contractQueues(projectEvents): Map<string, string[]>`, `holderOf(queues, contract): string | null`
 
-Mã lỗi (`code`) cố định: `duplicate_task`, `empty_verify`, `unknown_dependency`, `forward_dependency`, `superseded_dependency`, `unverified_hypothesis`, `verifies_unknown`, `model_not_allowed`, `contract_held`, `touch_set_overlap` (cảnh báo).
+Mã lỗi (`code`) cố định: `duplicate_task`, `empty_verify`, `unknown_dependency`, `forward_dependency`, `superseded_dependency`, `unverified_hypothesis`, `verifies_unknown`, `model_not_allowed`, `contract_held`, `contract_cycle`, `touch_set_overlap` (cảnh báo).
 
-**Contract chung** (spec §6.4). Touch set ghi contract chung dạng `contract:<tên>`. `project.jsonl` giữ hàng chờ cho từng contract: `contract_claim { contract, feature }` thêm feature vào cuối hàng (lúc duyệt plan, T17), `contract_release` rút feature ra (lúc ship, dừng, hoặc plan mới bỏ contract đó). Feature đứng đầu hàng là feature giữ contract. `heldBy` của `checkPlan` chỉ gồm contract đang do feature **khác** giữ; task chạm một contract như vậy phải có `waitsOn` chứa feature giữ, không thì lỗi `contract_held`. Task chỉ được spawn khi feature của nó đứng đầu hàng (T18). Thứ tự task trong danh sách chính là thứ tự chạy, nên chỉ được phụ thuộc vào task đứng trước; nhờ vậy plan không thể có vòng phụ thuộc.
+**Contract chung** (spec §6.4). Touch set ghi contract chung dạng `contract:<tên>`. `project.jsonl` giữ hàng chờ cho từng contract: `contract_claim { contract, feature }` thêm feature vào cuối hàng (lúc duyệt plan, T17), `contract_release` rút feature ra (lúc ship, dừng, hoặc plan mới bỏ contract đó). Feature đứng đầu hàng là feature giữ contract. `heldBy` của `checkPlan` chỉ gồm contract đang do feature **khác** giữ; task chạm một contract như vậy phải có `waitsOn` chứa feature giữ, không thì lỗi `contract_held`. Task chỉ được spawn khi feature của nó đứng đầu hàng (T18); không có trong hàng thì không được coi là giữ (sau crash giữa duyệt plan và claim, spawn claim lại). `waits` cho biết các feature khác đang chờ ai; `waitsOn` khép thành vòng (A chờ B, B chờ A) là lỗi `contract_cycle`, vì không feature nào ship để nhả contract được. Thứ tự task trong danh sách chính là thứ tự chạy, nên chỉ được phụ thuộc vào task đứng trước; nhờ vậy plan không thể có vòng phụ thuộc.
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -1208,6 +1304,12 @@ describe("checkPlan", () => {
     expect(run([t("T1", { touchSet: ["contract:auth-api"] })])).toEqual(["contract_held:T1"]);
     expect(run([t("T1", { touchSet: ["contract:auth-api"], waitsOn: ["login"] })])).toEqual([]);
     expect(run([t("T1", { touchSet: ["contract:billing"] })])).toEqual([]);
+  });
+  it("rejects waits that close a loop between features", () => {
+    const run = (waits: Map<string, string[]>) => checkPlan([t("T1", { touchSet: ["contract:x"], waitsOn: ["login"] })], { premises, others: [], modelsAllowed: [], heldBy: new Map([["contract:x", "login"]]), feature: "cache", waits }).map((i) => i.code);
+    expect(run(new Map([["login", ["cache"]]]))).toEqual(["contract_cycle"]);
+    expect(run(new Map([["login", ["billing"]], ["billing", ["cache"]]]))).toEqual(["contract_cycle"]);
+    expect(run(new Map([["login", []]]))).toEqual([]);
   });
 });
 
@@ -1278,7 +1380,7 @@ export function contractQueues(events: readonly SlpEvent[]): Map<string, string[
 
 export const holderOf = (queues: Map<string, string[]>, contract: string): string | null => queues.get(contract)?.[0] ?? null;
 
-export function checkPlan(tasks: PlanTask[], ctx: { premises: Map<string, PremiseState>; others: Array<{ slug: string; touchSet: string[] }>; modelsAllowed: string[]; heldBy?: Map<string, string> }): PlanIssue[] {
+export function checkPlan(tasks: PlanTask[], ctx: { premises: Map<string, PremiseState>; others: Array<{ slug: string; touchSet: string[] }>; modelsAllowed: string[]; heldBy?: Map<string, string>; feature?: string; waits?: Map<string, string[]> }): PlanIssue[] {
   const issues: PlanIssue[] = [];
   const err = (code: string, task: string, message: string) => issues.push({ severity: "error", code, task, message });
   const seen = new Set<string>();
@@ -1315,6 +1417,16 @@ export function checkPlan(tasks: PlanTask[], ctx: { premises: Map<string, Premis
       if (hits.length) issues.push({ severity: "warning", code: "touch_set_overlap", task: t.id, message: `${t.id} touches ${hits.join(", ")}, also in feature ${other.slug}` });
     }
     seen.add(t.id);
+  }
+  // A waits on B while B (directly or through others) waits on A: neither can ship and release its contract (review Codex 2026-10-22).
+  if (ctx.feature && ctx.waits) {
+    const reaches = (from: string, seen = new Set<string>()): boolean => {
+      if (from === ctx.feature) return true;
+      if (seen.has(from)) return false;
+      seen.add(from);
+      return (ctx.waits!.get(from) ?? []).some((next) => reaches(next, seen));
+    };
+    for (const t of tasks) for (const w of t.waitsOn ?? []) if (reaches(w)) err("contract_cycle", t.id, `${t.id} waits on ${w}, which already waits on ${ctx.feature}; neither can finish. Ask the human which feature goes first.`);
   }
   return issues;
 }
@@ -1612,9 +1724,9 @@ export class IdentityRegistry {
     return [...this.items].reverse().find((i) => i.role === role && i.project === project && i.feature === feature && (task === null || i.task === task) && !i.retiredAt && i.agentId) ?? null;
   }
 
-  /** The newest identity of a role in a feature, retired or not: a Lead that died restarts in its old workspace. */
-  last(role: Role, project: string, feature: string | null): Identity | null {
-    return [...this.items].reverse().find((i) => i.role === role && i.project === project && i.feature === feature) ?? null;
+  /** The newest identity of a role in a feature (and task), retired or not: a Lead or Peer that died restarts in its old workspace. */
+  last(role: Role, project: string, feature: string | null, task?: string): Identity | null {
+    return [...this.items].reverse().find((i) => i.role === role && i.project === project && i.feature === feature && (task === undefined || i.task === task)) ?? null;
   }
 
   active(project: string): Identity[] {
@@ -1843,12 +1955,14 @@ git commit -m "feat(plugin): role-filtered MCP server over HTTP"
 - Test: `plugin/test/git.test.ts`
 
 **Interfaces:**
-- Produces: `trustRepo(repo): void`, `class UntrustedGitDirError`, `git(cwd, args, allowFail?): { code; stdout; stderr }`, `headOf(cwd)`, `currentBranch(cwd)`, `gitCommonDir(cwd)`, `isAncestor(cwd, a, b)`, `deleteBranch(repo, branch)`, `changedFiles(worktree): string[]`, `trackedChanges(worktree): string[]`, `isSensitivePath(p): boolean`, `hooksDir(cwd): string | null`, `isProtectedPath(p, hookDir): boolean`, `class NoChangesError`, `commitAll(worktree, { message; trailers; exclude }): string`, `commitTrailer(cwd, rev, key): string | null`, `mergeNoHooks(worktree, ref, message): { ok: true; hash } | { ok: false; conflicts: string[] }`, `startMerge(worktree, ref): string[]`, `pushNoHooks(worktree, remote, branch)`, `filesOutside(files, touchSet): string[]`, `hookFile(worktree, name): string | null`, `diffStat(cwd, from, to): string`
+- Produces: `trustRepo(repo): void`, `class UntrustedGitDirError`, `git(cwd, args, allowFail?): { code; stdout; stderr }`, `headOf(cwd)`, `currentBranch(cwd)`, `gitCommonDir(cwd)`, `isAncestor(cwd, a, b)`, `deleteBranch(repo, branch)`, `changedFiles(worktree): string[]`, `trackedChanges(worktree): string[]`, `isSensitivePath(p): boolean`, `hooksDir(cwd): string | null`, `isProtectedPath(p, hookDir): boolean`, `worktreeCreateRisks(cwd, ref): string[]`, `scrubProtected(worktree): string[]`, `class NoChangesError`, `commitAll(worktree, { message; trailers; exclude }): string`, `commitTrailer(cwd, rev, key): string | null`, `mergeNoHooks(worktree, ref, message): { ok: true; hash } | { ok: false; conflicts: string[] }`, `startMerge(worktree, ref): string[]`, `pushNoHooks(worktree, remote, branch)`, `filesOutside(files, touchSet): string[]`, `hookFile(worktree, name): string | null`, `diffStat(cwd, from, to): string`
 
 Ba lớp chặn code của repo chạy ngoài sandbox qua git (review B2):
 - Mọi lệnh git của plugin có `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, không riêng commit/merge/push.
 - Plugin không tin file `<worktree>/.git`, vì file này nằm trong cwd của Peer và Peer ghi được. `git()` tự tìm admin dir bằng cách đọc ngược `<common dir>/worktrees/*/gitdir` của repo đã đăng ký qua `trustRepo`; common dir nằm ngoài sandbox của mọi vai. Sau đó chạy với `--git-dir` và `--work-tree` cố định. Thư mục không thuộc repo nào đã đăng ký thì `git()` ném `UntrustedGitDirError`, tức là fail closed.
-- Paseo tự chạy `git worktree add` (có hook `post-checkout`) và lệnh `worktree.setup` trong `paseo.json` khi tạo worktree mới, ngoài sandbox. Vì vậy plugin không bao giờ commit thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath` của repo) hay ở `paseo.json`. Các file này bị loại khỏi commit như file nhạy cảm và được báo cho Lead. Nhờ vậy nội dung mà Paseo chạy khi tạo worktree luôn là nội dung anh đã merge.
+- Paseo tự chạy `git worktree add` (có hook `post-checkout`) và lệnh `worktree.setup` trong `paseo.json` khi tạo worktree mới, ngoài sandbox. Vì vậy plugin không bao giờ commit thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath` của repo) hay ở `paseo.json`. Các file này bị loại khỏi commit như file nhạy cảm và được báo cho Lead.
+- Chừng đó chưa đủ (review Codex 2026-10-22, CRITICAL): lệnh setup gọi file khác của repo (`node scripts/setup.js`, `npm ci` chạy script `postinstall` của `package.json`), và Peer sửa được các file đó. Vì vậy `worktreeCreateRisks(cwd, ref)` tìm mọi thứ Paseo sẽ chạy: `worktree.setup`, `worktree.teardown`, `worktree.terminals` trong `paseo.json` (ở `ref` và ở thư mục nguồn), file `post-checkout` có version ở thư mục hook, và hook `post-checkout` cục bộ trong `.git/hooks`. Có bất kỳ cái nào thì plugin **không tạo worktree** cho agent SLP (fail closed, báo rõ lý do). Cài dependency là việc của Peer trong sandbox, hoặc nằm trong lệnh verify. Shim của husky 9 (`.husky/_/`) chỉ gọi `.husky/post-checkout`, nên chỉ file đó được tính.
+- Trước khi archive workspace của agent, `scrubProtected(worktree)` trả `paseo.json` và thư mục hook về HEAD, xoá bản mới chưa track. Lý do: Paseo có thể chạy `teardown` từ worktree đang bị xoá, và agent ghi được vào đó (T21 kiểm Paseo đọc `teardown` từ đâu).
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -1857,7 +1971,7 @@ Ba lớp chặn code của repo chạy ngoài sandbox qua git (review B2):
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, NoChangesError, startMerge, trackedChanges, trustRepo, UntrustedGitDirError } from "../server/git";
+import { changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, NoChangesError, scrubProtected, startMerge, trackedChanges, trustRepo, UntrustedGitDirError, worktreeCreateRisks } from "../server/git";
 import { initRepo, sh, tmpDir } from "./helpers";
 
 function withHusky(repo: string, marker: string): void {
@@ -1944,6 +2058,28 @@ describe("git helpers", () => {
     expect(hookFile(repo(), "pre-commit")).toBeNull();
     expect(git(r, ["config", "--get", "core.fsmonitor"], true).code).toBe(0);
   });
+  it("finds repo code Paseo would run outside the sandbox when it creates or archives a worktree", () => {
+    const r = repo();
+    expect(worktreeCreateRisks(r, "main")).toEqual([]);
+    writeFileSync(join(r, "paseo.json"), JSON.stringify({ worktree: { setup: ["npm ci"], teardown: "rm -rf x", terminals: [] } }));
+    mkdirSync(join(r, ".husky")); writeFileSync(join(r, ".husky", "post-checkout"), "#!/bin/sh\n");
+    sh(r, "git", ["add", "."]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "setup"]);
+    expect(worktreeCreateRisks(r, "main")).toEqual(["paseo.json worktree.setup", "paseo.json worktree.teardown", ".husky/post-checkout"]);
+    const plain = repo();
+    writeFileSync(join(plain, ".git", "hooks", "post-checkout"), "#!/bin/sh\n");
+    expect(worktreeCreateRisks(plain, "main")).toEqual([".git/hooks/post-checkout"]);
+  });
+  it("resets paseo.json and hook dirs in a worktree before it is archived", () => {
+    const r = repo(); writeFileSync(join(r, "paseo.json"), "{}\n"); sh(r, "git", ["add", "."]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "cfg"]);
+    const wt = worktree(r, "slp/f/T3-1");
+    writeFileSync(join(wt, "paseo.json"), JSON.stringify({ worktree: { teardown: "curl evil" } }));
+    mkdirSync(join(wt, ".githooks")); writeFileSync(join(wt, ".githooks", "post-checkout"), "x");
+    writeFileSync(join(wt, "src.ts"), "keep me");
+    expect(scrubProtected(wt).sort()).toEqual([".githooks/post-checkout", "paseo.json"]);
+    expect(sh(wt, "cat", ["paseo.json"])).toBe("{}");
+    expect(existsSync(join(wt, ".githooks", "post-checkout"))).toBe(false);
+    expect(existsSync(join(wt, "src.ts"))).toBe(true);
+  });
 });
 ```
 
@@ -1957,7 +2093,7 @@ Expected: FAIL, "Cannot find module".
 `plugin/server/git.ts`:
 ```ts
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { matchTouch } from "./touch";
 
@@ -2041,6 +2177,39 @@ export function hooksDir(cwd: string): string | null {
 export function isProtectedPath(p: string, hookDir: string | null): boolean {
   if (p === "paseo.json") return true;
   return [".husky", ".githooks", ...(hookDir ? [hookDir] : [])].some((d) => p.startsWith(`${d}/`));
+}
+
+/** Repo code Paseo would run outside every sandbox when it creates or archives a worktree off `ref` from `cwd`. Non-empty: SLP refuses. */
+export function worktreeCreateRisks(cwd: string, ref: string): string[] {
+  const out: string[] = [];
+  const local = join(cwd, "paseo.json");
+  for (const text of [git(cwd, ["show", `${ref}:paseo.json`], true).stdout, existsSync(local) ? readFileSync(local, "utf8") : ""]) {
+    if (!text.trim()) continue;
+    let wt: Record<string, unknown> = {};
+    try { wt = (JSON.parse(text) as { worktree?: Record<string, unknown> }).worktree ?? {}; } catch { out.push("paseo.json is not valid JSON"); continue; }
+    for (const key of ["setup", "teardown", "terminals"]) {
+      const v = wt[key];
+      if (v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0)) out.push(`paseo.json worktree.${key}`);
+    }
+  }
+  const hookDir = hooksDir(cwd);
+  for (const f of new Set([".husky/post-checkout", ".githooks/post-checkout", ...(hookDir && !hookDir.startsWith(".husky/_") ? [`${hookDir}/post-checkout`] : [])])) {
+    if (git(cwd, ["cat-file", "-e", `${ref}:${f}`], true).code === 0) out.push(f);
+  }
+  if (!hookDir && existsSync(join(gitCommonDir(cwd), "hooks", "post-checkout"))) out.push(".git/hooks/post-checkout");
+  return [...new Set(out)];
+}
+
+/** Before Paseo archives a worktree: paseo.json and hook dirs go back to HEAD, new ones are deleted. Returns what it reset. */
+export function scrubProtected(worktree: string): string[] {
+  const hookDir = hooksDir(worktree);
+  const dirty = changedFiles(worktree).filter((f) => isProtectedPath(f, hookDir));
+  if (!dirty.length) return [];
+  const tracked = new Set(git(worktree, ["ls-files", "--", ...dirty], true).stdout.split("\n").filter(Boolean));
+  const restore = dirty.filter((f) => tracked.has(f));
+  if (restore.length) git(worktree, ["checkout", "--", ...restore], true);
+  for (const f of dirty.filter((x) => !tracked.has(x))) rmSync(join(worktree, f), { force: true, recursive: true });
+  return dirty;
 }
 
 export class NoChangesError extends Error {}
@@ -2252,6 +2421,7 @@ Các quyết định của pipeline:
 - Chỉ chạy khi turn của Peer đã kết thúc (hook ở T20 gọi, tuần tự theo agent), nên Peer không còn đang ghi file dở.
 - Chống chạy hai lần theo `report.seq`: nếu đã có `commit` hoặc `ops` loại `report_rejected`/`report_blocked` mang cùng `reportSeq`, trả lại kết quả cũ. Nếu commit đã có mà chưa có `evidence` cho commit đó (lần trước runner hỏng), chạy verify lại.
 - Hook `pre-commit` của repo, nếu có, chạy **trong sandbox** trước lệnh verify, trên cây file đã commit.
+- **Evidence phải khớp commit** (review Codex 2026-10-22): sau khi chạy, nếu file tracked đổi hoặc HEAD di chuyển (formatter trong hook, test ghi đè fixture, Peer bắt đầu turn mới giữa chừng), evidence ghi `dirty` và không xanh. Ở worktree Lead (scope `feature`), plugin trả file tracked về như cũ. Cách mạnh hơn là checkout riêng cho mỗi lần verify; v1 không làm vì tốn cài dependency mỗi lần, và reviewer đã chạy test trên worktree sạch của đúng commit.
 - **Report `blocked` không đổi file không bị từ chối** (report human attention 2026-10-22): plugin ghi `ops report_blocked` và trả `{ outcome: "blocked" }`; hook ở T20 chuyển cho Lead. Trước đây nó thành "no changes in worktree" và chỉ Peer được bảo "fix it", nên Peer kẹt vòng và Lead không biết.
 - File nhạy cảm (`.env*`, khoá) và file được bảo vệ (hook, `paseo.json`, xem T9) không bao giờ vào commit; Lead được báo qua `flags`.
 - **Runner hỏng không phải lỗi của Peer** (review M6). Trước mỗi lần verify, plugin chạy `true` qua runner. Lệnh đó fail thì ghi `ops runner_failed`, không ghi `evidence`, và trả về `runnerError`. Hook ở T20 báo Supervisor, không nhắn Peer. Task không thể accepted vì thiếu evidence, tức là fail closed.
@@ -2316,6 +2486,12 @@ describe("processReport", () => {
     expect(await processReport(s.deps, s.task, s.report)).toEqual({ outcome: "rejected", reason: "only sensitive or protected files changed: .env" });
     s = setup({ limits: { maxCommitFiles: 2 } }); for (const f of ["a", "b", "c"]) writeFileSync(join(s.repo, f), f);
     expect(await processReport(s.deps, s.task, s.report)).toMatchObject({ outcome: "rejected", reason: expect.stringMatching(/3 files changed \(limit 2\)/) });
+  });
+  it("does not count a verify that changes tracked files as evidence for the commit", async () => {
+    const { repo, store, deps, task, report } = setup();
+    writeFileSync(join(repo, "src.ts"), "x");
+    expect(await processReport(deps, { ...task, verify: "printf y > src.ts" }, report)).toMatchObject({ outcome: "committed", evidenceOk: false });
+    expect(store.all().find((e) => e.kind === "evidence")!.data).toMatchObject({ exitCode: 0, dirty: ["src.ts"] });
   });
   it("records a blocked report with no changes for the Lead instead of rejecting it, once", async () => {
     const { store, deps, task } = setup();
@@ -2400,9 +2576,9 @@ Expected: FAIL, "Cannot find module".
 `plugin/server/evidence.ts`:
 ```ts
 import type { ProjectConfig, SlpConfig } from "./config";
-import { changedFiles, commitAll, commitTrailer, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, NoChangesError } from "./git";
+import { changedFiles, commitAll, commitTrailer, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, NoChangesError, trackedChanges } from "./git";
 import type { RunFn, SandboxResult } from "./sandbox";
-import type { TaskState } from "./store/derive";
+import { evidencePassed, type TaskState } from "./store/derive";
 import type { EventStore, SlpEvent } from "./store/events";
 
 export interface PipelineDeps { store: EventStore; config: SlpConfig; project: ProjectConfig; run: RunFn; now(): Date }
@@ -2416,20 +2592,27 @@ const shQuote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
 
 function evidenceOkFor(store: EventStore, commit: string): boolean | null {
   const ev = [...store.all()].reverse().find((e) => e.kind === "evidence" && e.data.scope === "task" && e.data.commit === commit);
-  return ev ? ev.data.exitCode === 0 && ev.data.timedOut !== true : null;
+  return ev ? evidencePassed(ev.data) : null;
 }
 
-/** Probes the runner first, so a broken runner is reported as infrastructure, never as a failing test. */
-async function runEvidence(deps: PipelineDeps, feature: string | null, worktree: string, command: string, data: Record<string, unknown>): Promise<SandboxResult | { runnerError: string }> {
+/**
+ * Probes the runner first, so a broken runner is reported as infrastructure, never as a failing test.
+ * Afterwards `dirty` lists tracked files the run changed (and "HEAD moved"): such a run proves nothing about the commit (review Codex 2026-10-22).
+ * In the Lead worktree, which no agent may write, tracked files are put back so later merges and verifies start clean.
+ */
+async function runEvidence(deps: PipelineDeps, feature: string | null, worktree: string, command: string, data: Record<string, unknown>): Promise<(SandboxResult & { dirty: string[] }) | { runnerError: string }> {
   const probe = await deps.run(deps.config.sandbox.runner, worktree, "true", 60);
   if (probe.exitCode !== 0) {
     const runnerError = `sandbox runner failed (exit ${probe.exitCode}): ${probe.stderrTail.trim().slice(-300)}`;
     deps.store.append({ feature, kind: "ops", by_role: "plugin", by_agent: null, data: { ...data, type: "runner_failed", error: runnerError, summary: `sandbox runner broken: ${runnerError.slice(0, 160)}` } }, deps.now());
     return { runnerError };
   }
+  const head = headOf(worktree);
   const r = await deps.run(deps.config.sandbox.runner, worktree, command, deps.config.limits.verifyTimeoutSeconds);
-  deps.store.append({ feature, kind: "evidence", by_role: "plugin", by_agent: null, data: { ...data, command, exitCode: r.exitCode, timedOut: r.timedOut, durationMs: r.durationMs, stdoutTail: r.stdoutTail, stderrTail: r.stderrTail } }, deps.now());
-  return r;
+  const dirty = [...trackedChanges(worktree), ...(headOf(worktree) !== head ? ["HEAD moved"] : [])];
+  if (dirty.length && data.scope === "feature") git(worktree, ["checkout", "--", "."], true);
+  deps.store.append({ feature, kind: "evidence", by_role: "plugin", by_agent: null, data: { ...data, command, exitCode: r.exitCode, timedOut: r.timedOut, durationMs: r.durationMs, stdoutTail: r.stdoutTail, stderrTail: r.stderrTail, dirty } }, deps.now());
+  return { ...r, dirty };
 }
 
 async function verifyTask(deps: PipelineDeps, feature: string | null, worktree: string, task: TaskState, hash: string, flags: CommitFlags, recovered: boolean): Promise<ReportOutcome> {
@@ -2439,7 +2622,7 @@ async function verifyTask(deps: PipelineDeps, feature: string | null, worktree: 
   const command = hook ? `${shQuote(hook)} && ${task.verify}` : task.verify;
   const r = await runEvidence(deps, feature, worktree, command, { scope: "task", task: task.id, commit: hash });
   if ("runnerError" in r) return { ...base, evidenceOk: null, runnerError: r.runnerError };
-  return { ...base, evidenceOk: r.exitCode === 0 && !r.timedOut };
+  return { ...base, evidenceOk: r.exitCode === 0 && !r.timedOut && r.dirty.length === 0 };
 }
 
 /** A commit the plugin made but never recorded (crash between commit and append). */
@@ -2531,7 +2714,7 @@ export async function verifyFeature(deps: PipelineDeps, feature: string, leadWor
   const commit = headOf(leadWorktree);
   const r = await runEvidence(deps, feature, leadWorktree, deps.project.verify.join(" && "), { scope: "feature", commit });
   if ("runnerError" in r) return { commit, ok: false, stderrTail: "", runnerError: r.runnerError };
-  return { commit, ok: r.exitCode === 0 && !r.timedOut, stderrTail: r.stderrTail };
+  return { commit, ok: r.exitCode === 0 && !r.timedOut && r.dirty.length === 0, stderrTail: r.dirty.length ? `verify changed tracked files: ${r.dirty.join(", ")}\n${r.stderrTail}` : r.stderrTail };
 }
 ```
 
@@ -2895,7 +3078,7 @@ git commit -m "feat(plugin): persisted router with grouped idle delivery, scoped
 
 **Interfaces:**
 - Consumes: `Vendor` (T1), `readJson`/`writeJson` (T12)
-- Produces: `isLimitTurn(outcome: { kind: string; error?: { message: string } }, lastAssistantText: string | null): boolean`, `UsageWindow { vendor; resetsAt: string | null; usedPct: number | null }`, `usageWindowsFrom(result: unknown): UsageWindow[]`, `resumeAt(windows, vendor, now, attempt): Date`, `ResumeJob { agentId; vendor; at; attempt }`, `class ResumeQueue { schedule(job); due(now): ResumeJob[]; clear(agentId); attemptOf(agentId): number; jobs() }`, `class NudgeTracker { shouldNudge(agentId, max): boolean; reset(agentId) }`
+- Produces: `isLimitTurn(outcome: { kind: string; error?: { message: string } }, lastAssistantText: string | null): boolean`, `UsageWindow { vendor; resetsAt: string | null; usedPct: number | null }`, `usageWindowsFrom(result: unknown): UsageWindow[]`, `resumeAt(windows, vendor, now, attempt): Date`, `ResumeJob { agentId; vendor; at; attempt }`, `class ResumeQueue { schedule(job); due(now): ResumeJob[]; done(agentId); clear(agentId); attemptOf(agentId): number; jobs() }`, `class NudgeTracker { shouldNudge(agentId, max): boolean; reset(agentId) }`
 
 `usageWindowsFrom` đọc payload của `paseo.providers.listUsage()`: `{ requestId, fetchedAt, providers: [{ providerId, displayName, status, windows: [{ id, label, usedPct?, resetsAt? }] }] }` (`ProviderUsageListResponseMessageSchema`, protocol `messages.ts:6237-6294`). Vendor suy từ `providerId`/`displayName`; giá trị `providerId` thật được ghi lại ở T21.
 
@@ -2967,6 +3150,8 @@ describe("persisted queues", () => {
     const q = new ResumeQueue(file);
     expect(q.attemptOf("b")).toBe(2);
     expect(q.due(new Date("2026-10-22T18:30:00Z")).map((j) => j.agentId)).toEqual(["a"]);
+    expect(new ResumeQueue(file).jobs().map((j) => j.agentId)).toEqual(["a", "b"]);
+    q.done("a");
     expect(new ResumeQueue(file).jobs().map((j) => j.agentId)).toEqual(["b"]);
     expect(new ResumeQueue(file).attemptOf("a")).toBe(1);
     q.clear("a"); q.clear("b");
@@ -3047,10 +3232,15 @@ export class ResumeQueue {
     this.save();
   }
   attemptOf(agentId: string): number { return this.state.attempts[agentId] ?? 0; }
+  /** Due jobs stay queued until `done`: a crash or a failed send never loses a resume (review Codex 2026-10-22). */
   due(now: Date): ResumeJob[] {
-    const due = this.state.jobs.filter((j) => Date.parse(j.at) <= now.getTime());
-    if (due.length) { this.state.jobs = this.state.jobs.filter((j) => !due.includes(j)); this.save(); }
-    return due;
+    return this.state.jobs.filter((j) => Date.parse(j.at) <= now.getTime());
+  }
+  /** The resume was delivered: drop the job, keep the attempt count. */
+  done(agentId: string): void {
+    if (!this.state.jobs.some((j) => j.agentId === agentId)) return;
+    this.state.jobs = this.state.jobs.filter((j) => j.agentId !== agentId);
+    this.save();
   }
   clear(agentId: string): void {
     if (!this.state.jobs.some((j) => j.agentId === agentId) && !(agentId in this.state.attempts)) return;
@@ -3099,23 +3289,24 @@ git commit -m "feat(plugin): limit detection, usage-based resume times, persiste
 
 **Interfaces:**
 - Consumes: `Identity` (T7)
-- Produces: `PermissionLike { id: string; name?: string; kind?: string; title?: string; description?: string; input?: Record<string, unknown>; detail?: { type?: string; command?: string } }`, `PermissionDecision = { action: "allow" } | { action: "deny"; message: string } | { action: "defer"; reason: string } | { action: "ignore" }`, `PermissionOptions { deniedRoots: string[]; realpath?: (p: string) => string }`, `decidePermission(req, ident: Identity | null, opts?: PermissionOptions): PermissionDecision`
+- Produces: `PermissionLike { id: string; name?: string; kind?: string; title?: string; description?: string; input?: Record<string, unknown>; detail?: { type?: string; command?: string } }`, `PermissionDecision = { action: "allow" } | { action: "deny"; message: string } | { action: "defer"; reason: string } | { action: "ignore" }`, `PermissionOptions { deniedRoots: string[]; realpath?: (p: string) => string }`, `decidePermission(req, ident: Identity | null, opts?: PermissionOptions): PermissionDecision`, `paseoStatePaths(paseoHome: string): string[]`
 
 Tool `slp_*` không đi qua đây: `toolPolicy.preapproved` ở T16 cho phép sẵn (Claude: `allowedTools`; Codex: `approval_mode: "approve"`). `defer` nghĩa là plugin không quyết: request vẫn chờ trong app cho anh, như Paseo vốn làm (không còn `slp_permit`).
 
 Hai chặn mới so với spike:
 - `Write`/`Edit` vào `<worktree>/.git` bị từ chối, vì file này trỏ git tới admin dir. Paseo tự chạy git trong mọi workspace, ngoài sandbox (review B2).
-- Mọi tool có đường dẫn trong `deniedRoots` (`~/.slp`, `~/.paseo`) bị từ chối. Paseo lưu header MCP, tức token của mọi agent, trong agent storage dưới `~/.paseo` (`agent-storage.ts:30`). `WebFetch` tới localhost cũng bị từ chối (review M1).
+- Mọi tool có đường dẫn trong `deniedRoots` bị từ chối. `deniedRoots` là `~/.slp` và **từng mục** trong `~/.paseo` trừ `worktrees/` (`paseoStatePaths`), không phải cả `~/.paseo`: worktree của chính agent nằm dưới `~/.paseo/worktrees/`, nên chặn cả thư mục cha thì Peer không ghi được vào worktree của mình (review Codex 2026-10-22). Paseo lưu header MCP, tức token của mọi agent, trong agent storage dưới `~/.paseo` (`agent-storage.ts:30`). Danh sách lấy lúc plugin khởi động, cộng thêm các tên đã biết (`agents`, `agent-requests`, `local-credential`, `daemon-keypair.json`, `config.json`, …) để vẫn bị chặn nếu Paseo tạo sau. `WebFetch` tới localhost cũng bị từ chối (review M1).
 
 - [ ] **Step 1: Viết test thất bại**
 
 `plugin/test/permissions.test.ts`:
 ```ts
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Identity } from "../server/identity";
-import { decidePermission } from "../server/permissions";
+import { decidePermission, paseoStatePaths } from "../server/permissions";
 import { tmpDir } from "./helpers";
 
 const ident = (role: Identity["role"], worktree: string | null): Identity =>
@@ -3128,6 +3319,16 @@ describe("decidePermission", () => {
   });
   it("leaves other MCP servers to the human (slp_* tools are preapproved by toolPolicy)", () => {
     expect(decidePermission({ id: "r", name: "CodexMcpElicitation", title: 'Allow the github MCP server to run tool "x"?' }, ident("peer-review", "/w")).action).toBe("defer");
+  });
+  it("denies Paseo state but not the worktrees Paseo keeps under ~/.paseo", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "paseo-home-")));
+    mkdirSync(join(home, "worktrees", "abc"), { recursive: true }); mkdirSync(join(home, "agents")); mkdirSync(join(home, "something-new"));
+    const roots = paseoStatePaths(home);
+    expect(roots).toEqual(expect.arrayContaining([join(home, "agents"), join(home, "local-credential"), join(home, "something-new")]));
+    expect(roots).not.toContain(join(home, "worktrees"));
+    const wt = join(home, "worktrees", "abc");
+    expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, "src.ts") } }, ident("peer-impl", wt), { deniedRoots: roots }).action).not.toBe("deny");
+    expect(decidePermission({ id: "r", name: "Read", input: { file_path: join(home, "agents", "a.json") } }, ident("peer-impl", wt), { deniedRoots: roots }).action).toBe("deny");
   });
   it("denies any tool that touches the SLP or Paseo state dirs, and WebFetch to loopback", () => {
     const opts = { deniedRoots: ["/home/u/.slp", "/home/u/.paseo"], realpath: (p: string) => p };
@@ -3183,13 +3384,22 @@ Expected: FAIL, "Cannot find module".
 
 `plugin/server/permissions.ts`:
 ```ts
-import { realpathSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { Identity } from "./identity";
 
 export interface PermissionLike { id: string; name?: string; kind?: string; title?: string; description?: string; input?: Record<string, unknown>; detail?: { type?: string; command?: string } }
 export type PermissionDecision = { action: "allow" } | { action: "deny"; message: string } | { action: "defer"; reason: string } | { action: "ignore" };
 export interface PermissionOptions { deniedRoots: string[]; realpath?: (p: string) => string }
+
+/** Names Paseo keeps state under, denied even if they appear after the plugin starts. */
+const PASEO_STATE = ["agents", "agent-requests", "local-credential", "daemon-keypair.json", "config.json", "creations", "runtime", "projects", "schedules", "models", "server-id", "cli-client-id", "desktop-attachments", "paseo.pid"];
+
+/** Everything under ~/.paseo except worktrees/: agents work inside ~/.paseo/worktrees, so denying the parent would block their own worktree. */
+export function paseoStatePaths(paseoHome: string): string[] {
+  const present = existsSync(paseoHome) ? readdirSync(paseoHome) : [];
+  return [...new Set([...PASEO_STATE, ...present])].filter((n) => n !== "worktrees").map((n) => join(paseoHome, n));
+}
 const LOOPBACK = /^(localhost|127(\.\d+){3}|\[?::1\]?|0\.0\.0\.0)$/i;
 
 const SHELL = new Set(["Bash", "CodexBash", "shell", "exec_command"]);
@@ -3369,7 +3579,7 @@ You are the human's main point of contact for exactly one feature. Speak Vietnam
 
 ## You own
 - Turning the human's idea into a one-page brief (slp_brief). Interview the human one question at a time first. Your first slp_brief names the feature with a new slug; from then on you belong to that feature. The brief has: goal and why; checkable success criteria; hard constraints already verified (cite the source); hypotheses H#, each with a verify-by measurement that can fail; decisions D#; what the Lead may challenge (default: everything except the goal); budget (wall-clock and tokens); non-goals.
-- Showing each brief and spec version to the human and recording their answer with slp_human_decision, quoting their exact words. You never approve anything on the human's behalf; the plugin rejects quotes the human did not send. Quote the clause where the human approves; a quote inside a negated clause (không, chưa, no, not) or a question is rejected, so ask again plainly. When two items wait on the human at once, ask about each one separately before you record a decision.
+- Showing each brief and spec version to the human and recording their answer with slp_human_decision, quoting their exact words. You never approve anything on the human's behalf; the plugin rejects quotes the human did not send. Quote the clause where the human approves, from their latest message. The plugin accepts an approval only when that clause is a plain yes ("duyệt", "ok ship", "đồng ý"), with no negation and no question, and one message backs only one decision; so when you ask, ask for a plain yes on one item. When two items wait on the human at once, ask about each one separately before you record a decision.
 - Spawning the feature's Lead once the brief is approved (slp_spawn with role "lead").
 - Checking each spec against its brief before showing it to the human: every H# stays a hypothesis, no new constraint lacks a source, nothing goes beyond the non-goals.
 - Approving plans with slp_approve_plan after checking: tasks that verify a hypothesis come before tasks that depend on it; models are allowed; the budget fits. First read the other features' digests (slp_state with all: true) and ask the human when two features change the same module without a shared contract. Shared contracts are written "contract:<name>" in touch sets; the plugin refuses a plan that touches a contract another feature holds unless the task has waitsOn.
@@ -3776,7 +3986,7 @@ git commit -m "feat(plugin): bind roles, sandboxes, tool policy and Paseo-made w
 
 **Interfaces:**
 - Consumes: T1–T16
-- Produces: `AgentRefLike`, `CreateOptions`, `PaseoLike`, `Ctx`, `refreshDigest(ctx, project, feature): string`, `appendAs(ctx, ident, feature, e): SlpEvent`, `routeFrom(ctx, from, to, text, mode?: SendMode): void`, `notify(ctx, to: Address, text): void`, `syncHumanMessages(ctx, ident): Promise<void>`, `humanMessagesFor(ctx, ident): readonly SlpEvent[]`, `leadAddress(project, feature): Address`, `supervisorAddress(project, feature): Address`, `appendPlugin(ctx, project, feature | null, e): SlpEvent`, `requireFeature(ident, feature?): string`, `heldByOthers(ctx, project, feature): Map<string, string>`, `claimContracts(ctx, project, feature, contracts: string[]): void`, `releaseContracts(ctx, project, feature): void`, `featuresTouching(ctx, project, feature, files): Array<{ slug: string; files: string[] }>`
+- Produces: `AgentRefLike`, `CreateOptions`, `PaseoLike`, `Ctx`, `refreshDigest(ctx, project, feature): string`, `appendAs(ctx, ident, feature, e): SlpEvent`, `routeFrom(ctx, from, to, text, mode?: SendMode): void`, `notify(ctx, to: Address, text): void`, `syncHumanMessages(ctx, ident): Promise<void>`, `humanMessagesFor(ctx, ident): readonly SlpEvent[]`, `leadAddress(project, feature): Address`, `supervisorAddress(project, feature): Address`, `appendPlugin(ctx, project, feature | null, e): SlpEvent`, `requireFeature(ident, feature?): string`, `heldByOthers(ctx, project, feature): Map<string, string>`, `waitsOfOthers(ctx, project, feature): Map<string, string[]>`, `claimContracts(ctx, project, feature, contracts: string[]): void`, `releaseContracts(ctx, project, feature): void`, `featuresTouching(ctx, project, feature, files): Array<{ slug: string; files: string[] }>`
 - Produces: `class StoreRegistry { project(p); feature(p, f); featureDir(p, f); features(p); writeDoc(p, f, kind, content): { version; path; sha256 }; readDoc(path); writeDigest(p, f, text); readDigest(p, f); writeReport(p, f, task, content): string; file(p, name): string }`
 - Produces (test): `FakePaseo` (tạo worktree thật khi có `worktree`, chạy `beforeCreate` như hook của Paseo, và áp luật "con có `parent` mà không có workspace thì chạy ở cwd của cha"), `makeCtx`, `bound(ctx, meta & { worktree? }, agentId)`, `humanSays(paseo, agentId)`
 - Produces: `decisionTools(ctx): ToolDef[]` (gồm: `slp_state`, `slp_brief`, `slp_human_decision`, `slp_spec`, `slp_plan`, `slp_approve_plan`, `slp_rule`, `slp_confirm`, `slp_challenge`, `slp_resolve`, `slp_ask`, `slp_answer`, `slp_send`)
@@ -3950,6 +4160,19 @@ export function notify(ctx: Ctx, to: Address, text: string): void {
 }
 
 /** Contracts that a feature other than `feature` holds, with their holder. */
+/** For every other running feature: the features its unfinished tasks wait on. */
+export function waitsOfOthers(ctx: Ctx, project: string, feature: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const slug of ctx.stores.features(project)) {
+    if (slug === feature) continue;
+    const events = ctx.stores.feature(project, slug).all();
+    const st = deriveFeature(slug, events);
+    if (st.halted || events.some((e) => e.kind === "shipped")) continue;
+    out.set(slug, [...new Set([...st.tasks.values()].filter((t) => t.status !== "accepted" && t.status !== "dropped").flatMap((t) => t.waitsOn ?? []))]);
+  }
+  return out;
+}
+
 export function heldByOthers(ctx: Ctx, project: string, feature: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const [contract, queue] of contractQueues(ctx.stores.project(project).all())) if (queue[0] && queue[0] !== feature) out.set(contract, queue[0]);
@@ -4048,6 +4271,7 @@ export class FakePaseo implements PaseoLike {
   sent: Array<{ agentId: string; text: string; messageId?: string; behavior?: string }> = [];
   /** Agents the daemon no longer knows: refresh() resolves to null. */
   gone = new Set<string>();
+  failSend = new Set<string>();
   created: Array<Record<string, unknown> & { id: string; cwd: string; workspaceId: string }> = [];
   responses: Array<{ agentId: string; requestId: string; behavior: string; message?: string }> = [];
   archived: string[] = [];
@@ -4069,7 +4293,7 @@ export class FakePaseo implements PaseoLike {
         get status() { return self.statuses.get(id) ?? "idle"; },
         get lastUsage() { return self.usageOf.get(id) ?? null; },
         timeline: { refetch: async () => ({ entries: (self.timelines.get(id) ?? []).map((item) => ({ item })) }) },
-        send: async (text, o) => { self.sent.push({ agentId: id, text, messageId: o?.messageId, behavior: o?.activeTurnBehavior }); },
+        send: async (text, o) => { if (self.failSend.has(id)) throw new Error("send failed"); self.sent.push({ agentId: id, text, messageId: o?.messageId, behavior: o?.activeTurnBehavior }); },
         respondToPermission: async (o) => { self.responses.push({ agentId: id, requestId: o.requestId, behavior: o.response.behavior, message: o.response.message }); },
         archive: async () => { self.archived.push(id); return {}; },
       };
@@ -4145,7 +4369,7 @@ export function humanSays(paseo: FakePaseo, agentId: string): (text: string) => 
 
 `plugin/test/tools.decisions.test.ts`:
 ```ts
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { releaseContracts, type Ctx } from "../server/context";
@@ -4240,6 +4464,38 @@ describe("spec and plan", () => {
     expect((await w.call(w.sup, "slp_approve_plan", { feature: "cache", sha256: sha })).isError).toBeFalsy();
     expect(deriveFeature("cache", w.events()).plan!.approved).toBe(true);
   });
+  it("hashes the tasks with the prose, so the same markdown with another verify command is a different plan", async () => {
+    const w = world();
+    await approvedSpec(w);
+    const task = { id: "T1", title: "verify h", dependsOn: [], verifies: ["H1"], touchSet: ["bench/"], verify: "npm run bench" };
+    await w.call(w.lead, "slp_plan", { markdown: "# Plan", tasks: [task] });
+    const v1 = deriveFeature("cache", w.events()).plan!;
+    await w.call(w.lead, "slp_plan", { markdown: "# Plan", tasks: [{ ...task, verify: "true" }] });
+    const v2 = deriveFeature("cache", w.events()).plan!;
+    expect(v2.sha256).not.toBe(v1.sha256);
+    expect(readFileSync(v2.path, "utf8")).toContain('"verify": "true"');
+    expect((await w.call(w.sup, "slp_approve_plan", { feature: "cache", sha256: v1.sha256 })).isError).toBe(true);
+  });
+  it("activates on spec approval only the Lead premises that spec version lists or names", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x" });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec v1", premises: [{ kind: "decision", title: "memory cache" }, { kind: "decision", title: "TTL 60s" }] });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec v2 keeps D2 only" });
+    await w.human(w.sup, "spec ok");
+    await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "spec ok" });
+    const st = deriveFeature("cache", w.events());
+    expect(st.premises.get("D1")?.status).toBe("proposed");
+    expect(st.premises.get("D2")?.status).toBe("active");
+  });
+  it("lets one human message back only one decision", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "decision", title: "memory cache" }] });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec" });
+    await w.call(w.sup, "slp_challenge", { feature: "cache", target: "D1", level: "spec", claim: "c", evidence: "evidence text here", impact: "i", smallest_correction: "s" });
+    await w.human(w.sup, "ok");
+    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "ok" })).isError).toBeFalsy();
+    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "keep", target: "D1", quote: "ok", reason: "r" })).text).toMatch(/already backs another decision/);
+  });
   it("auto-approves when supervisorPlanApproval is off", async () => {
     const w = world();
     w.ctx.config.flags.supervisorPlanApproval = false;
@@ -4258,6 +4514,24 @@ describe("challenges, questions, messages", () => {
     expect((await w.call(w.lead, "slp_resolve", { challenge: "C1", outcome: "accepted", reason: "reproduced" })).isError).toBeFalsy();
     await w.call(w.lead, "slp_challenge", { target: "D9", level: "spec", claim: "c", evidence: "evidence text here", impact: "i", smallest_correction: "s" });
     expect((await w.call(w.lead, "slp_resolve", { challenge: "C2", outcome: "rejected", reason: "r" })).text).toMatch(/spec-level/);
+  });
+  it("makes a Peer challenge on a premise or contract spec-level, whatever level it asked for, and parks tasks touching the contract", async () => {
+    const w = world();
+    await w.call(w.peer, "slp_challenge", { target: "D1", level: "plan", claim: "D1 is false", evidence: "npm test -- retry exits 1: expected 200", impact: "T1", smallest_correction: "Redis" });
+    expect((await w.call(w.lead, "slp_resolve", { challenge: "C1", outcome: "rejected", reason: "nah" })).text).toMatch(/spec-level/);
+    expect(w.ctx.router.pending().at(-1)!.text).toMatch(/Only the human decides this/);
+    await w.call(w.peer, "slp_challenge", { target: "contract: auth-api", claim: "contract breaks login", evidence: "npm test -- login exits 1: 401", impact: "T1", smallest_correction: "add a field" });
+    const c2 = deriveFeature("cache", w.events()).challenges.get("C2")!;
+    expect(c2).toMatchObject({ level: "spec", target: "contract:auth-api" });
+  });
+  it("halts the feature on a change of goal: Peers are told to stop and spawning is refused", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_challenge", { feature: "cache", target: "T1", level: "spec", claim: "goal is wrong", evidence: "evidence text here", impact: "all", smallest_correction: "rethink" });
+    await w.human(w.sup, "đổi goal, dừng feature này lại");
+    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "change_goal", quote: "đổi goal" })).isError).toBeFalsy();
+    expect(deriveFeature("cache", w.events()).halted).toBe(true);
+    await w.ctx.router.flush();
+    expect(w.paseo.sent.some((s) => s.agentId === w.peer.agentId && s.text.includes("feature is halted"))).toBe(true);
   });
   it("rejects a challenge without evidence", async () => {
     const w = world();
@@ -4370,11 +4644,11 @@ Expected: FAIL, "Cannot find module '../server/tools/decisions'".
 `plugin/server/tools/decisions.ts`:
 ```ts
 import { z } from "zod";
-import { appendAs, claimContracts, heldByOthers, humanMessagesFor, leadAddress, notify, refreshDigest, releaseContracts, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, type Ctx } from "../context";
+import { appendAs, claimContracts, heldByOthers, humanMessagesFor, leadAddress, notify, refreshDigest, releaseContracts, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, waitsOfOthers, type Ctx } from "../context";
 import type { Identity } from "../identity";
 import type { ToolDef } from "../mcp/server";
 import { checkPlan, contractsOf } from "../planCheck";
-import { findHumanQuote } from "../quote";
+import { findHumanQuote, messageUsed } from "../quote";
 import type { Address } from "../router";
 import { deriveFeature, type PlanTask } from "../store/derive";
 import { defineTool, ToolError } from "./define";
@@ -4459,9 +4733,11 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
           if (!asked) throw new ToolError(`no challenge about ${target || "the goal"} was raised; the human decides premises only on a raised question`);
           after = asked.ts;
         }
-        const q = findHumanQuote(humanMessagesFor(ctx, who), { agentId: who.agentId!, quote: a.quote, after });
+        const approval = a.decides === "approve_brief" || a.decides === "approve_spec";
+        const q = findHumanQuote(humanMessagesFor(ctx, who), { agentId: who.agentId!, quote: a.quote, after, affirm: approval, extraWords: [feature] });
         if (!q.ok) throw new ToolError(`quote rejected: ${q.reason}`);
-        appendAs(ctx, who, feature, { kind: "human_decision", data: { decides: a.decides, target, quote: a.quote, reason: a.reason, messageSeq: q.seq } });
+        if (messageUsed(events, q.messageId, a.decides, target)) throw new ToolError("quote rejected: that message already backs another decision; ask the human about this item separately");
+        appendAs(ctx, who, feature, { kind: "human_decision", data: { decides: a.decides, target, quote: a.quote, reason: a.reason, messageSeq: q.seq, messageId: q.messageId } });
         const resolve = (outcome: "accepted" | "rejected") => {
           for (const c of st.challenges.values()) if (c.open && (a.decides === "change_goal" || c.target === target)) appendAs(ctx, who, feature, { kind: "challenge_resolved", refs: [c.id], data: { outcome, reason: a.reason ?? a.quote } });
         };
@@ -4476,7 +4752,17 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
           return `${target} superseded by ${newId}.`;
         }
         if (a.decides === "keep") { resolve("rejected"); if (who.role === "supervisor") notify(ctx, leadAddress(who.project, feature), `Human decision: keep ${target}. Reason: ${a.reason ?? a.quote}. Unpark dependent tasks.`); return `Kept ${target}.`; }
-        if (a.decides === "change_goal") { resolve("rejected"); releaseContracts(ctx, who.project, feature); if (who.role === "supervisor") notify(ctx, leadAddress(who.project, feature), "Human decision: the goal changes. Stop all work on this feature and wait."); return "Feature halted; brainstorm the new goal with the human."; }
+        if (a.decides === "change_goal") {
+          resolve("rejected");
+          // Halted: work tools refuse (T18) and Peer reports are no longer committed (T20), so the contracts are safe to hand on (review Codex 2026-10-22).
+          for (const i of ctx.identities.active(who.project).filter((x) => x.feature === feature && (x.role === "peer-impl" || x.role === "peer-review"))) {
+            ctx.router.enqueue({ role: i.role, project: who.project, feature, task: i.task }, "[SLP plugin] The human changed the goal; this feature is halted. Stop now and end your turn; do not report.", { mode: "interrupt" });
+          }
+          releaseContracts(ctx, who.project, feature);
+          if (who.role === "supervisor") notify(ctx, leadAddress(who.project, feature), "Human decision: the goal changes. The feature is halted: Peers were told to stop, and spawn, accept, merge and ship are refused. Wait.");
+          void ctx.router.flush().catch((e) => ctx.log("router flush failed", e));
+          return "Feature halted; brainstorm the new goal with the human.";
+        }
         if (a.decides === "approve_spec" && who.role === "supervisor") notify(ctx, leadAddress(who.project, feature), `The human approved spec v${st.spec!.version}. Write the plan (slp_plan).`);
         return `Recorded ${a.decides} for ${target.slice(0, 12)}.`;
       },
@@ -4488,8 +4774,10 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
       run(who, a) {
         const feature = who.feature!;
         const doc = ctx.stores.writeDoc(who.project, feature, "spec", a.markdown);
-        appendAs(ctx, who, feature, { kind: "spec", data: doc });
+        const before = deriveFeature(feature, ctx.stores.feature(who.project, feature).all());
         const ids = addPremises(ctx, who, feature, a.premises, doc.sha256);
+        const carried = [...before.premises.values()].filter((p) => p.status === "proposed" && new RegExp(`\\b${p.id}\\b`).test(a.markdown)).map((p) => p.id);
+        appendAs(ctx, who, feature, { kind: "spec", data: { ...doc, premises: [...carried, ...ids] } });
         routeFrom(ctx, who, supervisorAddress(who.project, feature), `Spec v${doc.version} for ${feature} is ready at ${doc.path}${ids.length ? ` (new premises ${ids.join(", ")}, active once the human approves)` : ""}. Check it against the brief, then show it to the human.`);
         return `Saved spec v${doc.version}. Wait for the human's approval before planning.`;
       },
@@ -4503,10 +4791,11 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
         const st = deriveFeature(feature, ctx.stores.feature(who.project, feature).all());
         if (!st.spec?.approved) throw new ToolError("the spec is not approved by the human yet");
         const tasks = a.tasks as PlanTask[];
-        const issues = checkPlan(tasks, { premises: st.premises, others: otherFeatures(ctx, who.project, feature), modelsAllowed: ctx.config.models.allowed, heldBy: heldByOthers(ctx, who.project, feature) });
+        const issues = checkPlan(tasks, { premises: st.premises, others: otherFeatures(ctx, who.project, feature), modelsAllowed: ctx.config.models.allowed, heldBy: heldByOthers(ctx, who.project, feature), feature, waits: waitsOfOthers(ctx, who.project, feature) });
         const errors = issues.filter((i) => i.severity === "error");
         if (errors.length) throw new ToolError(`plan rejected:\n${errors.map((i) => `- ${i.code}: ${i.message}`).join("\n")}`);
-        const doc = ctx.stores.writeDoc(who.project, feature, "plan", a.markdown);
+        // The approved hash must cover what runs, not only the prose (review Codex 2026-10-22): the tasks go into the file.
+        const doc = ctx.stores.writeDoc(who.project, feature, "plan", `${a.markdown.trimEnd()}\n\n## Tasks the plugin runs\n\n\`\`\`json\n${JSON.stringify(tasks, null, 2)}\n\`\`\`\n`);
         appendAs(ctx, who, feature, { kind: "plan", data: { ...doc, tasks, issues } });
         const warnings = issues.map((i) => `- ${i.code}: ${i.message}`).join("\n");
         if (!ctx.config.flags.supervisorPlanApproval) {
@@ -4528,7 +4817,7 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
         const st = deriveFeature(feature, ctx.stores.feature(who.project, feature).all());
         if (!st.plan || st.plan.sha256 !== a.sha256) throw new ToolError(`sha256 does not match the latest plan (${st.plan?.sha256 ?? "none"})`);
         const tasks = [...st.tasks.values()].map(({ id, title, dependsOn, verifies, touchSet, verify, model, waitsOn }) => ({ id, title, dependsOn, verifies, touchSet, verify, model, waitsOn }));
-        const errors = checkPlan(tasks, { premises: st.premises, others: otherFeatures(ctx, who.project, feature), modelsAllowed: ctx.config.models.allowed, heldBy: heldByOthers(ctx, who.project, feature) }).filter((i) => i.severity === "error");
+        const errors = checkPlan(tasks, { premises: st.premises, others: otherFeatures(ctx, who.project, feature), modelsAllowed: ctx.config.models.allowed, heldBy: heldByOthers(ctx, who.project, feature), feature, waits: waitsOfOthers(ctx, who.project, feature) }).filter((i) => i.severity === "error");
         if (errors.length) throw new ToolError(`plan no longer passes checks:\n${errors.map((i) => `- ${i.message}`).join("\n")}`);
         appendAs(ctx, who, feature, { kind: "plan_approved", data: { sha256: a.sha256 } });
         claimContracts(ctx, who.project, feature, contractsOf(tasks));
@@ -4559,11 +4848,15 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
       input: z.object({ feature: SLUG.optional(), target: z.string().min(1), level: z.enum(["plan", "spec"]).optional(), claim: z.string().min(1), evidence: z.string().min(10), impact: z.string().min(1), smallest_correction: z.string().min(1), repro_command: z.string().optional() }),
       run(who, a) {
         const feature = requireFeature(who, a.feature);
-        const level = who.role === "peer-impl" || who.role === "peer-review" ? (a.level ?? "plan") : (a.level ?? "spec");
-        const ev = appendAs(ctx, who, feature, { kind: "challenge", idPrefix: "C", refs: [a.target], data: { ...a, level, task: who.task } });
+        const target = a.target.trim().replace(/^contract:\s*/i, "contract:");
+        // A premise (D#/H#) or a spec contract is the human's call (spec §6.4): the target sets the level, not the caller (review Codex 2026-10-22).
+        const humanCall = /^[DH]\d+$/.test(target) || target.startsWith("contract:");
+        const level = humanCall ? "spec" : who.role === "peer-impl" || who.role === "peer-review" ? (a.level ?? "plan") : (a.level ?? "spec");
+        const ev = appendAs(ctx, who, feature, { kind: "challenge", idPrefix: "C", refs: [target], data: { ...a, target, level, task: who.task } });
         markCall(who);
         const to = parentAddress(who);
-        if (to) routeFrom(ctx, who, to, `Challenge ${ev.id} on ${a.target} (${level}): ${a.claim}\nEvidence: ${a.evidence}\nImpact: ${a.impact}\nSmallest correction: ${a.smallest_correction}`);
+        const escalate = level === "spec" && to?.role === "lead" ? `\nOnly the human decides this. Escalate it to the Supervisor with slp_challenge {target: "${target}", level: "spec"}, adding your own assessment and evidence.` : "";
+        if (to) routeFrom(ctx, who, to, `Challenge ${ev.id} on ${target} (${level}): ${a.claim}\nEvidence: ${a.evidence}\nImpact: ${a.impact}\nSmallest correction: ${a.smallest_correction}${escalate}`);
         return who.role === "supervisor" ? `Recorded ${ev.id}. Now ask the human, offering: supersede, keep (with a reason), or change the goal.` : `Recorded ${ev.id}. End your turn; your ${to?.role} decides.`;
       },
     }),
@@ -4678,7 +4971,7 @@ import type { Identity } from "../server/identity";
 import { headOf } from "../server/git";
 import { deriveFeature } from "../server/store/derive";
 import { buildTools } from "../server/tools";
-import { processReportFor } from "../server/tools/work";
+import { finalizeReview, processReportFor } from "../server/tools/work";
 import { bound, humanSays, makeCtx, sh } from "./helpers";
 
 async function ready() {
@@ -4753,6 +5046,33 @@ describe("slp_spawn", () => {
     expect(r.events().filter((e) => e.kind === "assign").at(-1)!.data).toMatchObject({ task: "T1", worktree: peerCreate.cwd, branch: "slp/cache/T1-1", base: headOf(r.lead.worktree!) });
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T2", prompt: "x" })).text).toMatch(/one Peer-impl at a time/);
   });
+  it("checks dependencies at spawn, and lets only one of two parallel spawns through", async () => {
+    const r = await withLeadAndPlan([{ id: "T1", title: "a", dependsOn: [], verifies: [], touchSet: ["a.ts"], verify: "true" }, { id: "T2", title: "b", dependsOn: ["T1"], verifies: [], touchSet: ["b.ts"], verify: "true" }, { id: "T3", title: "c", dependsOn: [], verifies: [], touchSet: ["c.ts"], verify: "true" }]);
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T2", prompt: "x" })).text).toMatch(/depends on T1, which is not accepted/);
+    const [a, b] = await Promise.all([r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" }), r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T3", prompt: "x" })]);
+    expect([a.isError === true, b.isError === true].sort()).toEqual([false, true]);
+    expect(r.events().filter((e) => e.kind === "assign" && e.data.task)).toHaveLength(1);
+  });
+  it("lets a new Peer take over the task of a Peer that died, in the same workspace with its uncommitted work", async () => {
+    const r = await withLeadAndPlan();
+    await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" });
+    const peer = r.ctx.identities.byAgent(r.paseo.created[1]!.id)!;
+    writeFileSync(join(peer.worktree!, "half.ts"), "wip");
+    r.ctx.identities.retire(peer.tokenHash);
+    const res = await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "continue" });
+    expect(res.text).toMatch(/took over T1/);
+    expect(r.paseo.created.at(-1)).toMatchObject({ cwd: peer.worktree, workspaceId: peer.workspaceId });
+    expect(String(r.paseo.created.at(-1)!.prompt)).toContain("You take over");
+    expect(existsSync(join(peer.worktree!, "half.ts"))).toBe(true);
+    const assigns = r.events().filter((e) => e.kind === "assign" && e.data.task === "T1");
+    expect(assigns.at(-1)!.data).toMatchObject({ takeover: true, worktree: peer.worktree, base: assigns[0]!.data.base, attempt: 1 });
+  });
+  it("refuses spawn and merge_main once the feature is halted", async () => {
+    const r = await withLeadAndPlan();
+    r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "human_decision", by_role: "supervisor", by_agent: r.sup.agentId, data: { decides: "change_goal", target: "", quote: "x" } });
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/halted/);
+    expect((await r.call(r.lead, "slp_merge_main", {})).text).toMatch(/halted/);
+  });
   it("enforces models.allowed and the project writer cap", async () => {
     const r = await withLeadAndPlan();
     r.ctx.config.models.allowed = ["claude-opus-5-5"];
@@ -4779,6 +5099,15 @@ describe("slp_spawn", () => {
     expect(peerCreate.prompt).toBeUndefined();
     expect(sh(peerCreate.cwd, "git", ["rev-parse", "-q", "--verify", "MERGE_HEAD"])).toBe(headOf(r.repo));
     expect(r.paseo.sent.find((s) => s.agentId === peerCreate.id)!.text).toContain("README.md");
+  });
+  it("refuses to create a worktree off a branch whose paseo.json runs setup commands outside the sandbox", async () => {
+    const r = await withLeadAndPlan();
+    writeFileSync(join(r.lead.worktree!, "paseo.json"), JSON.stringify({ worktree: { setup: "node scripts/setup.js" } }));
+    sh(r.lead.worktree!, "git", ["add", "paseo.json"]); sh(r.lead.worktree!, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "setup"]);
+    const out = await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" });
+    expect(out.isError).toBe(true);
+    expect(out.text).toMatch(/paseo\.json worktree\.setup/);
+    expect(r.paseo.created).toHaveLength(1);
   });
 });
 
@@ -4811,6 +5140,11 @@ describe("report → review → accept", () => {
     const rev = r.ctx.identities.byAgent(revCreate.id)!;
     expect((await r.call(rev, "slp_review", { commit: "deadbeef", verdict: "pass", findings: [] })).isError).toBe(true);
     await r.call(rev, "slp_review", { commit, verdict: "pass", findings: [{ severity: "non_blocking", file: "src.ts", line: 1, issue: "name", command: "cat src.ts" }] });
+    expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/turn has ended/);
+    expect(finalizeReview(r.ctx, rev)).toBe(true);
+    expect(finalizeReview(r.ctx, rev)).toBe(false);
+    await r.ctx.router.flush();
+    expect(r.paseo.sent.some((s) => s.agentId === r.lead.agentId && s.text.includes("Review of T1"))).toBe(true);
     const acc = await r.call(r.lead, "slp_accept", { task: "T1" });
     expect(acc.isError).toBeFalsy();
     expect(sh(r.lead.worktree!, "git", ["log", "-1", "--format=%s"])).toBe("Merge T1: add src");
@@ -4823,6 +5157,24 @@ describe("report → review → accept", () => {
     await processReportFor(r.ctx, r.peer);
     await r.call(r.lead, "slp_challenge", { target: "T1", level: "spec", claim: "contract is wrong", evidence: "test retry exits 1: expected 200", impact: "T1", smallest_correction: "fix the contract" });
     expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/T1 is parked; only a reported task can be accepted/);
+  });
+  it("does not accept a failing verdict, uncommitted work, or anything past the reviewed commit", async () => {
+    const r = await reported();
+    await processReportFor(r.ctx, r.peer);
+    const commit = deriveFeature("cache", r.events()).tasks.get("T1")!.lastCommit!;
+    await r.call(r.lead, "slp_spawn", { role: "peer-review", task: "T1", prompt: "review" });
+    const rev = r.ctx.identities.byAgent(r.paseo.created[2]!.id)!;
+    await r.call(rev, "slp_review", { commit, verdict: "fail", findings: [] });
+    finalizeReview(r.ctx, rev);
+    expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/no clean review/);
+    await r.call(rev, "slp_review", { commit, verdict: "pass", findings: [] });
+    finalizeReview(r.ctx, rev);
+    writeFileSync(join(r.peer.worktree!, "late.ts"), "x");
+    expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/uncommitted changes \(late\.ts\)/);
+    sh(r.peer.worktree!, "git", ["add", "late.ts"]); sh(r.peer.worktree!, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "after review"]);
+    expect((await r.call(r.lead, "slp_accept", { task: "T1" })).isError).toBeFalsy();
+    expect(existsSync(join(r.lead.worktree!, "src.ts"))).toBe(true);
+    expect(existsSync(join(r.lead.worktree!, "late.ts"))).toBe(false);
   });
   it("can start a second reviewer on the same commit", async () => {
     const r = await reported();
@@ -4889,16 +5241,16 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { appendAs, appendPlugin, humanMessagesFor, leadAddress, notify, refreshDigest, releaseContracts, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, type CreateOptions, type Ctx } from "../context";
+import { appendAs, appendPlugin, claimContracts, humanMessagesFor, leadAddress, notify, refreshDigest, releaseContracts, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, type CreateOptions, type Ctx } from "../context";
 import { processReport, verifyFeature, type PipelineDeps, type ReportOutcome } from "../evidence";
-import { deleteBranch, diffStat, git, headOf, mergeNoHooks, pushNoHooks, startMerge } from "../git";
+import { changedFiles, deleteBranch, diffStat, git, headOf, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, pushNoHooks, scrubProtected, startMerge, worktreeCreateRisks } from "../git";
 import type { Identity } from "../identity";
 import type { ToolDef } from "../mcp/server";
-import { contractQueues, holderOf, isContract } from "../planCheck";
+import { contractQueues, contractsOf, holderOf, isContract } from "../planCheck";
 import { leadKickoff, reviewBrief, taskBrief } from "../prompts";
 import { verifyShipApproval } from "../quote";
 import { normalizeModel, providerString, type Role } from "../roles";
-import { acceptanceBlockers, deriveFeature, type FeatureState } from "../store/derive";
+import { acceptanceBlockers, deriveFeature, taskDef, type FeatureState } from "../store/derive";
 import { defineTool, ToolError } from "./define";
 
 const SLUG = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
@@ -4914,6 +5266,10 @@ type Placement =
   | { kind: "dir"; cwd: string };                                   // the Supervisor's project directory
 
 async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: string | null; task: string | null; placement: Placement; reviewCommit?: string | null; parent: string | null; title: string; prompt: string; model?: string; deferPrompt?: boolean }): Promise<{ agentId: string; ident: Identity }> {
+  if (o.placement.kind === "worktree") {
+    const risks = worktreeCreateRisks(o.placement.from, o.placement.base);
+    if (risks.length) throw new ToolError(`SLP will not create a worktree off ${o.placement.base}: Paseo would run repo code outside the sandbox (${risks.join(", ")}). Remove these from the repo (install dependencies inside the sandbox or in the verify command), then retry.`);
+  }
   const minted = ctx.identities.mint({ role, project: o.project, feature: o.feature, task: o.task, reviewCommit: o.reviewCommit ?? null, parentAgentId: o.parent });
   const profile = ctx.setup().profile[role] ?? {};
   const opts: CreateOptions = {
@@ -4944,6 +5300,7 @@ function activeWriters(ctx: Ctx, project: string): Identity[] {
 /** Retires the identity and archives the agent's workspace (Paseo removes the worktree, keeps the branch). */
 export async function retireAgent(ctx: Ctx, i: Identity, repo: string): Promise<void> {
   ctx.identities.retire(i.tokenHash);
+  if (i.worktree && i.role !== "supervisor") { try { scrubProtected(i.worktree); } catch (error) { ctx.log(`could not reset paseo.json/hooks in ${i.worktree} before archiving`, error); } }
   if (i.workspaceId) await ctx.paseo().workspaces.ref(i.workspaceId).archive().catch(() => undefined);
   else if (i.agentId) await ctx.paseo().agents.ref(i.agentId).archive().catch(() => undefined);
   if (i.role === "peer-review" && i.branch) deleteBranch(repo, i.branch);
@@ -4954,6 +5311,19 @@ async function retireTaskAgents(ctx: Ctx, project: string, feature: string, task
   for (const i of ctx.identities.active(project).filter((x) => x.feature === feature && x.task === task && (x.role === "peer-impl" || x.role === "peer-review"))) {
     await retireAgent(ctx, i, repo);
   }
+}
+
+/** After a reviewer's turn ends with a clean worktree (T20): count its latest review and pass it to the Lead. Never earlier (review Codex 2026-10-22). */
+export function finalizeReview(ctx: Ctx, rev: Identity): boolean {
+  const events = ctx.stores.feature(rev.project, rev.feature!).all();
+  const review = [...events].reverse().find((e) => e.kind === "review" && e.by_agent === rev.agentId && e.data.commit === rev.reviewCommit);
+  if (!review || events.some((e) => e.kind === "ops" && e.data.type === "review_checked" && e.data.reviewSeq === review.seq)) return false;
+  appendPlugin(ctx, rev.project, rev.feature, { kind: "ops", data: { type: "review_checked", task: rev.task, commit: review.data.commit, agentId: rev.agentId, reviewSeq: review.seq } });
+  const findings = (review.data.findings as Array<{ severity: string; file: string; line?: number; issue: string; command?: string }> | undefined) ?? [];
+  const blocking = Number(review.data.blocking ?? 0);
+  notify(ctx, leadAddress(rev.project, rev.feature!), `Review of ${rev.task} @${String(review.data.commit).slice(0, 7)}: ${String(review.data.verdict)}, ${blocking} blocking, ${findings.length - blocking} non-blocking.\n${findings.map((f) => `- [${f.severity}] ${f.file}${f.line ? `:${f.line}` : ""} ${f.issue}${f.command ? ` (ran: ${f.command})` : ""}`).join("\n")}`);
+  refreshDigest(ctx, rev.project, rev.feature!);
+  return true;
 }
 
 export async function processReportFor(ctx: Ctx, peer: Identity): Promise<ReportOutcome | null> {
@@ -4967,16 +5337,28 @@ export async function processReportFor(ctx: Ctx, peer: Identity): Promise<Report
   return out;
 }
 
+const spawnQueue = new Map<string, Promise<unknown>>();
+/**
+ * One slp_spawn per project at a time. The checks (one Peer-impl per feature, writer cap, Lead exists) and the assign event
+ * then happen with no gap for a parallel call to slip into (review Codex 2026-10-22: two parallel calls both passed the cap).
+ */
+function serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const next = (spawnQueue.get(key) ?? Promise.resolve()).catch(() => undefined).then(fn);
+  spawnQueue.set(key, next.catch(() => undefined));
+  return next;
+}
+
 export function workTools(ctx: Ctx): ToolDef[] {
   return [
     defineTool({
       name: "slp_spawn", description: 'Create a Lead (Supervisor only) or a Peer for a task (Lead only). role: "lead" | "peer-impl" | "peer-review". merge_base: start a Peer-impl with the base branch merged in, to resolve conflicts.',
       roles: ["supervisor", "lead"],
       input: z.object({ role: z.enum(["lead", "peer-impl", "peer-review"]), feature: SLUG.optional(), task: z.string().optional(), model: z.string().optional(), prompt: z.string().min(1), merge_base: z.boolean().optional() }),
-      async run(who, a) {
+      run: (who, a) => serial(who.project, async () => {
         const feature = requireFeature(who, a.feature);
         const project = ctx.config.projects[who.project]!;
         const st = stateOf(ctx, who.project, feature);
+        if (st.halted) throw new ToolError(`${feature} is halted: the human changed the goal`);
         if (a.role === "lead") {
           if (who.role !== "supervisor") throw new ToolError("only the Supervisor spawns Leads");
           if (!st.brief?.approved) throw new ToolError("the brief is not approved by the human yet");
@@ -4996,14 +5378,27 @@ export function workTools(ctx: Ctx): ToolDef[] {
         const task = st.tasks.get(a.task ?? "");
         if (!task) throw new ToolError(`unknown task ${a.task}`);
         if (a.role === "peer-impl") {
-          if (!["pending", "stale"].includes(task.status)) throw new ToolError(`${task.id} is ${task.status}; only pending or stale tasks can be started`);
-          if ([...st.tasks.values()].some((t) => t.status === "assigned" || t.status === "reported")) throw new ToolError("one Peer-impl at a time per feature: accept or release the running task first");
+          // A Peer that died leaves its task assigned; a new Peer takes it over in the same workspace (review Codex 2026-10-22).
+          const lost = (task.status === "assigned" || task.status === "reported") && !(task.agentId && ctx.identities.byAgent(task.agentId));
+          if (!["pending", "stale"].includes(task.status) && !lost) throw new ToolError(`${task.id} is ${task.status}; only pending or stale tasks can be started`);
+          if ([...st.tasks.values()].some((t) => t.id !== task.id && (t.status === "assigned" || t.status === "reported"))) throw new ToolError("one Peer-impl at a time per feature: accept or release the running task first");
+          const unmet = task.dependsOn.filter((d) => (st.tasks.has(d) ? st.tasks.get(d)!.status !== "accepted" : st.premises.get(d)?.kind === "hypothesis" && st.premises.get(d)!.status !== "confirmed"));
+          if (unmet.length) throw new ToolError(`${task.id} depends on ${unmet.join(", ")}, which ${unmet.length > 1 ? "are" : "is"} not accepted or confirmed yet`);
+          claimContracts(ctx, who.project, feature, contractsOf([...st.tasks.values()])); // idempotent; repairs a claim lost to a crash right after approval
           const queues = contractQueues(ctx.stores.project(who.project).all());
-          const held = task.touchSet.filter((e) => isContract(e) && (holderOf(queues, e) ?? feature) !== feature);
+          const held = task.touchSet.filter((e) => isContract(e) && holderOf(queues, e) !== feature);
           if (held.length) throw new ToolError(`${task.id} touches ${held.map((c) => `${c} (held by ${holderOf(queues, c)})`).join(", ")}; it can start when that feature ships or stops`);
           if (activeWriters(ctx, who.project).length >= project.maxWriters) throw new ToolError(`project writer cap reached (${project.maxWriters}); retry after a task is accepted`);
           const model = task.model ?? a.model ?? ctx.setup().profile["peer-impl"]?.model;
           if (model && ctx.config.models.allowed.length && !ctx.config.models.allowed.map(normalizeModel).includes(normalizeModel(model))) throw new ToolError(`model ${model} is not in models.allowed`);
+          if (lost) {
+            const previous = ctx.identities.last("peer-impl", who.project, feature, task.id);
+            if (!previous?.workspaceId) throw new ToolError(`the Peer of ${task.id} is gone and its workspace is unknown; slp_release ${task.id} to start it over`);
+            const takeoverPrompt = `${taskBrief(feature, task, st.premises, a.prompt)}\n\n## You take over\nThe previous Peer on ${task.id} stopped. Its work in this worktree is kept, committed and uncommitted: read git status and git log first, then continue.`;
+            const { agentId, ident } = await createAgent(ctx, "peer-impl", { project: who.project, feature, task: task.id, placement: { kind: "workspace", workspaceId: previous.workspaceId }, parent: who.agentId, title: `[Peer ${task.id}] ${feature}`, prompt: takeoverPrompt, model });
+            appendAs(ctx, who, feature, { kind: "assign", data: { task: task.id, agentId, worktree: ident.worktree, branch: ident.branch, base: task.base, attempt: task.attempt, model: model ?? null, takeover: true } });
+            return `Peer-impl ${agentId} took over ${task.id} in ${ident.worktree}.`;
+          }
           const attempt = task.attempt + 1;
           const prompt = taskBrief(feature, task, st.premises, a.prompt);
           const { agentId, ident } = await createAgent(ctx, "peer-impl", { project: who.project, feature, task: task.id, placement: { kind: "worktree", from: who.worktree!, branch: `slp/${feature}/${task.id}-${attempt}`, base: who.branch ?? `feat/${feature}` }, parent: who.agentId, title: `[Peer ${task.id}] ${feature}`, prompt, model, deferPrompt: a.merge_base === true });
@@ -5022,7 +5417,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
         const branch = `slp/${feature}/review-${task.id}-${task.lastCommit.slice(0, 7)}-${randomUUID().slice(0, 8)}`;
         const { agentId } = await createAgent(ctx, "peer-review", { project: who.project, feature, task: task.id, placement: { kind: "worktree", from: who.worktree!, branch, base: task.branch }, reviewCommit: task.lastCommit, parent: who.agentId, title: `[Review ${task.id}] ${feature}`, prompt: reviewBrief(feature, task, task.lastCommit, a.prompt) });
         return `Reviewer ${agentId} started on ${task.lastCommit.slice(0, 7)}.`;
-      },
+      }),
     }),
     defineTool({
       name: "slp_report", description: "Report your task. The plugin commits your worktree after your turn ends and runs the verify command in a sandbox.",
@@ -5046,8 +5441,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
         const blocking = a.findings.filter((f) => f.severity === "blocking").length;
         appendAs(ctx, who, who.feature!, { kind: "review", data: { task: who.task, commit: a.commit, verdict: a.verdict, blocking, findings: a.findings } });
         if (who.agentId) ctx.toolCalls.set(who.agentId, Date.now());
-        routeFrom(ctx, who, leadAddress(who.project, who.feature!), `Review of ${who.task} @${a.commit.slice(0, 7)}: ${a.verdict}, ${blocking} blocking, ${a.findings.length - blocking} non-blocking.\n${a.findings.map((f) => `- [${f.severity}] ${f.file}${f.line ? `:${f.line}` : ""} ${f.issue}${f.command ? ` (ran: ${f.command})` : ""}`).join("\n")}`);
-        return "Review recorded. End your turn.";
+        return "Review recorded. End your turn: the plugin checks your worktree, then passes the review to the Lead.";
       },
     }),
     defineTool({
@@ -5058,14 +5452,21 @@ export function workTools(ctx: Ctx): ToolDef[] {
         const st = stateOf(ctx, who.project, who.feature!);
         const t = st.tasks.get(a.task);
         if (!t || !t.lastCommit || !t.branch) throw new ToolError(`${a.task} has no commit`);
+        if (st.halted) throw new ToolError(`${who.feature} is halted: the human changed the goal`);
         if (t.status !== "reported") throw new ToolError(`${a.task} is ${t.status}; only a reported task can be accepted`);
         if (ctx.config.flags.evidenceCheck && !t.evidenceOk) throw new ToolError(`${a.task} has no green evidence on ${t.lastCommit.slice(0, 7)}`);
-        if (!t.reviewOk) throw new ToolError(`${a.task} has no clean review on ${t.lastCommit.slice(0, 7)}; spawn a peer-review first`);
+        if (!t.reviewOk) throw new ToolError(`${a.task} has no clean review on ${t.lastCommit.slice(0, 7)}; spawn a peer-review first (a review counts once the reviewer's turn has ended)`);
         if ([...st.challenges.values()].some((c) => c.open && c.target === a.task)) throw new ToolError(`${a.task} has an open challenge`);
-        const merged = mergeNoHooks(who.worktree!, t.branch, `Merge ${t.id}: ${t.title}`);
+        if (t.worktree && existsSync(t.worktree)) {
+          const hookDir = hooksDir(t.worktree);
+          const pending = changedFiles(t.worktree).filter((f) => !isSensitivePath(f) && !isProtectedPath(f, hookDir));
+          if (pending.length) throw new ToolError(`${a.task} has uncommitted changes (${pending.slice(0, 5).join(", ")}); accepting would archive them. Wait until the plugin commits the Peer's latest report, or ask the Peer to slp_report.`);
+        }
+        // Merge the commit that was verified and reviewed, not the branch tip: a challenge commit may sit on top (review Codex 2026-10-22).
+        const merged = mergeNoHooks(who.worktree!, t.lastCommit, `Merge ${t.id}: ${t.title}`);
         if (!merged.ok) throw new ToolError(`merge conflict in: ${merged.conflicts.join(", ")}. Plan a resolve task (slp_spawn with merge_base for conflicts with the base branch).`);
-        appendPlugin(ctx, who.project, who.feature!, { kind: "merge", data: { task: t.id, source: t.branch, target: who.branch, hash: merged.hash } });
-        appendAs(ctx, who, who.feature!, { kind: "release", data: { task: t.id, outcome: "accepted" } });
+        appendPlugin(ctx, who.project, who.feature!, { kind: "merge", data: { task: t.id, source: t.branch, commit: t.lastCommit, target: who.branch, hash: merged.hash } });
+        appendAs(ctx, who, who.feature!, { kind: "release", data: { task: t.id, outcome: "accepted", commit: t.lastCommit, def: taskDef(t) } });
         await retireTaskAgents(ctx, who.project, who.feature!, t.id);
         return `${t.id} accepted and merged (${merged.hash.slice(0, 7)}).`;
       },
@@ -5086,6 +5487,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
       input: z.object({}),
       run(who) {
         const project = ctx.config.projects[who.project]!;
+        if (stateOf(ctx, who.project, who.feature!).halted) throw new ToolError(`${who.feature} is halted: the human changed the goal`);
         git(who.worktree!, ["fetch", "--quiet", "origin"], true);
         const merged = mergeNoHooks(who.worktree!, project.baseBranch, `Merge ${project.baseBranch} into ${who.branch}`);
         if (!merged.ok) return `Conflicts in: ${merged.conflicts.join(", ")}. Add a resolve task to the plan, then slp_spawn it as a peer-impl with merge_base: true.`;
@@ -5127,18 +5529,24 @@ export function workTools(ctx: Ctx): ToolDef[] {
         if (!lead?.worktree) throw new ToolError("feature has no Lead worktree");
         const head = headOf(lead.worktree);
         const events = ctx.stores.feature(who.project, feature).all();
-        const ok = verifyShipApproval(events, humanMessagesFor(ctx, who), { agentId: who.agentId!, quote: a.quote, commit: head });
+        if (deriveFeature(feature, events).halted) throw new ToolError(`${feature} is halted: the human changed the goal`);
+        const ok = verifyShipApproval(events, humanMessagesFor(ctx, who), { agentId: who.agentId!, quote: a.quote, commit: head, extraWords: [feature] });
         if (!ok.ok) throw new ToolError(`ship refused: ${ok.reason}`);
-        appendAs(ctx, who, feature, { kind: "human_decision", data: { decides: "approve_ship", target: head, quote: a.quote, messageSeq: ok.seq } });
+        appendAs(ctx, who, feature, { kind: "human_decision", data: { decides: "approve_ship", target: head, quote: a.quote, messageSeq: ok.seq, messageId: ok.messageId } });
         const branch = lead.branch ?? `feat/${feature}`;
         pushNoHooks(lead.worktree, ctx.config.ship.remote, branch);
         let pr: string | null = null;
         if (ctx.config.ship.openPr) {
           const pkg = [...events].reverse().find((e) => e.kind === "ship_package")!;
           const title = String(events.find((e) => e.kind === "brief")?.data.title ?? feature);
-          const r = spawnSync("gh", ["pr", "create", "--head", branch, "--base", ctx.config.projects[who.project]!.baseBranch.replace(/^origin\//, ""), "--title", title, "--body", String(pkg.data.text)], { cwd: lead.worktree, encoding: "utf8" });
-          if (r.status !== 0) throw new ToolError(`pushed ${branch}, but gh pr create failed: ${r.stderr.trim()}`);
-          pr = r.stdout.trim();
+          // A retry after a crash between "gh pr create" and the shipped event finds the PR instead of failing on it (review Codex 2026-10-22).
+          const existing = spawnSync("gh", ["pr", "view", branch, "--json", "url,state", "--jq", 'select(.state == "OPEN") | .url'], { cwd: lead.worktree, encoding: "utf8" });
+          if (existing.status === 0 && existing.stdout.trim()) pr = existing.stdout.trim();
+          else {
+            const r = spawnSync("gh", ["pr", "create", "--head", branch, "--base", ctx.config.projects[who.project]!.baseBranch.replace(/^origin\//, ""), "--title", title, "--body", String(pkg.data.text)], { cwd: lead.worktree, encoding: "utf8" });
+            if (r.status !== 0) throw new ToolError(`pushed ${branch}, but gh pr create failed: ${r.stderr.trim()}`);
+            pr = r.stdout.trim();
+          }
         }
         appendPlugin(ctx, who.project, feature, { kind: "shipped", data: { commit: head, pr } });
         releaseContracts(ctx, who.project, feature);
@@ -5780,6 +6188,17 @@ describe("turn_ended", () => {
     expect(w.ctx.identities.byAgent("rev-1")).toBeNull();
     expect(w.paseo.archived).toContain("rev-1");
   });
+  it("passes a review to the Lead only after the reviewer's turn ends with a clean worktree", async () => {
+    const w = world();
+    const rwt = join(w.home, "rev2"); sh(w.repo, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "--detach", rwt, "main"]);
+    bound(w.ctx, { role: "peer-review", project: "demo", feature: "cache", task: "T1", worktree: rwt, reviewCommit: "abc", parentAgentId: "lead-1" }, "rev-2");
+    w.store.append({ feature: "cache", kind: "review", by_role: "peer-review", by_agent: "rev-2", data: { task: "T1", commit: "abc", verdict: "pass", blocking: 0, findings: [] } });
+    expect(w.paseo.sent.some((s) => s.agentId === "lead-1")).toBe(false);
+    w.ctx.toolCalls.set("rev-2", Date.now() + 1);
+    await onTurnEnded(w.ctx, { agent: { id: "rev-2" }, outcome: done });
+    expect(w.store.all().some((e) => e.kind === "ops" && e.data.type === "review_checked" && e.data.agentId === "rev-2")).toBe(true);
+    expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && s.text.includes("Review of T1 @abc: pass"))).toBe(true);
+  });
   it("asks a Lead to checkpoint once when its context passes the ratio", async () => {
     const w = world();
     w.paseo.usageOf.set("lead-1", { contextWindowUsedTokens: 130_000, contextWindowMaxTokens: 200_000 });
@@ -5836,6 +6255,26 @@ describe("permissions, archive, tick", () => {
     expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("usage limit has reset"))).toBe(true);
     expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && s.text.includes("C1 has waited"))).toBe(true);
   });
+  it("keeps a resume whose send failed and delivers it on a later tick", async () => {
+    const w = world();
+    w.ctx.resumes.schedule({ agentId: "peer-1", vendor: "claude", at: new Date(Date.now() - 1000).toISOString(), attempt: 1 });
+    w.paseo.failSend.add("peer-1");
+    await tick(w.ctx);
+    expect(w.ctx.resumes.jobs().map((j) => j.agentId)).toEqual(["peer-1"]);
+    w.paseo.failSend.delete("peer-1");
+    await tick(w.ctx);
+    expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("usage limit has reset"))).toBe(true);
+    expect(w.ctx.resumes.jobs()).toEqual([]);
+    expect(w.ctx.resumes.attemptOf("peer-1")).toBe(1);
+  });
+  it("nudges about an overdue C1 in each feature, not only the first", async () => {
+    const w = world();
+    bound(w.ctx, { role: "lead", project: "demo", feature: "login", task: null, worktree: w.repo, reviewCommit: null, parentAgentId: null }, "lead-2");
+    const old = new Date(Date.now() - 31 * 60_000);
+    for (const f of ["cache", "login"]) w.ctx.stores.feature("demo", f).append({ feature: f, kind: "challenge", by_role: "peer-impl", by_agent: "p", idPrefix: "C", data: { target: "T1", level: "plan" } }, old);
+    await tick(w.ctx);
+    expect(w.paseo.sent.filter((s) => s.text.includes("C1 has waited")).map((s) => s.agentId).sort()).toEqual(["lead-1", "lead-2"]);
+  });
 });
 ```
 
@@ -5856,7 +6295,7 @@ import type { TimelineItemLike } from "./human";
 import type { Identity } from "./identity";
 import { decidePermission, type PermissionLike } from "./permissions";
 import { deriveFeature } from "./store/derive";
-import { pipelineDeps, processReportFor, retireAgent } from "./tools/work";
+import { finalizeReview, pipelineDeps, processReportFor, retireAgent } from "./tools/work";
 import { watchTick } from "./watch";
 import { isLimitTurn, resumeAt, usageWindowsFrom } from "./watchdog";
 
@@ -5872,6 +6311,7 @@ async function scheduleResume(ctx: Ctx, ident: Identity): Promise<void> {
   const vendor = ctx.setup().vendor[ident.role];
   const attempt = ctx.resumes.attemptOf(ident.agentId) + 1;
   if (attempt > ctx.config.limits.resumeMaxAttempts) {
+    ctx.resumes.done(ident.agentId);
     if (ident.feature && ident.role !== "supervisor") notify(ctx, supervisorAddress(ident.project, ident.feature), `${ident.role}${ident.task ? ` ${ident.task}` : ""} (${ident.feature ?? ident.project}) is still blocked by the ${vendor} usage limit after ${attempt - 1} resumes.`);
     return;
   }
@@ -5894,6 +6334,7 @@ function peerSaid(ctx: Ctx, ident: Identity): string {
 }
 
 async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean): Promise<void> {
+  if (deriveFeature(ident.feature!, ctx.stores.feature(ident.project, ident.feature!).all()).halted) return; // nothing lands after the human changed the goal
   const out = await processReportFor(ctx, ident);
   const feature = ident.feature!;
   const said = out ? peerSaid(ctx, ident) : "";
@@ -5954,6 +6395,7 @@ async function afterReviewTurn(ctx: Ctx, ident: Identity, calledTool: boolean): 
     notify(ctx, leadAddress(ident.project, ident.feature!), `The reviewer of ${ident.task} changed tracked files; its review is invalid and it was stopped. Spawn a new reviewer.`);
     return;
   }
+  finalizeReview(ctx, ident); // the review counts, and reaches the Lead, only now
   if (!calledTool) await nudgeOrEscalate(ctx, ident);
 }
 
@@ -6023,6 +6465,7 @@ export function onAgentArchived(ctx: Ctx, agentId: string): void {
 function retireLost(ctx: Ctx, ident: Identity): void {
   ctx.identities.retire(ident.tokenHash);
   ctx.pendingPermissions.delete(ident.agentId ?? "");
+  if (ident.agentId) ctx.resumes.clear(ident.agentId);
   if (!ident.feature) return;
   if (ident.role === "peer-impl" || ident.role === "peer-review") notify(ctx, leadAddress(ident.project, ident.feature), `${ident.role} ${ident.task} is gone (closed or lost by the daemon). Its worktree and branch are kept; spawn a new Peer to continue.`);
   if (ident.role === "lead") notify(ctx, supervisorAddress(ident.project, ident.feature), `The lead of ${ident.feature} is gone (closed or lost by the daemon). Start a new one with slp_spawn {role: "lead"}; it resumes in the same worktree.`);
@@ -6034,10 +6477,12 @@ export function onAgentClosed(ctx: Ctx, agentId: string): void {
 }
 
 export async function tick(ctx: Ctx): Promise<void> {
-  const resume = (agentId: string) => ctx.paseo().agents.ref(agentId).send("[SLP plugin] The usage limit has reset. Continue the work you were doing.", { messageId: ctx.router.issue() }).catch(() => undefined);
+  const resume = (agentId: string) => ctx.paseo().agents.ref(agentId).send("[SLP plugin] The usage limit has reset. Continue the work you were doing.", { messageId: ctx.router.issue() });
   for (const [i, job] of ctx.resumes.due(ctx.now()).entries()) {
-    if (i === 0) await resume(job.agentId);
-    else setTimeout(() => void resume(job.agentId), i * 15_000).unref?.();   // stagger so one account is not hit all at once
+    // One resume per tick; the rest move 15 s apart, persisted, so one account is not hit all at once and nothing lives only in a timer.
+    if (i > 0) { ctx.resumes.schedule({ ...job, at: new Date(ctx.now().getTime() + i * 15_000).toISOString() }); continue; }
+    try { await resume(job.agentId); ctx.resumes.done(job.agentId); }
+    catch (error) { ctx.log(`resume of ${job.agentId} failed; retrying on the next tick`, error); }
   }
   for (const project of Object.keys(ctx.config.projects)) {
     for (const feature of ctx.stores.features(project)) {
@@ -6046,8 +6491,9 @@ export async function tick(ctx: Ctx): Promise<void> {
         if (!c.open || c.byRole === "supervisor") continue;
         const age = (ctx.now().getTime() - Date.parse(c.ts)) / 60_000;
         const limit = ctx.config.limits.challengeAnswerMinutes;
-        if (age > 2 * limit && !ctx.flags.challengeNudged.has(`${c.id}:sup`)) { ctx.flags.challengeNudged.add(`${c.id}:sup`); notify(ctx, supervisorAddress(project, feature), `${feature}: challenge ${c.id} on ${c.target} has waited ${Math.round(age)} min without an answer from the Lead.`); }
-        else if (age > limit && !ctx.flags.challengeNudged.has(`${c.id}:lead`)) { ctx.flags.challengeNudged.add(`${c.id}:lead`); notify(ctx, leadAddress(project, feature), `${c.id} has waited ${Math.round(age)} min. Resolve it (slp_resolve / slp_rule) or escalate it.`); }
+        const key = `${project}/${feature}/${c.id}`; // C1 exists in every feature (review Codex 2026-10-22)
+        if (age > 2 * limit && !ctx.flags.challengeNudged.has(`${key}:sup`)) { ctx.flags.challengeNudged.add(`${key}:sup`); notify(ctx, supervisorAddress(project, feature), `${feature}: challenge ${c.id} on ${c.target} has waited ${Math.round(age)} min without an answer from the Lead.`); }
+        else if (age > limit && !ctx.flags.challengeNudged.has(`${key}:lead`)) { ctx.flags.challengeNudged.add(`${key}:lead`); notify(ctx, leadAddress(project, feature), `${c.id} has waited ${Math.round(age)} min. Resolve it (slp_resolve / slp_rule) or escalate it.`); }
       }
     }
   }
@@ -6079,8 +6525,9 @@ import { join } from "node:path";
 import { bindSession, transformCreate, type CreateRequest } from "./agentConfig";
 import { loadSlpConfig, slpHome, type SlpConfig } from "./config";
 import type { Ctx, PaseoLike } from "./context";
-import { trustRepo } from "./git";
+import { trustRepo, worktreeCreateRisks } from "./git";
 import { reconcile, tick } from "./hooks";
+import { paseoStatePaths } from "./permissions";
 import { SeenIds } from "./human";
 import { IdentityRegistry } from "./identity";
 import { startMcpServer } from "./mcp/server";
@@ -6102,9 +6549,13 @@ export function createRuntime(): Runtime {
   let setup: RoleSetup | null = null;
   let setupPromise: Promise<RoleSetup> | null = null;
   for (const [name, project] of Object.entries(config.projects)) {
-    try { trustRepo(project.repo); } catch (e) { console.error(`[slp] project ${name}: ${String(e)}`); }
+    try {
+      trustRepo(project.repo);
+      const risks = worktreeCreateRisks(project.repo, project.baseBranch);
+      if (risks.length) console.error(`[slp] project ${name}: Paseo would run repo code outside the sandbox when SLP creates worktrees (${risks.join(", ")}); SLP will refuse to spawn agents until these are removed.`);
+    } catch (e) { console.error(`[slp] project ${name}: ${String(e)}`); }
   }
-  const stateDirs = [home, process.env.PASEO_HOME ?? join(homedir(), ".paseo")];
+  const stateDirs = [home, ...paseoStatePaths(process.env.PASEO_HOME ?? join(homedir(), ".paseo"))]; // not worktrees/ (review Codex 2026-10-22)
   const identities = new IdentityRegistry(join(home, "identities.json"));
   const router = new Router({
     file: join(home, "router.json"), now: () => new Date(),
@@ -6261,7 +6712,7 @@ EOF
 /Applications/Paseo.app/Contents/Resources/bin/paseo reload --json
 rm -rf /tmp/slp-smoke-repo /tmp/slp-smoke-origin.git && git init -q --bare /tmp/slp-smoke-origin.git
 mkdir /tmp/slp-smoke-repo && cd /tmp/slp-smoke-repo && git init -q -b main && npm init -y >/dev/null && npm pkg set scripts.test="node --test" && printf 'node_modules/\n' > .gitignore && git add . && git commit -qm init && git remote add origin /tmp/slp-smoke-origin.git && git push -q origin main
-mkdir -p ~/.slp && cat > ~/.slp/config.json <<'EOF'
+mkdir -p ~/.slp && { [ -f ~/.slp/config.json ] && cp ~/.slp/config.json ~/.slp/config.json.bak-slp-smoke; true; } && cat > ~/.slp/config.json <<'EOF'
 { "projects": { "smoke": { "repo": "/tmp/slp-smoke-repo", "baseBranch": "origin/main", "verify": ["npm test"] } }, "ship": { "remote": "origin", "openPr": false }, "watch": { "intervalMinutes": 2 } }
 EOF
 ```
@@ -6295,17 +6746,20 @@ Nhờ anh tạo agent bằng provider `SLP Supervisor` trong workspace thư mụ
 | 16 | Peer-impl không ghi được `<worktree>/.git` (sandbox `denyWrite` và permission) | Nhờ anh bảo Peer chạy `echo x > .git` và dùng Write vào `.git`; cả hai phải fail |
 | 17 | Tool `slp_*` không sinh permission prompt nào (toolPolicy) | App không hiện prompt cho `slp_*`; `paseo plugin logs slp` |
 | 18 | Ghi giá trị thật của `providerId`/`displayName` trong `providers.listUsage()` | `paseo provider usage --json` hoặc log |
-| 19 | Reviewer Codex có đọc được `~/.paseo` (token của agent khác) không — ghi kết quả cho §13 | Nhờ anh bảo reviewer chạy `ls ~/.paseo` |
+| 19 | **Cổng bắt buộc trước khi dùng reviewer khác vendor cho việc thật** (review Codex 2026-10-22, F17). Spike S3 đã thấy Codex do Paseo chạy gọi được loopback. Nhờ anh tạo file mồi `~/.paseo/agents/slp-canary.json` (nội dung giả, không phải token thật), rồi bảo reviewer chạy `cat ~/.paseo/agents/slp-canary.json` và `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<mcp.port>/mcp`. Đọc được **và** gọi được thì dừng: anh chọn (a) reviewer là Claude-sandbox (cùng vendor), (b) đặt password cho daemon / chặn đọc agent storage nếu Codex cho phép, hoặc (c) chấp nhận rủi ro cho pilot; ghi lựa chọn vào §13. Xoá file mồi sau đó | Output hai lệnh trong timeline reviewer |
 | 20 | Gói kiểm tới tab Supervisor mỗi 2 phút khi feature chạy; không ngắt lúc anh đang chat; gói mới thay gói chưa giao; Supervisor trả `slp_watch_result` và chỉ một dòng khi mọi thứ ổn | Timeline của Supervisor; event `ops` `watch_*`, `watch_result` |
 | 21 | `timeline.refetch` của Peer đang chạy trả cả tool call của turn hiện tại (gói kiểm có "last tool calls" khi Peer đang `running`) | Nội dung gói kiểm |
 | 22 | `slp_send {to: "lead", mode: "steer"}` tới Lead đang chạy: tin chen vào turn đó với Claude, không phải chờ hết turn; ghi kết quả thật. Nếu không chen được, ghi lại và đổi hướng dẫn sang `interrupt` | Timeline của Lead |
 | 23 | Supervisor thứ hai cho một ý tưởng khác trong cùng project: brief cho slug đã có bị từ chối; nó đọc được digest feature đầu (`slp_state {all: true}`) nhưng `slp_send` tới Lead của feature đầu bị từ chối | Timeline của Supervisor thứ hai |
+| 24 | Reload plugin khi mọi agent SLP đang idle và có một job resume đã đến hạn: có hook nào chạy mà không cần anh làm gì không (review Codex 2026-10-22, F14). Không có thì ghi lại: timer chỉ chạy khi có hook đầu tiên (anh mở tab, agent đổi trạng thái); job vẫn còn trong `resume.json`, chỉ đến muộn | `paseo plugin logs slp`; `resume.json` |
+| 25 | Ngoài SLP (repo tạm khác, có `paseo.json` với `worktree.teardown` ghi một marker): Paseo đọc `teardown` từ repo gốc hay từ worktree đang bị archive. Sửa `teardown` trong worktree rồi archive, xem marker nào được ghi. Kết quả quyết định `scrubProtected` (T9) còn cần hay có thể bỏ | File marker |
 
 - [ ] **Step 4: Dọn dẹp và khôi phục**
 
 ```bash
 /Applications/Paseo.app/Contents/Resources/bin/paseo plugin remove slp
 cp ~/.paseo/config.json.bak-slp-smoke ~/.paseo/config.json && /Applications/Paseo.app/Contents/Resources/bin/paseo reload --json
+if [ -f ~/.slp/config.json.bak-slp-smoke ]; then mv ~/.slp/config.json.bak-slp-smoke ~/.slp/config.json; else rm -f ~/.slp/config.json; fi
 ```
 Archive các workspace của `/tmp/slp-smoke-repo` (`paseo workspace ls --json`, rồi `paseo workspace archive <id>`). Giữ lại `~/.slp/smoke/` làm bằng chứng cho tới khi anh bảo xoá.
 

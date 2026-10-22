@@ -10,7 +10,7 @@
 
 **Spec:** [`docs/superpowers/specs/2026-10-21-slp-paseo-design.md`](../specs/2026-10-21-slp-paseo-design.md) (rev 4). Bằng chứng nền: [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md).
 
-**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 263 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 61 lần gỡ thử từng phần sửa mới (rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
+**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 269 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 74 lần gỡ thử từng phần sửa mới (round 2 của review thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
 
 **Core mechanism:** mỗi ý tưởng một Supervisor (brief đầu tiên gắn nó với feature) → `slp_spawn` → Paseo tạo worktree và agent → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng, `toolPolicy`) và ghi worktree thật vào identity → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `turn_started`/`turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer (hook tắt, git dir tin cậy), chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh → mỗi `watch.intervalMinutes` plugin dựng gói kiểm (trạng thái, tool call gần nhất, lặp lại, file đang đổi) gửi Supervisor của feature; Supervisor steer Lead khi cần.
 
@@ -634,7 +634,9 @@ Quy ước dữ liệu event, các task sau phải ghi đúng như vậy:
 - `evidence`: `data { scope: "task"|"feature"|"challenge", task?, commit, command, exitCode, timedOut }`.
 - `review`: `data { task, commit, blocking, findings, verdict }`. Chỉ tính sau `ops` loại `review_checked` `data { task, commit, agentId, reviewSeq }`, do plugin ghi khi turn của reviewer kết thúc mà worktree sạch; `reviewOk` cần `verdict === "pass"` **và** `blocking === 0` (review Codex 2026-10-22).
 - `ops` loại `review_invalidated`: `data { type, task, commit }`.
-- `evidence` chỉ xanh khi `evidencePassed`: exit 0, không timeout, `dirty` rỗng (lệnh verify không làm đổi file tracked hay HEAD).
+- `evidence` chỉ xanh khi `evidencePassed`: exit 0, không timeout, `dirty` rỗng (lệnh verify không làm đổi file tracked hay HEAD), và `def` (định nghĩa task lúc chạy) khớp plan hiện tại.
+- `assign` có `takeover: true` (Peer mới tiếp quản task của Peer đã chết) chỉ đổi `agentId`; commit, evidence, review giữ nguyên.
+- Task đã accept mà task nó phụ thuộc thành `stale`, hoặc được accept lại sau nó, cũng thành `stale`.
 - `release`: `data { task, outcome: "accepted"|"returned", commit?, def? }`. `def` = `taskDef` lúc accept; plan sau đổi `verify`, `touchSet`, `dependsOn` hay `verifies` của task thì task thành `stale`.
 - `challenge`: `id` C#, `data { target, level: "plan"|"spec", claim, ... }`.
 - `challenge_resolved`: `refs[0]` = C#, `data { outcome }`.
@@ -757,6 +759,22 @@ describe("deriveFeature", () => {
     const dirty = [...base, ev("evidence", { scope: "task", task: "T1", commit: "c", exitCode: 0, timedOut: false, dirty: ["src.ts"] }, { by_role: "plugin" })];
     expect(deriveFeature("f", dirty).tasks.get("T1")!.evidenceOk).toBe(false);
   });
+  it("ties evidence to the task definition, keeps a delivery across a takeover, and spreads staleness to dependents", () => {
+    const def = { verify: "npm test", touchSet: ["src/"], dependsOn: [], verifies: [] };
+    const base = [ev("plan", { version: 1, sha256: "p1", path: "p", tasks: [task("T1")] }),
+      ev("assign", { task: "T1", agentId: "p1", worktree: "/w", branch: "b", base: "base", attempt: 1 }), ev("commit", { task: "T1", hash: "c1" }, { by_role: "plugin" }),
+      ev("evidence", { scope: "task", task: "T1", commit: "c1", exitCode: 0, timedOut: false, dirty: [], def }, { by_role: "plugin" })];
+    expect(deriveFeature("f", base).tasks.get("T1")!.evidenceOk).toBe(true);
+    const changed = [...base, ev("plan", { version: 2, sha256: "p2", path: "p", tasks: [{ ...task("T1"), verify: "npm run strict" }] })];
+    expect(deriveFeature("f", changed).tasks.get("T1")!.evidenceOk).toBe(false);
+    const taken = [...base, ev("assign", { task: "T1", agentId: "p2", takeover: true }), ev("report", { task: "T1", status: "done", message: "m" }, { by_role: "peer-impl" })];
+    expect(deriveFeature("f", taken).tasks.get("T1")).toMatchObject({ agentId: "p2", lastCommit: "c1", evidenceOk: true, status: "reported" });
+    const two = [ev("plan", { version: 1, sha256: "p1", path: "p", tasks: [task("T1"), task("T2", ["T1"])] }),
+      ...accepted("T1", "c1").slice(0, -1), ev("release", { task: "T1", outcome: "accepted", def }), ...accepted("T2", "c2")];
+    const v2 = [...two, ev("plan", { version: 2, sha256: "p2", path: "p", tasks: [{ ...task("T1"), verify: "npm run strict" }, task("T2", ["T1"])] })];
+    expect(deriveFeature("f", v2).tasks.get("T2")!.status).toBe("stale");
+    expect(deriveFeature("f", two).tasks.get("T2")!.status).toBe("accepted");
+  });
   it("marks accepted work stale when a later plan changes what the task promises", () => {
     const def = { verify: "npm test", touchSet: ["src/"], dependsOn: [], verifies: [] };
     const acc = [...accepted("T1", "c1").slice(0, -1), ev("release", { task: "T1", outcome: "accepted", def })];
@@ -833,11 +851,15 @@ export interface FeatureState {
 
 const TASK_KINDS = new Set(["assign", "report", "commit", "evidence", "review", "release", "ops"]);
 
-/** Green evidence: exit 0, no timeout, and the run left the commit's tracked files and HEAD as they were (review Codex 2026-10-22). */
-export const evidencePassed = (d: Record<string, unknown>): boolean => d.exitCode === 0 && d.timedOut !== true && !(Array.isArray(d.dirty) && d.dirty.length > 0);
-
-/** What a task promises; accepted work goes stale when a later plan changes it. */
+/** What a task promises; accepted work goes stale when a later plan changes it, and evidence counts only for the definition it ran under. */
 export const taskDef = (t: PlanTask) => ({ verify: t.verify, touchSet: [...t.touchSet].sort(), dependsOn: [...t.dependsOn].sort(), verifies: [...t.verifies].sort() });
+
+/**
+ * Green evidence: exit 0, no timeout, the run left the commit's tracked files and HEAD as they were, and (with `def`) it ran under that
+ * task definition, so a plan that changes the verify command makes old evidence red (review Codex 2026-10-22, rounds 1 and 2).
+ */
+export const evidencePassed = (d: Record<string, unknown>, def?: ReturnType<typeof taskDef>): boolean =>
+  d.exitCode === 0 && d.timedOut !== true && !(Array.isArray(d.dirty) && d.dirty.length > 0) && (def === undefined || d.def === undefined || JSON.stringify(d.def) === JSON.stringify(def));
 const str = (v: unknown): string | null => (v == null ? null : String(v));
 
 export function deriveFeature(slug: string, events: readonly SlpEvent[]): FeatureState {
@@ -917,6 +939,7 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
     for (const e of events) {
       if (!TASK_KINDS.has(e.kind) || e.data.task !== pt.id) continue;
       if (e.kind === "assign") {
+        if (e.data.takeover === true) { ts.agentId = str(e.data.agentId); continue; } // a new Peer owns it; the delivery (commit, evidence, review) stays
         if (wasAccepted) ts.reopened = true;
         Object.assign(ts, { status: "assigned", agentId: str(e.data.agentId), worktree: str(e.data.worktree), branch: str(e.data.branch), base: str(e.data.base), attempt: Number(e.data.attempt ?? ts.attempt + 1), lastCommit: null, evidenceOk: false, reviewOk: false, acceptedAtSeq: null });
       } else if (e.kind === "report") {
@@ -924,7 +947,7 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
       } else if (e.kind === "commit") {
         if (e.data.scope !== "challenge") { ts.lastCommit = str(e.data.hash); ts.evidenceOk = false; ts.reviewOk = false; reviews.clear(); }
       } else if (e.kind === "evidence") {
-        if (e.data.scope === "task" && e.data.commit === ts.lastCommit) ts.evidenceOk = evidencePassed(e.data);
+        if (e.data.scope === "task" && e.data.commit === ts.lastCommit) ts.evidenceOk = evidencePassed(e.data, taskDef(pt));
       } else if (e.kind === "review") {
         if (e.data.commit === ts.lastCommit) { reviews.set(String(e.by_agent), { commit: String(e.data.commit), ok: e.data.verdict === "pass" && Number(e.data.blocking ?? 1) === 0 }); ts.reviewOk = false; }
       } else if (e.kind === "ops") {
@@ -944,6 +967,12 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
     else if (ts.status === "accepted" && (supersededAfterAccept || changedSinceAccept)) ts.status = "stale";
     else if (ts.status !== "accepted" && (openSpecTargets.has(pt.id) || ts.closure.some((d) => openSpecTargets.has(d)) || ts.touchSet.some((e) => openSpecTargets.has(e)))) ts.status = "parked";
     st.tasks.set(pt.id, ts);
+  }
+  // Accepted work built on a task that went stale, or was accepted again later, is stale too (spec §6.5). Plan order puts dependencies first.
+  for (const ts of st.tasks.values()) {
+    if (ts.status !== "accepted") continue;
+    const moved = ts.dependsOn.some((d) => { const dep = st.tasks.get(d); return dep !== undefined && (dep.status === "stale" || (dep.status === "accepted" && (dep.acceptedAtSeq ?? 0) > (ts.acceptedAtSeq ?? 0))); });
+    if (moved) ts.status = "stale";
   }
 
   if (st.brief && !st.brief.approved) st.waitingOnHuman.push(`approve brief v${st.brief.version}`);
@@ -993,7 +1022,7 @@ git commit -m "feat(plugin): derive premise, task and challenge state from event
 Quy tắc kiểm quote (report human attention và review Codex 2026-10-22):
 - Chỉ **tin mới nhất** của anh gửi agent đó, sau item cần duyệt, được xét. Câu "duyệt" rồi "khoan, chưa duyệt" hay "wait, stop" thì không duyệt gì.
 - Quote nằm trọn từ trong tin đó, ở một mệnh đề không có từ phủ định (`không`, `ko`, `chưa`, `đừng`, `no`, `not`…) và không phải câu hỏi.
-- Với cổng duyệt (brief, spec, ship), mệnh đề đó phải là một câu "đồng ý" thuần: có ít nhất một từ duyệt (`duyệt`, `ok`, `ship`, `đồng ý`, `lgtm`…) và chỉ gồm từ duyệt, từ đệm (`đi`, `nhé`, `luôn`, `brief`, `spec`…), số version và tên feature. "Please explain the risks" hay "ok để mình nghĩ thêm" không duyệt gì.
+- Với cổng duyệt (brief, spec, ship), mệnh đề đó phải là một câu "đồng ý" thuần: có ít nhất một từ duyệt (`duyệt`, `ok`, `ship`, `đồng ý`, `lgtm`…) và chỉ gồm từ duyệt, từ đệm (`đi`, `nhé`, `luôn`, `brief`, `spec`…), số version và tên feature. "Please explain the risks" hay "ok để mình nghĩ thêm" không duyệt gì. Thêm nữa, cả tin không được có từ phủ định hay từ dừng (`stop`, `dừng`, `hủy`, `wait`…) ở bất kỳ đâu: "OK, wait, stop." và "OK. Do not ship." không duyệt. Đổi lại, "Không vấn đề gì. Duyệt" cũng bị từ chối và Supervisor phải hỏi lại; chấp nhận cái giá đó.
 - Mỗi tin của anh chỉ đứng sau một quyết định (`messageId` ghi trong `human_decision`); ghi lại đúng quyết định đó cho đúng target (ship thử lại) thì được.
 Sai thì từ chối, Supervisor hỏi lại anh một câu rõ; plugin không bao giờ đoán là duyệt. Plugin vẫn không hiểu ngữ nghĩa: các luật trên chỉ chặn những cách trích sai dễ gặp.
 
@@ -1060,9 +1089,11 @@ describe("findHumanQuote", () => {
     }
   });
   it("accepts the quote from its own clause, and lets a later retraction win", () => {
-    const one = [msg(3, "2026-10-22T04:00:00.000Z", "sup", "Không vấn đề gì. Duyệt, ship đi")];
+    const one = [msg(3, "2026-10-22T04:00:00.000Z", "sup", "Ổn rồi. Duyệt, ship đi")];
     expect(findHumanQuote(one, { agentId: "sup", quote: "duyệt", after: "2026-10-22T02:00:00.000Z", affirm: true })).toMatchObject({ ok: true, seq: 3 });
     expect(findHumanQuote(one, { agentId: "sup", quote: "duyệt, ship đi", after: "2026-10-22T02:00:00.000Z", affirm: true })).toMatchObject({ ok: true, seq: 3 });
+    const noted = [msg(3, "2026-10-22T04:00:00.000Z", "sup", "Không vấn đề gì. Dùng Redis")];
+    expect(findHumanQuote(noted, { agentId: "sup", quote: "dùng redis", after: "2026-10-22T02:00:00.000Z" }).ok).toBe(true);
     const retracted = [msg(3, "2026-10-22T04:00:00.000Z", "sup", "duyệt"), msg(4, "2026-10-22T04:05:00.000Z", "sup", "khoan, chưa duyệt")];
     expect(findHumanQuote(retracted, { agentId: "sup", quote: "duyệt", after: "2026-10-22T02:00:00.000Z" }).ok).toBe(false);
     const stopped = [msg(3, "2026-10-22T04:00:00.000Z", "sup", "ship"), msg(4, "2026-10-22T04:05:00.000Z", "sup", "wait, stop")];
@@ -1075,6 +1106,9 @@ describe("findHumanQuote", () => {
     expect(yes("ok để mình nghĩ thêm", "ok")).toBe(false);
     expect(yes("Duyệt spec cache layer v2 nhé", "duyệt spec cache layer v2")).toBe(true);
     expect(yes("đồng ý, nhưng thêm test X sau", "đồng ý")).toBe(true);
+    expect(yes("OK, wait, stop.", "ok")).toBe(false);
+    expect(yes("OK. Do not ship.", "ok")).toBe(false);
+    expect(yes("Không vấn đề gì. Duyệt", "duyệt")).toBe(false);
     expect(findHumanQuote(at("please explain the risks"), { agentId: "sup", quote: "explain the risks", after: "2026-10-22T02:00:00.000Z" }).ok).toBe(true);
   });
   it("lets one message back only one decision, except the same decision on the same target", () => {
@@ -1171,6 +1205,8 @@ const NEGATIONS = new Set(["không", "khong", "ko", "k", "hông", "chưa", "chua
 const APPROVE = new Set(["duyệt", "ok", "oke", "okay", "okie", "ổn", "đồng", "ý", "được", "chốt", "ship", "push", "approve", "approved", "yes", "lgtm", "go"]);
 const FILLER = new Set(["đi", "nhé", "nha", "luôn", "rồi", "này", "đó", "đấy", "cái", "cho", "mình", "em", "anh", "bạn", "thôi", "vậy", "ạ", "á", "à", "ừ", "vâng", "dạ", "brief", "spec", "plan", "it", "this", "the", "please"]);
 const words = (s: string) => s.split(/[^\p{L}\p{M}\p{N}']+/u).filter(Boolean);
+/** For approvals, any of these anywhere in the message blocks it: "OK, wait, stop." or "OK. Do not ship." approve nothing (review Codex 2026-10-22, round 2). */
+const RETRACT = new Set([...NEGATIONS, "stop", "dừng", "hủy", "huỷ", "cancel", "hold", "revert"]);
 
 /** The clause around each whole-word occurrence of `q` that is neither negated nor a question. */
 function clausesWith(text: string, q: string): string[] {
@@ -1211,7 +1247,7 @@ export function findHumanQuote(messages: readonly SlpEvent[], opts: { agentId: s
   if (!text.includes(q)) return { ok: false, reason: "the human's latest message does not contain that quote; quote their latest answer, or ask them to confirm plainly" };
   const clauses = clausesWith(text, q);
   const extra = new Set((opts.extraWords ?? []).flatMap((w) => words(norm(w))));
-  if (!clauses.length || (opts.affirm && !clauses.some((c) => saysYes(c, extra)))) {
+  if (!clauses.length || (opts.affirm && (!clauses.some((c) => saysYes(c, extra)) || words(text).some((w) => RETRACT.has(w))))) {
     return { ok: false, reason: "in the human's latest message that quote is part of a word, negated, a question, or more than a plain yes; ask them to confirm plainly, e.g. \"duyệt\"" };
   }
   return { ok: true, seq: latest.seq, messageId: String(latest.data.messageId ?? latest.seq) };
@@ -1955,14 +1991,14 @@ git commit -m "feat(plugin): role-filtered MCP server over HTTP"
 - Test: `plugin/test/git.test.ts`
 
 **Interfaces:**
-- Produces: `trustRepo(repo): void`, `class UntrustedGitDirError`, `git(cwd, args, allowFail?): { code; stdout; stderr }`, `headOf(cwd)`, `currentBranch(cwd)`, `gitCommonDir(cwd)`, `isAncestor(cwd, a, b)`, `deleteBranch(repo, branch)`, `changedFiles(worktree): string[]`, `trackedChanges(worktree): string[]`, `isSensitivePath(p): boolean`, `hooksDir(cwd): string | null`, `isProtectedPath(p, hookDir): boolean`, `worktreeCreateRisks(cwd, ref): string[]`, `scrubProtected(worktree): string[]`, `class NoChangesError`, `commitAll(worktree, { message; trailers; exclude }): string`, `commitTrailer(cwd, rev, key): string | null`, `mergeNoHooks(worktree, ref, message): { ok: true; hash } | { ok: false; conflicts: string[] }`, `startMerge(worktree, ref): string[]`, `pushNoHooks(worktree, remote, branch)`, `filesOutside(files, touchSet): string[]`, `hookFile(worktree, name): string | null`, `diffStat(cwd, from, to): string`
+- Produces: `trustRepo(repo): void`, `class UntrustedGitDirError`, `git(cwd, args, allowFail?): { code; stdout; stderr }`, `headOf(cwd)`, `currentBranch(cwd)`, `gitCommonDir(cwd)`, `isAncestor(cwd, a, b)`, `deleteBranch(repo, branch)`, `changedFiles(worktree): string[]`, `trackedChanges(worktree): string[]`, `isSensitivePath(p): boolean`, `hooksDir(cwd): string | null`, `isProtectedPath(p, hookDir): boolean`, `worktreeCreateRisks(cwd, ref): string[]`, `scrubProtected(worktree): void` (throws when it cannot restore), `class NoChangesError`, `commitAll(worktree, { message; trailers; exclude }): string`, `commitTrailer(cwd, rev, key): string | null`, `mergeNoHooks(worktree, ref, message): { ok: true; hash } | { ok: false; conflicts: string[] }`, `startMerge(worktree, ref): string[]`, `pushNoHooks(worktree, remote, branch)`, `filesOutside(files, touchSet): string[]`, `hookFile(worktree, name): string | null`, `diffStat(cwd, from, to): string`
 
 Ba lớp chặn code của repo chạy ngoài sandbox qua git (review B2):
 - Mọi lệnh git của plugin có `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, không riêng commit/merge/push.
 - Plugin không tin file `<worktree>/.git`, vì file này nằm trong cwd của Peer và Peer ghi được. `git()` tự tìm admin dir bằng cách đọc ngược `<common dir>/worktrees/*/gitdir` của repo đã đăng ký qua `trustRepo`; common dir nằm ngoài sandbox của mọi vai. Sau đó chạy với `--git-dir` và `--work-tree` cố định. Thư mục không thuộc repo nào đã đăng ký thì `git()` ném `UntrustedGitDirError`, tức là fail closed.
 - Paseo tự chạy `git worktree add` (có hook `post-checkout`) và lệnh `worktree.setup` trong `paseo.json` khi tạo worktree mới, ngoài sandbox. Vì vậy plugin không bao giờ commit thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath` của repo) hay ở `paseo.json`. Các file này bị loại khỏi commit như file nhạy cảm và được báo cho Lead.
 - Chừng đó chưa đủ (review Codex 2026-10-22, CRITICAL): lệnh setup gọi file khác của repo (`node scripts/setup.js`, `npm ci` chạy script `postinstall` của `package.json`), và Peer sửa được các file đó. Vì vậy `worktreeCreateRisks(cwd, ref)` tìm mọi thứ Paseo sẽ chạy: `worktree.setup`, `worktree.teardown`, `worktree.terminals` trong `paseo.json` (ở `ref` và ở thư mục nguồn), file `post-checkout` có version ở thư mục hook, và hook `post-checkout` cục bộ trong `.git/hooks`. Có bất kỳ cái nào thì plugin **không tạo worktree** cho agent SLP (fail closed, báo rõ lý do). Cài dependency là việc của Peer trong sandbox, hoặc nằm trong lệnh verify. Shim của husky 9 (`.husky/_/`) chỉ gọi `.husky/post-checkout`, nên chỉ file đó được tính.
-- Trước khi archive workspace của agent, `scrubProtected(worktree)` trả `paseo.json` và thư mục hook về HEAD, xoá bản mới chưa track. Lý do: Paseo có thể chạy `teardown` từ worktree đang bị xoá, và agent ghi được vào đó (T21 kiểm Paseo đọc `teardown` từ đâu).
+- Trước khi archive workspace của agent, `scrubProtected(worktree)` xoá `paseo.json` và mọi thư mục hook rồi checkout lại từ HEAD (kể cả file bị `.gitignore`), sau đó so với HEAD; không chứng minh được thì ném lỗi và workspace **không** bị archive. Lý do: Paseo 0.12 đọc `teardown` từ chính worktree đang bị archive (`utils/worktree.ts:767`, đã đọc source), và agent ghi được vào đó. Plugin cũng từ chối `Write`/`Edit` vào `paseo.json` và thư mục hook (T14), nhưng lệnh shell của Peer vẫn ghi được, nên bước dọn này là chốt chặn.
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -2068,6 +2104,10 @@ describe("git helpers", () => {
     const plain = repo();
     writeFileSync(join(plain, ".git", "hooks", "post-checkout"), "#!/bin/sh\n");
     expect(worktreeCreateRisks(plain, "main")).toEqual([".git/hooks/post-checkout"]);
+    const husky = repo();
+    mkdirSync(join(husky, ".husky", "_"), { recursive: true }); writeFileSync(join(husky, ".husky", "_", "post-checkout"), "#!/bin/sh\nnode scripts/x.js\n");
+    sh(husky, "git", ["add", "-f", ".husky"]); sh(husky, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "shim"]); sh(husky, "git", ["config", "core.hooksPath", ".husky/_"]);
+    expect(worktreeCreateRisks(husky, "main")).toEqual([".husky/_/post-checkout"]);
   });
   it("resets paseo.json and hook dirs in a worktree before it is archived", () => {
     const r = repo(); writeFileSync(join(r, "paseo.json"), "{}\n"); sh(r, "git", ["add", "."]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "cfg"]);
@@ -2075,10 +2115,17 @@ describe("git helpers", () => {
     writeFileSync(join(wt, "paseo.json"), JSON.stringify({ worktree: { teardown: "curl evil" } }));
     mkdirSync(join(wt, ".githooks")); writeFileSync(join(wt, ".githooks", "post-checkout"), "x");
     writeFileSync(join(wt, "src.ts"), "keep me");
-    expect(scrubProtected(wt).sort()).toEqual([".githooks/post-checkout", "paseo.json"]);
+    scrubProtected(wt);
     expect(sh(wt, "cat", ["paseo.json"])).toBe("{}");
     expect(existsSync(join(wt, ".githooks", "post-checkout"))).toBe(false);
     expect(existsSync(join(wt, "src.ts"))).toBe(true);
+    // ignored by .gitignore and absent from HEAD: still removed
+    const r2 = repo(); writeFileSync(join(r2, ".gitignore"), "paseo.json\n"); sh(r2, "git", ["add", "."]); sh(r2, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "ignore"]);
+    const wt2 = worktree(r2, "slp/f/T4-1");
+    writeFileSync(join(wt2, "paseo.json"), JSON.stringify({ worktree: { teardown: "curl evil" } }));
+    expect(changedFiles(wt2)).toEqual([]);
+    scrubProtected(wt2);
+    expect(existsSync(join(wt2, "paseo.json"))).toBe(false);
   });
 });
 ```
@@ -2093,7 +2140,7 @@ Expected: FAIL, "Cannot find module".
 `plugin/server/git.ts`:
 ```ts
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { matchTouch } from "./touch";
 
@@ -2192,24 +2239,46 @@ export function worktreeCreateRisks(cwd: string, ref: string): string[] {
       if (v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0)) out.push(`paseo.json worktree.${key}`);
     }
   }
+  // A relative core.hooksPath resolves inside the new worktree, so only versioned hook files matter there; no directory name is trusted (review Codex 2026-10-22, round 2).
   const hookDir = hooksDir(cwd);
-  for (const f of new Set([".husky/post-checkout", ".githooks/post-checkout", ...(hookDir && !hookDir.startsWith(".husky/_") ? [`${hookDir}/post-checkout`] : [])])) {
+  for (const f of new Set([".husky/post-checkout", ".githooks/post-checkout", ...(hookDir ? [`${hookDir}/post-checkout`] : [])])) {
     if (git(cwd, ["cat-file", "-e", `${ref}:${f}`], true).code === 0) out.push(f);
   }
-  if (!hookDir && existsSync(join(gitCommonDir(cwd), "hooks", "post-checkout"))) out.push(".git/hooks/post-checkout");
+  const raw = run(cwd, ["config", "--get", "core.hooksPath"], true, ["-c", "core.fsmonitor=false"]).stdout.trim();
+  const localHook = raw ? (isAbsolute(raw) ? join(raw, "post-checkout") : null) : join(gitCommonDir(cwd), "hooks", "post-checkout");
+  if (localHook && existsSync(localHook)) out.push(raw ? localHook : ".git/hooks/post-checkout");
   return [...new Set(out)];
 }
 
-/** Before Paseo archives a worktree: paseo.json and hook dirs go back to HEAD, new ones are deleted. Returns what it reset. */
-export function scrubProtected(worktree: string): string[] {
+const filesUnder = (root: string, rel: string): string[] => {
+  const abs = join(root, rel);
+  if (!existsSync(abs) && !isSymlink(abs)) return [];
+  if (isSymlink(abs) || !lstatSync(abs).isDirectory()) return [rel];
+  return readdirSync(abs).flatMap((n) => filesUnder(root, `${rel}/${n}`));
+};
+const isSymlink = (p: string): boolean => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
+
+/**
+ * Before Paseo archives a worktree it runs worktree.teardown from that worktree's own paseo.json (paseo 0.12 utils/worktree.ts:767).
+ * So paseo.json and every hook dir are removed and checked out again from HEAD, whatever git status says (ignored files included),
+ * and the result is compared with HEAD. Throws when it cannot prove that; the caller then does not archive (review Codex 2026-10-22, round 2).
+ */
+export function scrubProtected(worktree: string): void {
   const hookDir = hooksDir(worktree);
-  const dirty = changedFiles(worktree).filter((f) => isProtectedPath(f, hookDir));
-  if (!dirty.length) return [];
-  const tracked = new Set(git(worktree, ["ls-files", "--", ...dirty], true).stdout.split("\n").filter(Boolean));
-  const restore = dirty.filter((f) => tracked.has(f));
-  if (restore.length) git(worktree, ["checkout", "--", ...restore], true);
-  for (const f of dirty.filter((x) => !tracked.has(x))) rmSync(join(worktree, f), { force: true, recursive: true });
-  return dirty;
+  const paths = [...new Set(["paseo.json", ".husky", ".githooks", ...(hookDir ? [hookDir] : [])])];
+  const inHead = (rel: string) => git(worktree, ["ls-tree", "-r", "--name-only", "HEAD", "--", rel]).stdout.split("\n").filter(Boolean);
+  for (const rel of paths) {
+    const wanted = inHead(rel);
+    rmSync(join(worktree, rel), { recursive: true, force: true });
+    if (wanted.length) git(worktree, ["checkout", "HEAD", "--", rel]);
+  }
+  for (const rel of paths) {
+    const wanted = inHead(rel).sort();
+    const found = filesUnder(worktree, rel).sort();
+    if (JSON.stringify(found) !== JSON.stringify(wanted) || git(worktree, ["diff", "--quiet", "HEAD", "--", rel], true).code !== 0) {
+      throw new Error(`could not restore ${rel} in ${worktree} to HEAD`);
+    }
+  }
 }
 
 export class NoChangesError extends Error {}
@@ -2419,7 +2488,8 @@ git commit -m "feat(plugin): sandboxed command runner with timeout and fail-clos
 
 Các quyết định của pipeline:
 - Chỉ chạy khi turn của Peer đã kết thúc (hook ở T20 gọi, tuần tự theo agent), nên Peer không còn đang ghi file dở.
-- Chống chạy hai lần theo `report.seq`: nếu đã có `commit` hoặc `ops` loại `report_rejected`/`report_blocked` mang cùng `reportSeq`, trả lại kết quả cũ. Nếu commit đã có mà chưa có `evidence` cho commit đó (lần trước runner hỏng), chạy verify lại.
+- Chống chạy hai lần theo `report.seq`: nếu đã có `commit` hoặc `ops` loại `report_rejected`/`report_blocked`/`report_unchanged` mang cùng `reportSeq`, trả lại kết quả cũ.
+- **Report không có thay đổi mới trên commit đã ghi** (Peer tiếp quản, hoặc Peer trả lời mà không sửa gì): plugin ghi `ops report_unchanged`, giữ commit đó, và chỉ verify lại khi evidence cũ chạy dưới định nghĩa task khác (plan đổi lệnh verify). Nếu commit đã có mà chưa có `evidence` cho commit đó (lần trước runner hỏng), chạy verify lại.
 - Hook `pre-commit` của repo, nếu có, chạy **trong sandbox** trước lệnh verify, trên cây file đã commit.
 - **Evidence phải khớp commit** (review Codex 2026-10-22): sau khi chạy, nếu file tracked đổi hoặc HEAD di chuyển (formatter trong hook, test ghi đè fixture, Peer bắt đầu turn mới giữa chừng), evidence ghi `dirty` và không xanh. Ở worktree Lead (scope `feature`), plugin trả file tracked về như cũ. Cách mạnh hơn là checkout riêng cho mỗi lần verify; v1 không làm vì tốn cài dependency mỗi lần, và reviewer đã chạy test trên worktree sạch của đúng commit.
 - **Report `blocked` không đổi file không bị từ chối** (report human attention 2026-10-22): plugin ghi `ops report_blocked` và trả `{ outcome: "blocked" }`; hook ở T20 chuyển cho Lead. Trước đây nó thành "no changes in worktree" và chỉ Peer được bảo "fix it", nên Peer kẹt vòng và Lead không biết.
@@ -2493,6 +2563,19 @@ describe("processReport", () => {
     expect(await processReport(deps, { ...task, verify: "printf y > src.ts" }, report)).toMatchObject({ outcome: "committed", evidenceOk: false });
     expect(store.all().find((e) => e.kind === "evidence")!.data).toMatchObject({ exitCode: 0, dirty: ["src.ts"] });
   });
+  it("keeps the recorded commit on a report with no new changes, and verifies it again only under a new task definition", async () => {
+    const { repo, store, run, deps, task, report } = setup();
+    writeFileSync(join(repo, "src.ts"), "x");
+    const first = await processReport(deps, task, report);
+    const c1 = (first as { commit: string }).commit;
+    const again = store.append({ feature: "f", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done", message: "same" } });
+    const before = verifyCalls(run).length;
+    expect(await processReport(deps, { ...task, lastCommit: c1 }, again)).toMatchObject({ outcome: "committed", commit: c1, evidenceOk: true });
+    expect(verifyCalls(run).length).toBe(before);
+    const third = store.append({ feature: "f", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done", message: "same" } });
+    expect(await processReport(deps, { ...task, lastCommit: c1, verify: "test -f src.ts && true" }, third)).toMatchObject({ outcome: "committed", commit: c1, evidenceOk: true });
+    expect(verifyCalls(run).length).toBe(before + 1);
+  });
   it("records a blocked report with no changes for the Lead instead of rejecting it, once", async () => {
     const { store, deps, task } = setup();
     const blocked = store.append({ feature: "f", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "blocked", message: "which TTL?" } });
@@ -2557,6 +2640,16 @@ describe("challenge evidence and feature verification", () => {
     expect(store.all().find((e) => e.kind === "commit")!.data.scope).toBe("challenge");
     expect(store.all().find((e) => e.kind === "evidence")!.data).toMatchObject({ scope: "challenge", challenge: "C1", exitCode: 1 });
   });
+  it("does not give green evidence to a commit that is not the one under test", async () => {
+    const { repo, store, deps } = setup();
+    writeFileSync(join(repo, "src.ts"), "x"); sh(repo, "git", ["add", "."]); sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "c1"]);
+    const run = vi.fn(async (r: readonly string[], w: string, c: string, s: number) => {
+      if (c === "true") { writeFileSync(join(repo, "late.txt"), "y"); sh(repo, "git", ["add", "."]); sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "c2"]); }
+      return runSandboxed(r, w, c, s);
+    });
+    expect(await verifyFeature({ ...deps, run }, "f", repo)).toMatchObject({ ok: false });
+    expect(store.all().at(-1)!.data.dirty).toEqual([expect.stringMatching(/^HEAD is [0-9a-f]{7}, not [0-9a-f]{7}$/)]);
+  });
   it("runs the project's full verify on the lead worktree head", async () => {
     const { repo, store, deps } = setup();
     writeFileSync(join(repo, "src.ts"), "x"); sh(repo, "git", ["add", "."]); sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "x"]);
@@ -2578,7 +2671,7 @@ Expected: FAIL, "Cannot find module".
 import type { ProjectConfig, SlpConfig } from "./config";
 import { changedFiles, commitAll, commitTrailer, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, NoChangesError, trackedChanges } from "./git";
 import type { RunFn, SandboxResult } from "./sandbox";
-import { evidencePassed, type TaskState } from "./store/derive";
+import { evidencePassed, taskDef, type TaskState } from "./store/derive";
 import type { EventStore, SlpEvent } from "./store/events";
 
 export interface PipelineDeps { store: EventStore; config: SlpConfig; project: ProjectConfig; run: RunFn; now(): Date }
@@ -2590,8 +2683,10 @@ export type ReportOutcome =
 
 const shQuote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
 
-function evidenceOkFor(store: EventStore, commit: string): boolean | null {
-  const ev = [...store.all()].reverse().find((e) => e.kind === "evidence" && e.data.scope === "task" && e.data.commit === commit);
+/** Latest task evidence for `commit` under this task definition; null when there is none for it yet. */
+function evidenceOkFor(store: EventStore, commit: string, task: TaskState): boolean | null {
+  const def = JSON.stringify(taskDef(task));
+  const ev = [...store.all()].reverse().find((e) => e.kind === "evidence" && e.data.scope === "task" && e.data.commit === commit && (e.data.def === undefined || JSON.stringify(e.data.def) === def));
   return ev ? evidencePassed(ev.data) : null;
 }
 
@@ -2607,9 +2702,12 @@ async function runEvidence(deps: PipelineDeps, feature: string | null, worktree:
     deps.store.append({ feature, kind: "ops", by_role: "plugin", by_agent: null, data: { ...data, type: "runner_failed", error: runnerError, summary: `sandbox runner broken: ${runnerError.slice(0, 160)}` } }, deps.now());
     return { runnerError };
   }
-  const head = headOf(worktree);
+  // The commit the evidence names must be the one under test, before and after: a merge during the runner probe would otherwise be tested under the old name (review Codex 2026-10-22, round 2).
+  const expected = typeof data.commit === "string" ? data.commit : headOf(worktree);
+  const before = headOf(worktree);
   const r = await deps.run(deps.config.sandbox.runner, worktree, command, deps.config.limits.verifyTimeoutSeconds);
-  const dirty = [...trackedChanges(worktree), ...(headOf(worktree) !== head ? ["HEAD moved"] : [])];
+  const after = headOf(worktree);
+  const dirty = [...trackedChanges(worktree), ...(before !== expected || after !== expected ? [`HEAD is ${(before !== expected ? before : after).slice(0, 7)}, not ${expected.slice(0, 7)}`] : [])];
   if (dirty.length && data.scope === "feature") git(worktree, ["checkout", "--", "."], true);
   deps.store.append({ feature, kind: "evidence", by_role: "plugin", by_agent: null, data: { ...data, command, exitCode: r.exitCode, timedOut: r.timedOut, durationMs: r.durationMs, stdoutTail: r.stdoutTail, stderrTail: r.stderrTail, dirty } }, deps.now());
   return { ...r, dirty };
@@ -2620,7 +2718,7 @@ async function verifyTask(deps: PipelineDeps, feature: string | null, worktree: 
   if (!deps.config.flags.evidenceCheck) return { ...base, evidenceOk: null };
   const hook = hookFile(worktree, "pre-commit");
   const command = hook ? `${shQuote(hook)} && ${task.verify}` : task.verify;
-  const r = await runEvidence(deps, feature, worktree, command, { scope: "task", task: task.id, commit: hash });
+  const r = await runEvidence(deps, feature, worktree, command, { scope: "task", task: task.id, commit: hash, def: taskDef(task) });
   if ("runnerError" in r) return { ...base, evidenceOk: null, runnerError: r.runnerError };
   return { ...base, evidenceOk: r.exitCode === 0 && !r.timedOut && r.dirty.length === 0 };
 }
@@ -2635,11 +2733,11 @@ function orphanCommit(deps: PipelineDeps, task: TaskState, worktree: string): st
 
 export async function processReport(deps: PipelineDeps, task: TaskState, report: SlpEvent): Promise<ReportOutcome> {
   const worktree = task.worktree;
-  const prior = deps.store.all().find((e) => e.data.reportSeq === report.seq && (e.kind === "commit" || (e.kind === "ops" && (e.data.type === "report_rejected" || e.data.type === "report_blocked"))));
-  if (prior?.kind === "commit") {
+  const prior = deps.store.all().find((e) => e.data.reportSeq === report.seq && (e.kind === "commit" || (e.kind === "ops" && ["report_rejected", "report_blocked", "report_unchanged"].includes(String(e.data.type)))));
+  if (prior?.kind === "commit" || prior?.data.type === "report_unchanged") {
     const hash = String(prior.data.hash);
     const flags = prior.data.flags as CommitFlags;
-    const ok = evidenceOkFor(deps.store, hash);
+    const ok = evidenceOkFor(deps.store, hash, task);
     if (ok === null && deps.config.flags.evidenceCheck && worktree) return verifyTask(deps, report.feature, worktree, task, hash, flags, prior.data.recovered === true);
     return { outcome: "committed", commit: hash, evidenceOk: ok, flags, ...(prior.data.recovered === true ? { recovered: true as const } : {}) };
   }
@@ -2666,6 +2764,15 @@ export async function processReport(deps: PipelineDeps, task: TaskState, report:
       if (report.data.status === "blocked") {
         deps.store.append({ feature: report.feature, kind: "ops", by_role: "plugin", by_agent: null, data: { type: "report_blocked", task: task.id, reportSeq: report.seq, summary: `${task.id}: blocked, no changes` } }, deps.now());
         return { outcome: "blocked" };
+      }
+      if (task.lastCommit && headOf(worktree) === task.lastCommit) {
+        // Nothing new on top of the recorded commit (a Peer that took over, or one answering without edits): keep that commit,
+        // and verify it again only if its evidence ran under another task definition (review Codex 2026-10-22, round 2).
+        const flags: CommitFlags = { outsideTouchSet: [], excludedSensitive, excludedProtected };
+        deps.store.append({ feature: report.feature, kind: "ops", by_role: "plugin", by_agent: null, data: { type: "report_unchanged", task: task.id, reportSeq: report.seq, hash: task.lastCommit, flags, summary: `${task.id}: no new changes on ${task.lastCommit.slice(0, 7)}` } }, deps.now());
+        const ok = evidenceOkFor(deps.store, task.lastCommit, task);
+        if (ok === null && deps.config.flags.evidenceCheck) return verifyTask(deps, report.feature, worktree, task, task.lastCommit, flags, false);
+        return { outcome: "committed", commit: task.lastCommit, evidenceOk: ok, flags };
       }
       const excluded = [...excludedSensitive, ...excludedProtected];
       return reject(excluded.length ? `only sensitive or protected files changed: ${excluded.join(", ")}` : "no changes in worktree");
@@ -3361,6 +3468,8 @@ describe("decidePermission", () => {
     const wt = tmpDir(); const peer = ident("peer-impl", wt);
     expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, ".git") } }, peer).action).toBe("deny");
     expect(decidePermission({ id: "r", name: "Edit", input: { file_path: join(wt, ".git", "config") } }, peer).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, "paseo.json") } }, peer).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, ".husky", "post-checkout") } }, peer).action).toBe("deny");
     expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, ".github", "ci.yml") } }, peer).action).toBe("allow");
   });
   it("accepts /tmp paths that resolve inside a /private/tmp worktree", () => {
@@ -3450,6 +3559,7 @@ export function decidePermission(req: PermissionLike, ident: Identity | null, op
     const wt = resolveExisting(ident.worktree, realpath);
     const abs = resolveExisting(target, realpath);
     if (inside(abs, join(wt, ".git"))) return { action: "deny", message: "SLP: the worktree's .git link is managed by the plugin." };
+    if (abs === join(wt, "paseo.json") || [".husky", ".githooks"].some((d) => inside(abs, join(wt, d)))) return { action: "deny", message: "SLP: paseo.json and git hooks run outside the sandbox; only a human edits them." };
     return inside(abs, wt) ? { action: "allow" } : { action: "deny", message: `SLP: ${target} is outside your worktree.` };
   }
   return { action: "defer", reason: `${req.kind ?? "tool"}: ${name}` };
@@ -4963,7 +5073,7 @@ git commit -m "feat(plugin): decision tools, one Supervisor per feature, shared 
 
 `plugin/test/tools.work.test.ts`:
 ```ts
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { releaseContracts } from "../server/context";
@@ -4971,7 +5081,7 @@ import type { Identity } from "../server/identity";
 import { headOf } from "../server/git";
 import { deriveFeature } from "../server/store/derive";
 import { buildTools } from "../server/tools";
-import { finalizeReview, processReportFor } from "../server/tools/work";
+import { finalizeReview, processReportFor, retireAgent } from "../server/tools/work";
 import { bound, humanSays, makeCtx, sh } from "./helpers";
 
 async function ready() {
@@ -5072,6 +5182,16 @@ describe("slp_spawn", () => {
     r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "human_decision", by_role: "supervisor", by_agent: r.sup.agentId, data: { decides: "change_goal", target: "", quote: "x" } });
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/halted/);
     expect((await r.call(r.lead, "slp_merge_main", {})).text).toMatch(/halted/);
+  });
+  it("does not archive a workspace it could not clean, and tells the Supervisor", async () => {
+    const r = await withLeadAndPlan();
+    await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" });
+    const peer = r.ctx.identities.byAgent(r.paseo.created[1]!.id)!;
+    rmSync(peer.worktree!, { recursive: true, force: true });
+    await retireAgent(r.ctx, peer, r.repo);
+    await r.ctx.router.flush();
+    expect(r.paseo.archivedWorkspaces).not.toContain(peer.workspaceId);
+    expect(r.paseo.sent.some((s) => s.agentId === r.sup.agentId && s.text.includes("did not archive the workspace"))).toBe(true);
   });
   it("enforces models.allowed and the project writer cap", async () => {
     const r = await withLeadAndPlan();
@@ -5300,9 +5420,18 @@ function activeWriters(ctx: Ctx, project: string): Identity[] {
 /** Retires the identity and archives the agent's workspace (Paseo removes the worktree, keeps the branch). */
 export async function retireAgent(ctx: Ctx, i: Identity, repo: string): Promise<void> {
   ctx.identities.retire(i.tokenHash);
-  if (i.worktree && i.role !== "supervisor") { try { scrubProtected(i.worktree); } catch (error) { ctx.log(`could not reset paseo.json/hooks in ${i.worktree} before archiving`, error); } }
-  if (i.workspaceId) await ctx.paseo().workspaces.ref(i.workspaceId).archive().catch(() => undefined);
-  else if (i.agentId) await ctx.paseo().agents.ref(i.agentId).archive().catch(() => undefined);
+  if (i.agentId) ctx.resumes.clear(i.agentId);
+  if (i.workspaceId) {
+    // Stop the agent first so it cannot write while the worktree is cleaned; archive the workspace only when paseo.json and the hook dirs are back to HEAD.
+    if (i.agentId) await ctx.paseo().agents.ref(i.agentId).archive().catch(() => undefined);
+    try { if (i.worktree) scrubProtected(i.worktree); }
+    catch (error) {
+      ctx.log(`not archiving workspace ${i.workspaceId}`, error);
+      if (i.feature) notify(ctx, supervisorAddress(i.project, i.feature), `SLP did not archive the workspace of ${i.role} ${i.task ?? ""} (${i.worktree}): it could not put paseo.json and the git hook dirs back to HEAD, and Paseo would run that worktree's teardown outside the sandbox. A human should check and archive it.`);
+      return;
+    }
+    await ctx.paseo().workspaces.ref(i.workspaceId).archive().catch(() => undefined);
+  } else if (i.agentId) await ctx.paseo().agents.ref(i.agentId).archive().catch(() => undefined);
   if (i.role === "peer-review" && i.branch) deleteBranch(repo, i.branch);
 }
 
@@ -6247,6 +6376,16 @@ describe("permissions, archive, tick", () => {
     await w.ctx.router.flush();
     expect(w.paseo.sent.some((s) => s.agentId === "sup-1" && s.text.includes("lead of cache is gone"))).toBe(true);
   });
+  it("leaves a Peer that waits for a resume alone on reconcile, so its old limit reply does not burn an attempt", async () => {
+    const w = world({ limits: { resumeMaxAttempts: 1 } });
+    w.ctx.resumes.schedule({ agentId: "peer-1", vendor: "claude", at: new Date(Date.now() + 3600_000).toISOString(), attempt: 1 });
+    w.paseo.timelines.set("peer-1", [{ type: "assistant_message", text: "You've hit your usage limit · resets at 3pm" }]);
+    w.paseo.statuses.set("peer-1", "idle");
+    await reconcile(w.ctx);
+    await reconcile(w.ctx);
+    expect(w.ctx.resumes.jobs().map((j) => [j.agentId, j.attempt])).toEqual([["peer-1", 1]]);
+    expect(w.paseo.sent.some((s) => s.text.includes("still blocked"))).toBe(false);
+  });
   it("delivers due resumes and nudges the Lead about unanswered challenges", async () => {
     const w = world();
     w.ctx.resumes.schedule({ agentId: "peer-1", vendor: "claude", at: new Date(Date.now() - 1000).toISOString(), attempt: 1 });
@@ -6255,6 +6394,17 @@ describe("permissions, archive, tick", () => {
     expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("usage limit has reset"))).toBe(true);
     expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && s.text.includes("C1 has waited"))).toBe(true);
   });
+  it("does not let one failing resume hold back the others", async () => {
+    const w = world();
+    const past = new Date(Date.now() - 1000).toISOString();
+    w.ctx.resumes.schedule({ agentId: "peer-1", vendor: "claude", at: new Date(Date.now() - 2000).toISOString(), attempt: 1 });
+    w.ctx.resumes.schedule({ agentId: "lead-1", vendor: "claude", at: past, attempt: 1 });
+    w.paseo.failSend.add("peer-1");
+    await tick(w.ctx);
+    await tick(w.ctx);
+    expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && s.text.includes("usage limit has reset"))).toBe(true);
+    expect(w.ctx.resumes.jobs().map((j) => j.agentId)).toEqual(["peer-1"]);
+  });
   it("keeps a resume whose send failed and delivers it on a later tick", async () => {
     const w = world();
     w.ctx.resumes.schedule({ agentId: "peer-1", vendor: "claude", at: new Date(Date.now() - 1000).toISOString(), attempt: 1 });
@@ -6262,6 +6412,7 @@ describe("permissions, archive, tick", () => {
     await tick(w.ctx);
     expect(w.ctx.resumes.jobs().map((j) => j.agentId)).toEqual(["peer-1"]);
     w.paseo.failSend.delete("peer-1");
+    w.ctx.resumes.schedule({ ...w.ctx.resumes.jobs()[0]!, at: new Date(Date.now() - 1000).toISOString() }); // the minute of back-off has passed
     await tick(w.ctx);
     expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("usage limit has reset"))).toBe(true);
     expect(w.ctx.resumes.jobs()).toEqual([]);
@@ -6478,11 +6629,15 @@ export function onAgentClosed(ctx: Ctx, agentId: string): void {
 
 export async function tick(ctx: Ctx): Promise<void> {
   const resume = (agentId: string) => ctx.paseo().agents.ref(agentId).send("[SLP plugin] The usage limit has reset. Continue the work you were doing.", { messageId: ctx.router.issue() });
-  for (const [i, job] of ctx.resumes.due(ctx.now()).entries()) {
-    // One resume per tick; the rest move 15 s apart, persisted, so one account is not hit all at once and nothing lives only in a timer.
-    if (i > 0) { ctx.resumes.schedule({ ...job, at: new Date(ctx.now().getTime() + i * 15_000).toISOString() }); continue; }
+  // One resume per 30 s tick, oldest first: that is the stagger, and nothing lives only in a timer. A failed send moves to the back
+  // of the line for a minute instead of blocking the others (review Codex 2026-10-22, round 2).
+  const [job] = [...ctx.resumes.due(ctx.now())].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  if (job) {
     try { await resume(job.agentId); ctx.resumes.done(job.agentId); }
-    catch (error) { ctx.log(`resume of ${job.agentId} failed; retrying on the next tick`, error); }
+    catch (error) {
+      ctx.resumes.schedule({ ...job, at: new Date(ctx.now().getTime() + 60_000).toISOString() });
+      ctx.log(`resume of ${job.agentId} failed; retrying in a minute`, error);
+    }
   }
   for (const project of Object.keys(ctx.config.projects)) {
     for (const feature of ctx.stores.features(project)) {
@@ -6508,7 +6663,9 @@ export async function reconcile(ctx: Ctx): Promise<void> {
       const ref = ctx.paseo().agents.ref(ident.agentId);
       const snapshot = await ref.refresh().catch(() => undefined); // undefined: could not ask; keep the agent
       if (snapshot === null || ref.status === "closed") { retireLost(ctx, ident); continue; }
-      if (ref.status === "idle" && ident.role === "peer-impl") await onTurnEnded(ctx, { agent: { id: ident.agentId }, outcome: { kind: "completed" } });
+      // An agent waiting for a usage-limit resume has nothing new to process; replaying its old limit reply would burn a resume attempt (review Codex 2026-10-22, round 2).
+      const waiting = ctx.resumes.jobs().some((j) => j.agentId === ident.agentId);
+      if (ref.status === "idle" && ident.role === "peer-impl" && !waiting) await onTurnEnded(ctx, { agent: { id: ident.agentId }, outcome: { kind: "completed" } });
     }
     appendPlugin(ctx, project, null, { kind: "ops", data: { type: "reconcile", queued: ctx.router.pending().length, resumes: ctx.resumes.jobs().length } });
   }
@@ -6752,7 +6909,7 @@ Nhờ anh tạo agent bằng provider `SLP Supervisor` trong workspace thư mụ
 | 22 | `slp_send {to: "lead", mode: "steer"}` tới Lead đang chạy: tin chen vào turn đó với Claude, không phải chờ hết turn; ghi kết quả thật. Nếu không chen được, ghi lại và đổi hướng dẫn sang `interrupt` | Timeline của Lead |
 | 23 | Supervisor thứ hai cho một ý tưởng khác trong cùng project: brief cho slug đã có bị từ chối; nó đọc được digest feature đầu (`slp_state {all: true}`) nhưng `slp_send` tới Lead của feature đầu bị từ chối | Timeline của Supervisor thứ hai |
 | 24 | Reload plugin khi mọi agent SLP đang idle và có một job resume đã đến hạn: có hook nào chạy mà không cần anh làm gì không (review Codex 2026-10-22, F14). Không có thì ghi lại: timer chỉ chạy khi có hook đầu tiên (anh mở tab, agent đổi trạng thái); job vẫn còn trong `resume.json`, chỉ đến muộn | `paseo plugin logs slp`; `resume.json` |
-| 25 | Ngoài SLP (repo tạm khác, có `paseo.json` với `worktree.teardown` ghi một marker): Paseo đọc `teardown` từ repo gốc hay từ worktree đang bị archive. Sửa `teardown` trong worktree rồi archive, xem marker nào được ghi. Kết quả quyết định `scrubProtected` (T9) còn cần hay có thể bỏ | File marker |
+| 25 | Đã trả lời bằng source Paseo 0.12: `runWorktreeTeardownCommands` đọc `teardown` từ chính worktree bị archive (`utils/worktree.ts:767`), nên `scrubProtected` là bắt buộc. Trên Paseo thật chỉ kiểm: khi plugin archive workspace của Peer, log có bước dọn trước lệnh archive, và archive agent trước không xoá worktree | `paseo plugin logs slp`; `paseo workspace ls --json` |
 
 - [ ] **Step 4: Dọn dẹp và khôi phục**
 

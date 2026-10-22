@@ -1,7 +1,7 @@
 # SLP trên Paseo — Design spec
 
 - Ngày: 2026-10-21 (rev 2: 2026-10-22, gộp kết quả spike; rev 3: 2026-10-22, sửa theo review độc lập; rev 4: 2026-10-22, mỗi feature một Supervisor + nhịp kiểm)
-- Trạng thái: draft rev 5.6, chờ anh duyệt
+- Trạng thái: draft rev 5.7, chờ anh duyệt
 - Paseo đã kiểm: 0.12.0 đang chạy (source v0.10.3 + v0.12.0, CLI, và probe live — xem [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md))
 - Superpowers đang cài: 6.4.1
 - Nền: báo cáo "Tinh túy Superpowers và SLP" (2026-10-09), spec SLP cũ `~/.agents/skills/slp/docs/spec.md` (không có Supervisor), mining transcript + git 2026-09-21 → 10-20, ghi chú [`docs/research/paseo-capabilities-verified.md`](../../research/paseo-capabilities-verified.md).
@@ -28,6 +28,7 @@
   - (5.3) repo có git filter `clean`/`smudge`/`process`, merge driver hay `textconv` trong config (trừ `git-lfs`) thì SLP không chạy agent và không commit report, vì `git add`/`git status` sẽ chạy chúng ngoài sandbox; tạo agent hỏng thì gỡ đúng worktree và branch vừa tạo; plugin chỉ gỡ worktree qua git; (5.4) `git-lfs` chỉ được miễn khi khớp nguyên văn, và config được kiểm trong chính worktree mới trước khi checkout (config có thể phụ thuộc branch qua `includeIf onbranch:`); (5.5) `fetch`/`push`/`gh` chạy ở checkout chính; cổng ship cần brief, spec, plan hiện tại đều đã duyệt và `slp_ship` kiểm lại blocker ngay trước khi push; resume không bao giờ cắt ngang turn đang chạy;
   - round 2–3 của review: evidence gắn với định nghĩa task (A→B→A vẫn đúng) và stale lan sang task phụ thuộc; Peer tiếp quản giữ commit đã có; ở cổng duyệt mọi mệnh đề của tin phải là câu đồng ý thuần; resume gửi một lượt mỗi tick, hỏng thì lùi, không chặn job khác; evidence chỉ xanh khi chạy đúng commit nó ghi.
 - Rev 5.6 (2026-10-23): chốt model mặc định từng vai (Supervisor và Lead Opus 5.5, Peer-impl Sonnet 5.5, Peer-review `gpt-6-astra`) và `models.allowed` (§2, §8).
+- Rev 5.7 (2026-10-23, học từ `codex-room-setup` của hoangnb24 rồi probe trên máy, S11): vai SLP không nạp setting của anh hay của repo nữa, vì hook trong `.claude/settings.json` của checkout chạy ngoài sandbox và `.mcp.json` tự khởi động server; `.claude/`, `.codex/`, `.mcp.json` thành file được bảo vệ như hook git; vai Codex có `CODEX_HOME` riêng (§4, §7.1, §8, §12). Sonnet 5.5 cần Claude Code ≥ 2.1.284 (§8).
 
 **Core mechanism:** mỗi ý tưởng anh mở một Supervisor → Supervisor phỏng vấn, viết brief, anh duyệt → Supervisor tạo Lead cho feature → Lead viết spec (anh duyệt) và plan (Supervisor duyệt) → Lead giao từng task cho Peer-impl trong worktree riêng, trong sandbox → mọi tin nhắn, báo cáo, challenge đi qua tool MCP của plugin `slp`; plugin kiểm quyền, ghi log append-only ngoài repo, commit thay Peer, chạy verify trong sandbox, tự resume khi dính limit, mỗi 15 phút gửi Supervisor một gói kiểm → Supervisor gom ship, anh duyệt đúng commit hash → push + PR → anh merge.
 
@@ -47,7 +48,8 @@
 - Mỗi ý tưởng anh mở một Supervisor mới (profile `slp-supervisor`, workspace thư mục gốc của project), nên mỗi feature có một tab Supervisor riêng. Khi feature đang chạy, tab đó nhận tối đa 4 lượt kiểm mỗi giờ; lượt ổn chỉ một dòng.
 - Mỗi Lead, Peer, reviewer chạy trong một worktree do plugin tạo (`~/.slp-worktrees/<project>/<branch>`, hook tắt), gắn với một workspace `directory` hiện trong sidebar dưới agent cha; khi task xong plugin archive agent và workspace rồi gỡ worktree, giữ branch.
 - Permission mà plugin không tự quyết (không phải lệnh bị cấm, không phải ghi trong worktree) chờ anh trong app như Paseo vốn làm.
-- Thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath`) và `paseo.json` không bao giờ được plugin commit; muốn đổi thì anh làm tay.
+- Thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath`), `paseo.json` và setting agent trong repo (`.claude/`, `.codex/`, `.mcp.json`) không bao giờ được plugin commit; muốn đổi thì anh làm tay.
+- Agent SLP không nhận hook, MCP server, plugin, connector claude.ai và CLAUDE.md toàn cục của anh; chỉ có Superpowers và MCP `slp`/`paseo`. CLAUDE.md của repo vẫn được đọc.
 - Daemon Paseo bật `pluginsEnabled` (code không sandbox chạy trên máy anh) — chỉ bật khi anh đồng ý ở bước triển khai.
 - `~/.paseo/config.json` thêm 4 provider ID theo vai; tắt `create_agent` / `send_agent_prompt` của Paseo cho các vai đó.
 - Thêm thư mục `~/.slp/`. Repo của project không chứa file SLP nào.
@@ -100,7 +102,7 @@ Không gắn với project nào. Lần chạy đầu: một project mới, anh �
 | Commit | Peer không commit; plugin commit thay Peer lúc `slp_report`, luôn tắt hook | Sandbox giữ `.git` chỉ đọc (Codex cố ý, S9); plugin biết chắc commit hash để verify/review/merge |
 | Chạy code của Peer | Plugin chạy verify và hook của repo **trong sandbox** (`codex sandbox -P :workspace`), không bao giờ ngoài sandbox | Hook/test do Peer sửa sẽ chạy với toàn quyền nếu plugin chạy trực tiếp (S10) |
 | Worktree | Plugin tạo (`git worktree add`, hook tắt) dưới `~/.slp-worktrees`, rồi `workspaces.create({ source: { kind: "directory" } })` và tạo agent trong workspace đó (rev 5.2) | Có `parent` mà không có workspace thì Paseo ghi đè `cwd` của con bằng `cwd` của cha; worktree do Paseo tạo thì Paseo chạy `worktree.setup`, `teardown` và hook `post-checkout` của repo ngoài sandbox |
-| Git của plugin | Mọi lệnh tắt hook và fsmonitor, `--git-dir` lấy từ common dir của repo; không tin `<worktree>/.git`; không commit hook/`paseo.json`; không tạo worktree cho repo có setup/teardown/terminals trong `paseo.json` hay hook `post-checkout` | Peer ghi được `<worktree>/.git` và nội dung commit; Paseo tự chạy `post-checkout` và `worktree.setup` của `paseo.json` khi tạo worktree, ngoài sandbox |
+| Git của plugin | Mọi lệnh tắt hook và fsmonitor, `--git-dir` lấy từ common dir của repo; không tin `<worktree>/.git`; không commit hook/`paseo.json`/setting agent (`.claude/`, `.codex/`, `.mcp.json`); không tạo worktree cho repo có setup/teardown/terminals trong `paseo.json` hay hook `post-checkout` | Peer ghi được `<worktree>/.git` và nội dung commit; Paseo tự chạy `post-checkout` và `worktree.setup` của `paseo.json` khi tạo worktree, ngoài sandbox |
 
 ## 3. Phạm vi
 
@@ -163,6 +165,11 @@ Supervisor đọc digest của nhau (chỉ đọc); không nhắn nhau
 | Peer-review (Codex) | Codex `workspace-write` trong worktree dùng-một-lần | Worktree đó; plugin kiểm không đổi file tracked | Localhost **còn mở** khi Codex chạy qua Paseo (S3) — rủi ro §13 |
 
 Vai Claude chạy mode `default`: lệnh shell trong sandbox tự được cho (`autoAllowBashIfSandboxed`), mọi thứ khác (Write/Edit ngoài worktree, lệnh xin ra khỏi sandbox) thành permission request cho plugin quyết.
+
+**Cô lập runtime** (rev 5.7, S11). Paseo nạp setting `user`, `project`, `local` cho mọi agent Claude, và Codex đọc `~/.codex` của anh. Mặc định agent SLP vì vậy nhận hook, MCP server, plugin và connector claude.ai của anh, cùng hook và `.mcp.json` trong checkout. Hook và MCP server chạy **ngoài** sandbox: một `.claude/settings.json` do Peer viết sẽ chạy với toàn quyền ở session sau trong checkout đó, kể cả session của anh sau khi merge. Vì vậy:
+- Vai Claude: plugin thêm cờ CLI qua `providerOptions.extraArgs` (`--setting-sources=` rỗng, `--strict-mcp-config`, `--plugin-dir <Superpowers>`), `additionalDirectories: [cwd]` và env `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`. Kết quả: không hook, chỉ MCP `slp`/`paseo`, CLAUDE.md của repo và Superpowers vẫn có; CLAUDE.md toàn cục của anh thì không.
+- Vai Codex: env `CODEX_HOME=~/.slp/codex-home`. Plugin ghi lại `config.toml` (không MCP, không project trusted) trước mỗi lần tạo; `auth.json` là symlink tới file của anh.
+- `.claude/`, `.codex/`, `.mcp.json` là file được bảo vệ: `Write`/`Edit` bị từ chối và không bao giờ vào commit. Bash ghi vào `.claude/settings.json` và `.mcp.json` thì sandbox Claude đã tự chặn.
 
 ## 5. Shared state
 
@@ -365,7 +372,7 @@ Server-only (`index.server.ts`), chạy trên daemon kể cả khi app đóng.
 
 | Thành phần | Làm gì | Cơ chế | Chặn lỗi nào |
 |---|---|---|---|
-| Gắn vai | Theo provider ID: system prompt vai; MCP `slp` (http, `headers.Authorization` = token riêng của agent); mode `default` cho vai Claude; sandbox theo §4 (Claude: `providerOptions.sandbox`; Codex reviewer: `workspace-write`); ghi worktree + branch thật vào identity; từ chối Lead/Peer chạy trong checkout chính, reviewer không ở đúng commit | `before agent.create` (chạy sau khi Paseo tạo worktree) | Vai trôi; Peer sửa state; agent chạy sai chỗ |
+| Gắn vai | Theo provider ID: system prompt vai; MCP `slp` (http, `headers.Authorization` = token riêng của agent); mode `default` cho vai Claude; sandbox theo §4 (Claude: `providerOptions.sandbox`; Codex reviewer: `workspace-write`); cô lập runtime theo §4 (Claude: `extraArgs`, `additionalDirectories`, env; Codex: `CODEX_HOME`); ghi worktree + branch thật vào identity; từ chối Lead/Peer chạy trong checkout chính, reviewer không ở đúng commit | `before agent.create` (chạy sau khi Paseo tạo worktree) | Vai trôi; Peer sửa state; agent chạy sai chỗ |
 | Định danh agent | Token ngẫu nhiên cho từng agent, đặt vào header MCP và `env.SLP_TOKEN`; plugin chỉ lưu `sha256(token)`; `before agent.session_open` (có `agentId`) gắn token → agent + vai. Không dùng token chung kiểu Paseo (giả mạo được) | `before agent.create` + `session_open` (S1 đã kiểm) | Agent mạo danh vai khác |
 | Duyệt sẵn tool của mình | `toolPolicy.preapproved` = các tool `slp_*` của vai (Claude: `allowedTools`; Codex: `approval_mode: "approve"`); chính tool tự kiểm quyền | `before agent.create` | Permission prompt dội về anh |
 | Router | Chỉ cho các cạnh ở §7.3. Paseo không có hàng đợi và mặc định **ngắt** turn đang chạy, nên plugin tự xếp hàng và chỉ giao khi người nhận `idle` (kiểm `status`/`activeTurn`); tin plugin gửi mang `messageId` dạng `slp-<uuid>`. Ngoại lệ duy nhất: `slp_send(mode: "steer" \| "interrupt")` từ Supervisor tới Lead của feature mình, và từ Lead tới Peer của mình — chen vào (steer) hoặc huỷ (interrupt) turn đang chạy; người nhận đang rảnh thì giao như thường | MCP + SDK `agent.send({messageId})` | Supervisor lách Lead; ngắt giữa turn; agent quay vòng không bao giờ rảnh để nhận tin |
@@ -374,7 +381,7 @@ Server-only (`index.server.ts`), chạy trên daemon kể cả khi app đóng.
 | Ghi tin của anh | `user_message` không mang `messageId` tiền tố `slp-` và không nằm trong vỏ `<paseo-system>` → `human_message` (S4 đã kiểm). Tin agent gửi agent qua CLI/MCP hiện là `agent_message` có `sender` (0.12). Ghi ở `turn_started`, `turn_ended`, và ở đầu mọi tool tạo thứ cần duyệt hoặc kiểm câu duyệt. Tới Lead/Peer: báo thêm Lead của feature. Tới Supervisor: chỉ ghi | `turn_started`/`turn_ended` + `timeline.refetch` | Anh đổi hướng ở Peer, Lead không biết; anh phải gõ "duyệt" hai lần |
 | Watchdog limit | Nhận diện limit từ text cuối turn / thông báo turn fail (Paseo không tự nhận diện, S2); giờ reset lấy từ `providers.listUsage()` (`providers[].windows[].resetsAt`); hẹn `agent.send` "tiếp tục" lúc reset, tin resume giãn 15 s; số lần resume lưu theo agent tới khi một turn kết thúc không dính limit; trần `resumeMaxAttempts`; hết lượt mới báo Supervisor. Đơn giản hoá v1: không tạm dừng cả vendor, mỗi agent tự dính rồi tự hẹn. Bộ nhận diện không được khớp lỗi đĩa (`disk quota exceeded`, `EDQUOT`, `ENOSPC`). Lần dính limit thật đầu tiên phải được ghi nguyên văn để chỉnh bộ nhận diện | `agent.turn_ended` + timer + usage API | 33 lần dừng limit, 16 "Try again" |
 | Không báo cáo | Peer kết turn mà không `slp_report`/`slp_challenge`/`slp_ask`/`slp_review` → nhắc `noReportNudges` lần, rồi báo Lead. Tool khác (`slp_state`…) không tính là báo cáo. Turn bị anh ngắt tay (`canceled`) không bị nhắc | `agent.turn_ended` | Dừng im lặng |
-| Commit thay Peer | Sau `slp_report` (chờ turn của Peer kết thúc hẳn; xử lý turn_ended tuần tự theo agent): `git status`; từ chối nếu không có thay đổi; loại file nhạy cảm (`.env*`, khoá) và file được bảo vệ (hook, `paseo.json`) và báo; file ngoài touch set → vẫn commit, cờ cho Lead; `git add` + commit hook tắt, message = `T#: <message của Peer>` + trailer `SLP-Task`, `SLP-Agent` → `commit`. Worktree sạch mà HEAD là commit của plugin chưa có event (crash giữa commit và ghi) → ghi `commit` cho HEAD rồi verify tiếp | MCP + git (hook tắt, git dir tin cậy) | Peer khai sai commit; hook chạy ngoài sandbox; task kẹt sau crash |
+| Commit thay Peer | Sau `slp_report` (chờ turn của Peer kết thúc hẳn; xử lý turn_ended tuần tự theo agent): `git status`; từ chối nếu không có thay đổi; loại file nhạy cảm (`.env*`, khoá) và file được bảo vệ (hook, `paseo.json`, `.claude/`, `.codex/`, `.mcp.json`) và báo; file ngoài touch set → vẫn commit, cờ cho Lead; `git add` + commit hook tắt, message = `T#: <message của Peer>` + trailer `SLP-Task`, `SLP-Agent` → `commit`. Worktree sạch mà HEAD là commit của plugin chưa có event (crash giữa commit và ghi) → ghi `commit` cho HEAD rồi verify tiếp | MCP + git (hook tắt, git dir tin cậy) | Peer khai sai commit; hook chạy ngoài sandbox; task kẹt sau crash |
 | Kiểm bằng chứng | Trên commit vừa tạo: chạy lệnh verify của task (từ plan đã duyệt) và hook pre-commit của repo nếu có, **trong sandbox**, có timeout → `evidence`. Trước mỗi lần verify, thử runner bằng `true`; runner hỏng → `ops runner_failed`, báo Supervisor, không nhắn Peer, không có `evidence` (fail closed); lần sau verify lại trên đúng commit. Khi nghiệm thu feature và trước ship: `verify` của project (full suite) trên HEAD, trong sandbox. Lệnh do Peer khai chỉ có `repro_command` của challenge, và chỉ chạy trong sandbox | `codex sandbox -P :workspace` | ~25 claim "xong" sai; Peer đốt fix round vào lỗi hạ tầng |
 | Merge | `slp_accept` → plugin merge branch task vào `feat/<slug>` (hook tắt); Lead yêu cầu → plugin merge main vào `feat/<slug>`; conflict → báo Lead, không tự resolve; Lead giao task resolve bằng `slp_spawn … merge_base: true` | git (hook tắt) | Hook chạy với quyền của Lead |
 | Reviewer không sửa | Sau turn của Peer-review: `git status --porcelain` trên file tracked phải rỗng; nếu không → review vô hiệu, dừng reviewer, archive workspace, xoá branch review, báo Lead spawn reviewer mới | `agent.turn_ended` | Reviewer sửa code |
@@ -484,6 +491,7 @@ Agent profile mặc định (rev 5.6):
 | `slp-peer-review` | `gpt-6-astra` | `xhigh` | Chốt độc lập duy nhất trước accept; quota Codex tách khỏi Claude |
 
 - Đặt thinking rõ ràng ở mọi profile: Paseo mặc định Opus 5.5 và Sonnet 5.5 ở `medium` (§12); cache model của Codex ghi `gpt-6-astra` mặc định `low`.
+- Sonnet 5.5 cần Claude Code ≥ 2.1.284 và Haiku 5.5 ≥ 2.1.293 (manifest Paseo); binary cũ hơn thì Paseo ẩn model đó. Ngày 2026-10-23 daemon dùng `~/.nvm/versions/node/v22.19.0/bin/claude` 2.1.308 và `paseo provider models claude` đã có `claude-sonnet-5-5`; bản Homebrew 2.1.283 vẫn còn trên PATH, xếp sau bản nvm.
 - Không chọn thinking `ultracode` ("Ultra Code") cho vai SLP: Paseo đổi nó thành `xhigh` cộng cờ `ultracode` (§12). Cờ đó có lẽ cho Claude Code tự tạo subagent (chưa kiểm); nếu đúng thì đi vòng `slp_spawn`, trần writer và quota.
 - `**Model:**` của task chỉ đổi model; thinking vẫn lấy từ profile `slp-peer-impl`, nên task được nâng lên Opus vẫn chạy `high`.
 - Không dùng làm mặc định:
@@ -521,6 +529,7 @@ Agent profile mặc định (rev 5.6):
     "claudeAllowedDomains": ["registry.npmjs.org", "pypi.org", "files.pythonhosted.org"]
   },
   "rotation": { "contextRatio": 0.6, "maxTurns": 200 },
+  "runtime": { "claudePluginDir": null },
   "watch": { "intervalMinutes": 15, "packToolCalls": 10 }
 }
 ```
@@ -530,6 +539,7 @@ Agent profile mặc định (rev 5.6):
 - `models.allowed`: model Lead được ghi cho từng task (`**Model:**`, §6.3). Mặc định Sonnet 5.5 và Opus 5.5; Lead nâng task khó lên Opus (contract chung, concurrency, migration, security). Bỏ trống `**Model:**` = model của profile `slp-peer-impl`.
 - `sandbox.runner`: lệnh plugin dùng để chạy verify/hook trong sandbox (đã kiểm với `codex-cli 0.163.0`, profile dựng sẵn `:workspace`). Cần Codex CLI trên máy.
 - `sandbox.claudeAllowedDomains`: domain vai Claude được truy cập trong sandbox (để cài dependency). Localhost không bao giờ nằm trong danh sách.
+- `runtime.claudePluginDir`: plugin mà vai Claude được nạp lại bằng `--plugin-dir` (§4 cô lập runtime). `null` = bản Superpowers mới nhất trong `~/.claude/plugins/cache/claude-plugins-official/superpowers/`; không tìm thấy thì vai Claude chạy không có Superpowers và plugin cảnh báo.
 
 Tắt một cờ → cơ chế đó không chạy, hệ thống quay về hành vi không có nó (ví dụ `evidenceCheck: false` → Lead nghiệm thu dựa trên report + review).
 
@@ -561,7 +571,7 @@ Tắt một cờ → cơ chế đó không chạy, hệ thống quay về hành 
 | `sandbox.runner` không chạy được (thiếu Codex CLI, profile đổi tên) | Fail closed: không chạy verify ngoài sandbox; task không accepted; báo Supervisor, không nhắn Peer; verify lại trên đúng commit ở turn sau hoặc khi plugin khởi động |
 | Plugin chết giữa `git commit` và ghi event | Lần xử lý sau nhận ra commit của plugin (trailer `SLP-Task`, chưa có event) và ghi `commit` với `recovered: true` |
 | `<worktree>/.git` bị sửa | Plugin không đọc file đó; lệnh git của plugin dùng git dir tin cậy. Thư mục không thuộc repo đã đăng ký → plugin từ chối chạy git (fail closed) |
-| Peer sửa hook hoặc `paseo.json` | Không vào commit; Lead được báo; người làm tay nếu cần |
+| Peer sửa hook, `paseo.json` hoặc setting agent (`.claude/`, `.codex/`, `.mcp.json`) | Không vào commit; Lead được báo; người làm tay nếu cần |
 | Lệnh verify cần mạng | Verify chạy với mạng bị chặn; dependency phải được Peer cài trước trong worktree (Claude sandbox cho `claudeAllowedDomains`). Verify fail vì mạng → báo Lead sửa lệnh verify trong plan |
 | Merge main sau feature khác ship có conflict | Plugin báo Lead; Lead thêm task resolve vào plan, giao bằng `slp_spawn … merge_base: true` (plugin để lại marker trong worktree của Peer, `slp_report` tạo merge commit); nếu chạm contract của feature đã ship → challenge lên Supervisor |
 
@@ -609,11 +619,13 @@ Kết quả đầy đủ: [`docs/research/spikes-2026-10-21.md`](../../research/
 | S8 | Plugin tạo agent có `parent` | ✅ | §7.1 Spawn, §7.4 |
 | S9 | Codex commit trong worktree | ❌ Codex cố ý khoá `.git` (source `openai/codex`) | Plugin commit thay Peer |
 | S10 | Sandbox của Claude; chạy verify/hook trong sandbox | ✅ (`codex sandbox -P :workspace`) | §7 luật chung; §8 `sandbox` |
+| S11 | Setting của anh và của repo lọt vào agent (probe 2026-10-23, Claude Code 2.1.308, Codex CLI 0.163.0) | ❌ mặc định: hook trong `.claude/settings.json` của checkout chạy ngoài sandbox, server trong `.mcp.json` được khởi động, agent nhận MCP/plugin/connector claude.ai của anh; Codex nhận `cua_repl` và `gitnexus` từ `~/.codex`. ✅ `--setting-sources=` + `--strict-mcp-config` + `--add-dir` + env giữ CLAUDE.md của repo mà chặn hết phần kia; `--plugin-dir` nạp lại Superpowers (15 skill); `CODEX_HOME` riêng chỉ symlink `auth.json` vẫn đăng nhập được, không MCP. Sandbox Claude tự chặn Bash ghi `.claude/settings.json` và `.mcp.json`; `Write` thì ra permission request | §4 cô lập runtime; T21 dòng 26–27 kiểm qua SDK của Paseo |
 
 **Còn mở, kiểm lúc triển khai (T21):**
 - dạng thật của một turn dính limit (S2);
 - cách đóng localhost cho Codex chạy qua Paseo (S3);
 - `claudeAllowedDomains` có đủ để Peer cài dependency không;
+- `extraArgs` đi qua SDK 0.3.246 của Paseo có ra đúng cờ như khi gọi CLI trực tiếp không (S11 chỉ kiểm CLI);
 - tên profile `:workspace` của `codex sandbox` khi Codex CLI lên bản mới;
 - Paseo có nhận `base` là branch local khi tạo worktree không;
 - sandbox Claude có chặn ghi `<worktree>/.git` không;
@@ -625,7 +637,7 @@ Kết quả đầy đủ: [`docs/research/spikes-2026-10-21.md`](../../research/
 
 ### 11.2 Unit test plugin
 
-Git dir tin cậy (`.git` giả không làm chạy fsmonitor; thư mục lạ → từ chối); file hook/`paseo.json` không vào commit; `onTurnEnded` chồng nhau chỉ commit một lần; runner hỏng → báo Supervisor, không nhắn Peer; phục hồi commit sau crash; câu duyệt gõ trong cùng turn được tính, câu cũ không duyệt version mới; agent không phải SLP không bị ảnh hưởng khi setup SLP hỏng; Lead/Peer không bao giờ chạy trong checkout chính. Ma trận quyền §5.2 (mỗi ô được/không được); cạnh router §7.3; suy ra trạng thái §5.3 (supersede → stale, kể cả qua T#; confirms; park/unpark); kiểm quote §7.6; watchdog limit (số lần resume giữ qua các lần resume, hết lượt → báo Supervisor); đối soát sau restart; trần writer; reviewer sửa file → review vô hiệu; commit thay Peer (không thay đổi → từ chối; file nhạy cảm bị loại; hook husky trong worktree **không chạy** khi plugin commit/merge); verify chạy qua `sandbox.runner` (runner hỏng → fail closed, không chạy ngoài sandbox); `Write`/`Edit` ngoài worktree → bị từ chối; model ngoài `models.allowed` → `slp_spawn` bị từ chối.
+Git dir tin cậy (`.git` giả không làm chạy fsmonitor; thư mục lạ → từ chối); file hook/`paseo.json`/`.claude`/`.codex`/`.mcp.json` không vào commit; vai Claude khởi động với `setting-sources` rỗng và `strict-mcp-config`, vai Codex với `CODEX_HOME` riêng chỉ chia sẻ `auth.json`; `onTurnEnded` chồng nhau chỉ commit một lần; runner hỏng → báo Supervisor, không nhắn Peer; phục hồi commit sau crash; câu duyệt gõ trong cùng turn được tính, câu cũ không duyệt version mới; agent không phải SLP không bị ảnh hưởng khi setup SLP hỏng; Lead/Peer không bao giờ chạy trong checkout chính. Ma trận quyền §5.2 (mỗi ô được/không được); cạnh router §7.3; suy ra trạng thái §5.3 (supersede → stale, kể cả qua T#; confirms; park/unpark); kiểm quote §7.6; watchdog limit (số lần resume giữ qua các lần resume, hết lượt → báo Supervisor); đối soát sau restart; trần writer; reviewer sửa file → review vô hiệu; commit thay Peer (không thay đổi → từ chối; file nhạy cảm bị loại; hook husky trong worktree **không chạy** khi plugin commit/merge); verify chạy qua `sandbox.runner` (runner hỏng → fail closed, không chạy ngoài sandbox); `Write`/`Edit` ngoài worktree → bị từ chối; model ngoài `models.allowed` → `slp_spawn` bị từ chối.
 
 Rev 4: Supervisor chỉ một feature (brief v1 tạo feature; brief cho slug khác bị từ chối; không ghi được feature khác; đọc được digest feature khác); tối đa một Lead sống mỗi feature; contract (duyệt trước giữ; chạm contract đang bị giữ mà không `Waits on` → từ chối duyệt; task `Waits on` không spawn được tới khi nhả; ship nhả và báo); steer / interrupt chỉ ở hai cạnh Supervisor → Lead của mình, Lead → Peer của mình; nhịp kiểm (bỏ qua khi không có hoạt động; gói mới thay gói chưa giao; gói đúng cấu trúc và giới hạn dòng; `slp_activity` chỉ trong feature mình; dừng khi ship); `slp_state` không tính là báo cáo, turn `canceled` không bị nhắc; dòng cuối JSONL cắt dở bị bỏ, dòng giữa hỏng → fail closed; `slp_accept` task `parked` bị từ chối; lỗi ghi hàng đợi không làm sập plugin; agent đã mất được retire và nhả slot writer khi đối soát; "disk quota exceeded" không bị coi là limit.
 
@@ -652,6 +664,7 @@ Repo giả dùng một lần. Mỗi kịch bản chạy 3 lần không có promp
 - Paseo lưu `mcpServers` (kèm header, tức token MCP) của agent trong agent storage dưới `~/.paseo` (`agent-storage.ts:30`).
 - `@getpaseo/client` 0.12: `agent.send(text, { messageId, activeTurnBehavior: "steer" | "interrupt" })`, bỏ trống thì daemon ngắt turn đang chạy (`SendMessageOptions`); `agent.refresh()` trả `null` khi daemon không thấy agent (`fetchAgent`). Item timeline `tool_call` có `status` và `detail.type` `shell` (kèm `command`, `exitCode`) / `read` / `edit` / `write` (kèm `filePath`) / `search` (protocol `agent-types.d.ts`).
 - Model trong Paseo 0.12 (`providers/claude/model-manifest.ts`): `claude-opus-5-5`, `claude-sonnet-5-5` mặc định thinking `medium`; thinking `ultracode` = `xhigh` + cờ `ultracode` (`providers/claude/agent.ts:3453`). Codex nhận `thinkingOptionId` làm `reasoning_effort` (`codex-app-server-agent.ts:3845`). Cache model của Codex trên máy anh: `gpt-6-astra` là model frontier, `gpt-6.1-sol` là model workhorse.
+- Paseo truyền `settingSources: ["user", "project", "local"]` cố định cho Claude (`claude/agent.ts:153`) rồi trải `providerOptions` lên sau. Schema `providerOptions` (`claude/options.ts`, `.strict()`, theo SDK 0.3.246) có `extraArgs`, `additionalDirectories`, `sandbox`, `settings.{permissions,sandbox}`, nhưng không có `settingSources`/`strictMcpConfig`; key lạ làm tạo agent fail. SDK nối `extraArgs` thành cờ sau cờ của chính nó (đọc ở SDK 0.2.117 trên máy). Env của `before agent.session_open` đi vào tiến trình `codex app-server` và quyết định `CODEX_HOME` (`agent-manager.ts:5358`, `codex-app-server-agent.ts:7176`).
 - Payload `providers.listUsage()`: `{ providers: [{ providerId, displayName, windows: [{ usedPct, resetsAt }] }] }` (`messages.ts:6237`).
 - Provider tuỳ chỉnh (`extends`) hiện đúng ID trong hook; plugin set được `providerOptions.sandbox` cho Claude và `sandbox_mode`/`sandbox_workspace_write` cho Codex (Codex dùng lại policy đã resolve nếu cùng loại — `codex-app-server-agent.ts:4256-4263`).
 - Máy anh: Paseo app tự cập nhật lên 0.12.0 ngày 2026-10-21; daemon do app quản lý; `pluginsEnabled` chưa bật (đã bật tạm cho spike rồi trả lại); `injectIntoAgents: true`; Codex CLI 0.163.0 với `sandbox_mode = "danger-full-access"` toàn cục trong `~/.codex/config.toml` (mode `auto` của Paseo vẫn áp workspace-write).
@@ -665,6 +678,7 @@ Còn giả định: xem cuối §11.1.
 - **`Write`/`Edit` của Claude không đi qua sandbox hệ điều hành:** chặn ghi ngoài worktree dựa vào plugin đọc `input.file_path` (resolve realpath trước khi so). Còn một khe nhỏ: Claude chạy tool song song, nên giữa lúc plugin kiểm và lúc ghi, một lệnh shell khác có thể tạo symlink tại thư mục chưa tồn tại.
 - **Chi phí topology:** điều phối nhiều agent tốn gấp nhiều lần turn/token so với một phiên đơn. Đo ở §10; nếu không bù được bằng toil giảm, thu hẹp (tắt Supervisor duyệt plan, tắt reviewer khác vendor…).
 - **Limit tập trung:** mặc định 3/4 vai dùng Claude (Supervisor, Lead, Peer-impl) → limit Claude đánh vào cả ba cùng lúc; reviewer Codex vẫn chạy tiếp. v1 không tạm dừng cả vendor, nên mỗi agent Claude tự dính limit một lần rồi tự hẹn resume; cân nhắc đổi Lead sang Codex nếu đo thấy kẹt. Rev 5.6 giảm tải bằng Peer-impl chạy Sonnet 5.5 và Supervisor ở `high`; nếu vẫn kẹt, xem `ops limit_hit` theo vai rồi mới đổi.
+- **Cô lập runtime dựa vào cờ CLI qua `extraArgs`:** nếu SDK hay Claude Code đổi cách ghép cờ (thứ tự, `--setting-sources` lặp lại), hook và MCP của anh hay của repo sẽ quay lại mà không báo. T21 dòng 26 kiểm; nên kiểm lại sau mỗi lần cập nhật Claude Code. Bỏ CLAUDE.md toàn cục của anh khỏi vai SLP là chủ ý: luật của vai nằm trong prompt vai.
 - **Phụ thuộc Codex CLI cho sandbox runner:** verify chạy qua `codex sandbox`; Codex CLI đổi cú pháp (như việc bắt buộc `--permission-profile` ở 0.163) là verify fail closed cho tới khi sửa config.
 - **Supervisor phán đoán sai thay anh:** Supervisor duyệt plan và phân loại leo thang. Giảm bằng: cổng brief/spec/ship luôn là anh; mọi ruling và quyết định của Supervisor nằm trong gói ship.
 - **Nhịp kiểm tốn token và làm phình context Supervisor:** ước ~20k token mỗi giờ cho một feature đang chạy (chưa đo). Giảm bằng: bỏ qua khi không có hoạt động; gói do plugin dựng có giới hạn dòng; đo ở §10 rồi giãn nhịp hoặc đổi cách.

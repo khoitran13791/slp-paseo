@@ -10,7 +10,7 @@
 
 **Spec:** [`docs/superpowers/specs/2026-10-21-slp-paseo-design.md`](../specs/2026-10-21-slp-paseo-design.md) (rev 4). Bằng chứng nền: [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md).
 
-**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 276 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 95 lần gỡ thử từng phần sửa mới (round 6 thêm: git mạng chạy ở checkout chính, cổng ship cần brief/spec/plan đã duyệt, accept chờ plan mới, ship kiểm lại blocker, resume không cắt ngang turn đang chạy, rollback mọi lỗi sau khi worktree đã có; round 5 thêm: giá trị git-lfs khớp nguyên văn, kiểm config của chính worktree mới trước khi checkout; round 4 thêm: git filter/driver chạy file của repo, giữ git-lfs, rollback xoá branch của chính nó, `last()` bỏ identity tạo hỏng, câu duyệt có `?`, gỡ worktree chỉ qua git; round 3 thay chặn theo đường dẫn bằng worktree do plugin tạo, và thêm: tick một lượt một lúc, resume theo đúng job, câu duyệt mọi mệnh đề đều là đồng ý, evidence A→B→A; round 2 thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
+**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5); rev 5.7 (2026-10-23) cô lập runtime của vai và bảo vệ setting agent trong repo):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 279 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 95 lần gỡ thử từng phần sửa mới (round 6 thêm: git mạng chạy ở checkout chính, cổng ship cần brief/spec/plan đã duyệt, accept chờ plan mới, ship kiểm lại blocker, resume không cắt ngang turn đang chạy, rollback mọi lỗi sau khi worktree đã có; round 5 thêm: giá trị git-lfs khớp nguyên văn, kiểm config của chính worktree mới trước khi checkout; round 4 thêm: git filter/driver chạy file của repo, giữ git-lfs, rollback xoá branch của chính nó, `last()` bỏ identity tạo hỏng, câu duyệt có `?`, gỡ worktree chỉ qua git; round 3 thay chặn theo đường dẫn bằng worktree do plugin tạo, và thêm: tick một lượt một lúc, resume theo đúng job, câu duyệt mọi mệnh đề đều là đồng ý, evidence A→B→A; round 2 thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest; rev 5.7 thêm 14: `.claude`/`.codex`/`.mcp.json` không vào commit (git và pipeline), `Write`/`Edit` vào đó bị từ chối, `setting-sources` rỗng, `strict-mcp-config`, caller không đè được, env CLAUDE.md, `CODEX_HOME`, `config.toml` ghi lại mỗi lần, cần `auth.json`, sắp version Superpowers theo số) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
 
 **Core mechanism:** mỗi ý tưởng một Supervisor (brief đầu tiên gắn nó với feature) → `slp_spawn` → plugin tạo worktree (hook tắt) và một workspace `directory` cho nó, Paseo tạo agent trong đó → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng, `toolPolicy`) và ghi worktree thật vào identity → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `turn_started`/`turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer (hook tắt, git dir tin cậy), chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh → mỗi `watch.intervalMinutes` plugin dựng gói kiểm (trạng thái, tool call gần nhất, lặp lại, file đang đổi) gửi Supervisor của feature; Supervisor steer Lead khi cần.
 
@@ -28,7 +28,7 @@
 - Lúc cài: `~/.paseo/config.json` có thêm 4 provider ID và `pluginsEnabled: true`; thêm `~/.slp/config.json`; anh tạo 4 agent profile.
 - Agent tạo bằng provider `slp-*` mà không qua plugin sẽ bị từ chối (riêng Supervisor được tạo tay trong thư mục project, không trong một worktree).
 - Mỗi Lead, Peer và reviewer là một workspace worktree trong sidebar Paseo (dưới `~/.paseo/worktrees/`); plugin archive workspace của Peer/reviewer khi task xong.
-- Thay đổi Peer làm ở `.husky/`, `.githooks/`, thư mục `core.hooksPath` hoặc `paseo.json` không bao giờ được commit; Lead được báo để người làm tay.
+- Thay đổi Peer làm ở `.husky/`, `.githooks/`, thư mục `core.hooksPath`, `paseo.json`, `.claude/`, `.codex/` hoặc `.mcp.json` không bao giờ được commit; Lead được báo để người làm tay.
 - Permission mà plugin không tự quyết thì chờ anh trong app (không còn `slp_permit`); gói kiểm nhắc Supervisor báo anh.
 - Mỗi ý tưởng anh mở một agent `SLP Supervisor` trong workspace thư mục gốc của project. Tab Supervisor nhận tối đa 4 gói kiểm mỗi giờ khi feature đang chạy. Thêm file `~/.slp/<project>/watch.json`.
 
@@ -47,6 +47,7 @@
 - State nằm ở `~/.slp/<project>/` (đổi được qua biến môi trường `SLP_HOME`, chỉ để test). Mỗi feature có `events.jsonl` chỉ ghi thêm; plugin là writer duy nhất. Repo của project không chứa file SLP nào. [Spec §5]
 - Plugin không bao giờ chạy code của repo ngoài sandbox. Mọi lệnh git của plugin dùng `-c core.hooksPath=/dev/null -c core.fsmonitor=false` và `--git-dir`/`--work-tree` cố định từ common dir tin cậy; commit/merge/push thêm `--no-verify`. Verify và hook chạy qua `sandbox.runner` (mặc định `["codex","sandbox","-P",":workspace","-C","{worktree}","--"]`). Runner hỏng thì fail closed và báo Supervisor. [Spec §7 luật chung, §9]
 - Vai Claude chạy mode `default`, kèm `providerOptions.sandbox = { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite, denyRead: ["~/.slp", "~/.paseo"] }, network: { allowLocalBinding: false, allowedDomains } }`. Chỉ Peer-impl có `allowedDomains = sandbox.claudeAllowedDomains` (mặc định `["registry.npmjs.org","pypi.org","files.pythonhosted.org"]`) và `denyWrite: [<worktree>/.git]`; các vai Claude khác dùng `[]` và `denyWrite: [cwd]`. Codex reviewer dùng `sandbox_mode: "workspace-write"`, `approval_policy: "on-request"`, `sandbox_workspace_write.network_access: false`. Tool `slp_*` được duyệt sẵn qua `toolPolicy.preapproved`. [Spec §4]
+- Vai Claude khởi động không có setting của anh hay của repo: `providerOptions.extraArgs` thêm `setting-sources: ""`, `strict-mcp-config: null` và `plugin-dir: <Superpowers>`; `additionalDirectories: [cwd]` cùng env `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` để vẫn đọc CLAUDE.md. Vai Codex chạy với `CODEX_HOME=~/.slp/codex-home`, chỉ chia sẻ `auth.json`. [Spec §4, §12]
 - MCP server `slp` dạng `http` tại `http://127.0.0.1:<mcp.port>/mcp` (mặc định port `47320`), header `Authorization: Bearer <token riêng của agent>`. [Spec §7.1]
 - Tin do plugin gửi mang `messageId` có tiền tố `slp-`. Tin tới một agent đang chạy phải chờ tới khi agent `idle` (Paseo mặc định *ngắt* turn đang chạy). Ngoại lệ duy nhất: `slp_send` với `mode: "steer" | "interrupt"` từ Supervisor tới Lead của feature mình, hoặc từ Lead tới Peer của mình. [Spec §7.1 Router, §7.3]
 - Mỗi Supervisor đúng một feature; mọi cạnh router nằm trong một feature; Supervisor không ghi được feature khác. [Spec §2, §7.3]
@@ -180,6 +181,7 @@ describe("parseSlpConfig", () => {
     expect(c.mcp.port).toBe(47320);
     expect(c.ship).toEqual({ remote: "origin", openPr: true });
     expect(c.models.allowed).toEqual([]);
+    expect(c.runtime).toEqual({ claudePluginDir: null });
   });
   it("rejects a project without a verify command", () => {
     expect(() => parseSlpConfig({ projects: { demo: { repo: "/r", verify: [] } } })).toThrow(/verify/);
@@ -300,6 +302,8 @@ export const SlpConfigSchema = z.object({
   }).prefault({}),
   mcp: z.object({ port: z.number().int().min(0).max(65535).default(47320) }).prefault({}),
   ship: z.object({ remote: z.string().default("origin"), openPr: z.boolean().default(true) }).prefault({}),
+  // null: the newest Superpowers in Claude Code's plugin cache (T16 findSuperpowersDir).
+  runtime: z.object({ claudePluginDir: z.string().min(1).nullable().default(null) }).prefault({}),
 });
 export type SlpConfig = z.infer<typeof SlpConfigSchema>;
 
@@ -2015,7 +2019,7 @@ git commit -m "feat(plugin): role-filtered MCP server over HTTP"
 Ba lớp chặn code của repo chạy ngoài sandbox qua git (review B2):
 - Mọi lệnh git của plugin có `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, không riêng commit/merge/push.
 - Plugin không tin file `<worktree>/.git`, vì file này nằm trong cwd của Peer và Peer ghi được. `git()` tự tìm admin dir bằng cách đọc ngược `<common dir>/worktrees/*/gitdir` của repo đã đăng ký qua `trustRepo`; common dir nằm ngoài sandbox của mọi vai. Sau đó chạy với `--git-dir` và `--work-tree` cố định. Thư mục không thuộc repo nào đã đăng ký thì `git()` ném `UntrustedGitDirError`, tức là fail closed.
-- Paseo tự chạy `git worktree add` (có hook `post-checkout`) và lệnh `worktree.setup` trong `paseo.json` khi tạo worktree mới, ngoài sandbox. Vì vậy plugin không bao giờ commit thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath` của repo) hay ở `paseo.json`. Các file này bị loại khỏi commit như file nhạy cảm và được báo cho Lead.
+- Paseo tự chạy `git worktree add` (có hook `post-checkout`) và lệnh `worktree.setup` trong `paseo.json` khi tạo worktree mới, ngoài sandbox. Vì vậy plugin không bao giờ commit thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath` của repo) hay ở `paseo.json`. Rev 5.7: setting của agent trong repo (`.claude/`, `.codex/`, `.mcp.json`) cũng vậy: hook và MCP server khai ở đó chạy ngoài sandbox khi một session Claude/Codex mở trong checkout đó (probe 2026-10-23), kể cả session của anh sau khi merge. Các file này bị loại khỏi commit như file nhạy cảm và được báo cho Lead.
 - Rev 5.5 (review Codex vòng 6): lệnh git có mạng (`fetch`, `push`) và `gh` chạy trong checkout chính của project, không trong worktree, vì config transport (`core.sshCommand`, credential helper) có thể gọi một script theo đường dẫn tương đối; trong checkout chính nó chỉ trỏ tới nội dung anh viết.
 - Rev 5.4 (review Codex vòng 5): ngoại lệ `git-lfs` phải khớp nguyên văn giá trị `git lfs install` ghi, không chỉ tiền tố. Config git có thể phụ thuộc branch (`includeIf onbranch:`), nên `addWorktree` tạo worktree với `--no-checkout`, kiểm `unsafeGitDrivers` trong chính worktree đó, rồi mới `reset --hard` để đổ file (checkout chạy smudge filter); có driver thì gỡ worktree và branch. Workspace dùng lại (Lead khởi động lại, Peer tiếp quản) được kiểm theo worktree của nó.
 - Rev 5.3 (review Codex vòng 4): hook tắt không tắt git filter. Nếu config git của repo có filter `clean`/`smudge`/`process`, merge driver hay `textconv` (`.gitattributes` trong cây chọn chúng), thì `git add` của plugin và `git status` nền của Paseo chạy lệnh đó, có thể là script Peer sửa được. `unsafeGitDrivers(repo)` liệt kê chúng (bỏ qua `git-lfs`, là chương trình chứ không phải file của repo); có thì plugin không tạo agent cho project và không commit report (fail closed, báo rõ).
@@ -2106,8 +2110,8 @@ describe("git helpers", () => {
   it("classifies sensitive and protected paths and touch-set outsiders, and finds hooks", () => {
     expect(["a/.env", ".env.local", "k.pem", "x.key", "id_rsa", "id_ed25519.pub", "c.p12", "credentials.json"].every(isSensitivePath)).toBe(true);
     expect(isSensitivePath("src/env.ts")).toBe(false);
-    expect(["paseo.json", ".husky/pre-commit", ".githooks/x", "hooks/pre-push"].map((p) => isProtectedPath(p, "hooks"))).toEqual([true, true, true, true]);
-    expect(["src/paseo.json", "src/hooks/a.ts"].map((p) => isProtectedPath(p, "hooks"))).toEqual([false, false]);
+    expect(["paseo.json", ".husky/pre-commit", ".githooks/x", "hooks/pre-push", ".claude/settings.json", ".codex/config.toml", ".mcp.json"].map((p) => isProtectedPath(p, "hooks"))).toEqual([true, true, true, true, true, true, true]);
+    expect(["src/paseo.json", "src/hooks/a.ts", "src/.mcp.json", "docs/.claude/x.md"].map((p) => isProtectedPath(p, "hooks"))).toEqual([false, false, false, false]);
     expect(filesOutside(["src/a.ts", "test/a.test.ts", "package.json"], ["src/", "test/**"])).toEqual(["package.json"]);
     const r = repo(); const marker = join(tmpDir(), "h.log"); withHusky(r, marker);
     expect(hooksDir(r)).toBe(".husky");
@@ -2248,10 +2252,13 @@ export function hooksDir(cwd: string): string | null {
   return v && !isAbsolute(v) ? v.replace(/^\.\//, "").replace(/\/$/, "") : null;
 }
 
-/** Files Paseo executes outside any sandbox when it creates a worktree: hooks and paseo.json. */
+/**
+ * Files run outside any sandbox: git hooks and paseo.json when Paseo creates a worktree, and agent settings
+ * (.claude/, .codex/, .mcp.json: hooks and MCP servers) when an agent session opens in a checkout of the branch.
+ */
 export function isProtectedPath(p: string, hookDir: string | null): boolean {
-  if (p === "paseo.json") return true;
-  return [".husky", ".githooks", ...(hookDir ? [hookDir] : [])].some((d) => p.startsWith(`${d}/`));
+  if (p === "paseo.json" || p === ".mcp.json") return true;
+  return [".husky", ".githooks", ".claude", ".codex", ...(hookDir ? [hookDir] : [])].some((d) => p.startsWith(`${d}/`));
 }
 
 /**
@@ -2513,7 +2520,7 @@ Các quyết định của pipeline:
 - Hook `pre-commit` của repo, nếu có, chạy **trong sandbox** trước lệnh verify, trên cây file đã commit.
 - **Evidence phải khớp commit** (review Codex 2026-10-22): sau khi chạy, nếu file tracked đổi hoặc HEAD di chuyển (formatter trong hook, test ghi đè fixture, Peer bắt đầu turn mới giữa chừng), evidence ghi `dirty` và không xanh. Ở worktree Lead (scope `feature`), plugin trả file tracked về như cũ. Cách mạnh hơn là checkout riêng cho mỗi lần verify; v1 không làm vì tốn cài dependency mỗi lần, và reviewer đã chạy test trên worktree sạch của đúng commit.
 - **Report `blocked` không đổi file không bị từ chối** (report human attention 2026-10-22): plugin ghi `ops report_blocked` và trả `{ outcome: "blocked" }`; hook ở T20 chuyển cho Lead. Trước đây nó thành "no changes in worktree" và chỉ Peer được bảo "fix it", nên Peer kẹt vòng và Lead không biết.
-- File nhạy cảm (`.env*`, khoá) và file được bảo vệ (hook, `paseo.json`, xem T9) không bao giờ vào commit; Lead được báo qua `flags`.
+- File nhạy cảm (`.env*`, khoá) và file được bảo vệ (hook, `paseo.json`, `.claude/`, `.codex/`, `.mcp.json`, xem T9) không bao giờ vào commit; Lead được báo qua `flags`.
 - **Runner hỏng không phải lỗi của Peer** (review M6). Trước mỗi lần verify, plugin chạy `true` qua runner. Lệnh đó fail thì ghi `ops runner_failed`, không ghi `evidence`, và trả về `runnerError`. Hook ở T20 báo Supervisor, không nhắn Peer. Task không thể accepted vì thiếu evidence, tức là fail closed.
 - **Phục hồi sau crash giữa commit và ghi event** (review M5): worktree sạch, HEAD khác BASE, HEAD mang trailer `SLP-Task` của đúng task và chưa có event `commit` cho HEAD. Khi đó plugin ghi `commit` cho HEAD (`recovered: true`) rồi verify tiếp, thay vì từ chối "no changes".
 
@@ -2610,11 +2617,13 @@ describe("processReport", () => {
     expect(await processReport(deps, task, blocked)).toEqual({ outcome: "blocked" });
     expect(store.all().filter((e) => e.kind === "ops").map((e) => e.data.type)).toEqual(["report_blocked"]);
   });
-  it("never commits hook files or paseo.json, and flags them", async () => {
+  it("never commits hook files, agent settings or paseo.json, and flags them", async () => {
     const { repo, store, deps, task, report } = setup();
     mkdirSync(join(repo, ".husky")); writeFileSync(join(repo, ".husky", "post-checkout"), "#!/bin/sh\necho pwned\n");
+    mkdirSync(join(repo, ".claude")); writeFileSync(join(repo, ".claude", "settings.json"), '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"echo pwned"}]}]}}');
+    writeFileSync(join(repo, ".mcp.json"), '{"mcpServers":{"x":{"command":"echo"}}}');
     writeFileSync(join(repo, "paseo.json"), '{"worktree":{"setup":["echo pwned"]}}'); writeFileSync(join(repo, "src.ts"), "x");
-    expect(await processReport(deps, task, report)).toMatchObject({ outcome: "committed", flags: { excludedProtected: [".husky/post-checkout", "paseo.json"] } });
+    expect(await processReport(deps, task, report)).toMatchObject({ outcome: "committed", flags: { excludedProtected: [".claude/settings.json", ".husky/post-checkout", ".mcp.json", "paseo.json"] } });
     expect(store.all().find((e) => e.kind === "commit")!.data.files).toEqual(["src.ts"]);
     expect(sh(repo, "git", ["show", "--name-only", "--format=", "HEAD"])).toBe("src.ts");
   });
@@ -3499,6 +3508,9 @@ describe("decidePermission", () => {
     expect(decidePermission({ id: "r", name: "Edit", input: { file_path: join(wt, ".git", "config") } }, peer).action).toBe("deny");
     expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, "paseo.json") } }, peer).action).toBe("deny");
     expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, ".husky", "post-checkout") } }, peer).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, ".claude", "settings.json") } }, peer).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "Edit", input: { file_path: join(wt, ".codex", "config.toml") } }, peer).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, ".mcp.json") } }, peer).action).toBe("deny");
     expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, ".github", "ci.yml") } }, peer).action).toBe("allow");
   });
   it("accepts /tmp paths that resolve inside a /private/tmp worktree", () => {
@@ -3579,7 +3591,7 @@ export function decidePermission(req: PermissionLike, ident: Identity | null, op
     const wt = resolveExisting(ident.worktree, realpath);
     const abs = resolveExisting(target, realpath);
     if (inside(abs, join(wt, ".git"))) return { action: "deny", message: "SLP: the worktree's .git link is managed by the plugin." };
-    if (abs === join(wt, "paseo.json") || [".husky", ".githooks"].some((d) => inside(abs, join(wt, d)))) return { action: "deny", message: "SLP: paseo.json and git hooks run outside the sandbox; only a human edits them." };
+    if ([join(wt, "paseo.json"), join(wt, ".mcp.json")].includes(abs) || [".husky", ".githooks", ".claude", ".codex"].some((d) => inside(abs, join(wt, d)))) return { action: "deny", message: "SLP: paseo.json, git hooks and agent settings (.claude/, .codex/, .mcp.json) run outside the sandbox; only a human edits them." };
     return inside(abs, wt) ? { action: "allow" } : { action: "deny", message: `SLP: ${target} is outside your worktree.` };
   }
   return { action: "defer", reason: `${req.kind ?? "tool"}: ${name}` };
@@ -3780,7 +3792,7 @@ You own exactly one task inside your worktree ${worktree}. Technical judgment in
 - Use superpowers:test-driven-development: a failing test, minimal code, a passing test. Run the task's verify command yourself before you report: ${verify}
 - Stay inside your worktree, and inside the task's touch set unless the task truly needs more; explain any extra file in your report.
 - Do not commit, push or merge. The plugin commits your worktree when you report.
-- Do not edit git hooks (.husky/, .githooks/) or paseo.json: the plugin never commits them. If the task needs that, say so in your report.
+- Do not edit git hooks (.husky/, .githooks/), paseo.json or agent settings (.claude/, .codex/, .mcp.json): they run outside the sandbox and the plugin never commits them. If the task needs that, say so in your report.
 
 ## End every turn with exactly one of these
 - slp_report {status: "done" | "done_with_concerns" | "blocked", message: a one-line commit message, report: what you did, a summary of the test output, concerns}. Then end your turn.
@@ -3895,7 +3907,7 @@ git commit -m "feat(plugin): role prompts and task/review briefs"
 
 **Interfaces:**
 - Consumes: `IdentityRegistry`, `Identity` (T7); `SlpConfig`, `projectForCwd` (T1); `RoleSetup`, `roleOfProvider`, `ROLE_PROVIDER`, `Role` (T1); `currentBranch`, `headOf`, `gitCommonDir` (T9)
-- Produces: `CreateRequest { config: { provider: string; cwd: string; modeId?: string; systemPrompt?: string; providerOptions?: unknown; toolPolicy?: { preapproved: McpToolRef[] }; mcpServers?: Record<string, unknown>; [k: string]: unknown }; env?: Record<string, string> }`, `AgentConfigDeps { identities; config; setup(): RoleSetup; mcpUrl(): string; promptFor(ident: Identity): string; toolNames(role: Role): string[]; stateDirs: string[] }`, `transformCreate(req, deps): CreateRequest`, `bindSession(req: { agentId: string; env: Record<string, string> }, identities): void`, `claudeSandbox(ident, config, cwd, stateDirs): Record<string, unknown>`
+- Produces: `CreateRequest { config: { provider: string; cwd: string; modeId?: string; systemPrompt?: string; providerOptions?: unknown; toolPolicy?: { preapproved: McpToolRef[] }; mcpServers?: Record<string, unknown>; [k: string]: unknown }; env?: Record<string, string> }`, `AgentConfigDeps { identities; config; setup(): RoleSetup; mcpUrl(): string; promptFor(ident: Identity): string; toolNames(role: Role): string[]; stateDirs: string[]; claudePluginDir: string | null; codexHome(): string }`, `transformCreate(req, deps): CreateRequest`, `bindSession(req: { agentId: string; env: Record<string, string> }, identities): void`, `claudeSandbox(ident, config, cwd, stateDirs): Record<string, unknown>`, `claudeIsolation(cwd, pluginDir, extraArgs): { additionalDirectories: string[]; extraArgs: Record<string, string | null> }`, `CLAUDE_ISOLATION_ENV`, `ensureCodexHome(dir, sourceHome): string`, `findSuperpowersDir(claudeHome): string | null`
 
 Worktree của Lead và Peer do plugin tạo (T9 `addWorktree`, T18), mỗi cái có một workspace `directory`; agent được tạo trong workspace đó nên `cwd` là worktree, không phải `cwd` của cha (`create-agent/intent.ts` `resolvePlacement`, review B1). Hook `before agent.create` chạy khi worktree đã có, nên `transformCreate`:
 - ghi `worktree = config.cwd` và `branch` thật vào identity (Paseo có thể đổi tên branch để tránh trùng);
@@ -3904,13 +3916,19 @@ Worktree của Lead và Peer do plugin tạo (T9 `addWorktree`, T18), mỗi cái
 
 Sandbox của vai Claude có `filesystem.denyRead: stateDirs` (`~/.slp`, `~/.paseo`). Peer-impl có thêm `denyWrite: [<worktree>/.git]` (review M1, B2). Tool `slp_*` của vai được duyệt sẵn qua `toolPolicy.preapproved`, nên không sinh permission request (review m15).
 
+Cô lập runtime (rev 5.7, học từ `codex-room-setup`; probe 2026-10-23 trên Claude Code 2.1.308 và Codex CLI 0.163.0):
+- Paseo nạp `settingSources: ["user", "project", "local"]` cho mọi agent Claude (`claude/agent.ts:153`). Hook trong `.claude/settings.json` của checkout chạy **ngoài** sandbox, `.mcp.json` của repo được khởi động không cần duyệt, và agent nhận MCP, plugin, connector claude.ai của anh. Schema `providerOptions` của Paseo là `.strict()`, không có `settingSources`/`strictMcpConfig`, nhưng có `extraArgs` (SDK nối thành cờ CLI sau cờ của chính nó, nên `--setting-sources=` rỗng đè `user,project,local`) và `additionalDirectories`.
+- Vì vậy vai Claude nhận `extraArgs: { "setting-sources": "", "strict-mcp-config": null, "plugin-dir": <Superpowers> }`, `additionalDirectories: [cwd]` và env `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`: không hook, chỉ MCP mà Paseo truyền (`slp`, `paseo`), CLAUDE.md của repo vẫn được đọc, Superpowers vẫn có. Không tìm thấy Superpowers thì agent vẫn chạy, plugin cảnh báo.
+- Vai Codex nhận env `CODEX_HOME=<slpHome>/codex-home`: `config.toml` do plugin ghi lại trước mỗi lần tạo (không MCP, không project trusted), `auth.json` là symlink tới `auth.json` của anh. Home mặc định của anh có MCP `cua_repl` (điều khiển máy/trình duyệt) đang bật.
+
 - [ ] **Step 1: Viết test thất bại**
 
 `plugin/test/agentConfig.test.ts`:
 ```ts
+import { lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bindSession, transformCreate } from "../server/agentConfig";
+import { bindSession, ensureCodexHome, findSuperpowersDir, transformCreate } from "../server/agentConfig";
 import { parseSlpConfig } from "../server/config";
 import { headOf, trustRepo } from "../server/git";
 import { IdentityRegistry } from "../server/identity";
@@ -3918,12 +3936,15 @@ import type { Role, RoleSetup } from "../server/roles";
 import { initRepo, sh, tmpDir } from "./helpers";
 
 const STATE = ["/home/u/.slp", "/home/u/.paseo"];
+const PLUGIN_DIR = "/home/u/.claude/plugins/cache/claude-plugins-official/superpowers/6.4.1";
+const CODEX_HOME = "/home/u/.slp/codex-home";
+const ISOLATION = { additionalDirectories: [] as string[], extraArgs: { "setting-sources": "", "strict-mcp-config": null, "plugin-dir": PLUGIN_DIR } };
 function deps() {
   const repo = initRepo(); trustRepo(repo);
   const config = parseSlpConfig({ projects: { demo: { repo, verify: ["npm test"] } } });
   const identities = new IdentityRegistry(join(tmpDir(), "ids.json"));
   const setup: RoleSetup = { vendor: { supervisor: "claude", lead: "claude", "peer-impl": "claude", "peer-review": "codex" }, profile: {} };
-  const d = { identities, config, setup: () => setup, mcpUrl: () => "http://127.0.0.1:47320/mcp", promptFor: (i: { role: string }) => `PROMPT ${i.role}`, toolNames: (r: Role) => ["slp_state", `slp_${r}`], stateDirs: STATE };
+  const d = { identities, config, setup: () => setup, mcpUrl: () => "http://127.0.0.1:47320/mcp", promptFor: (i: { role: string }) => `PROMPT ${i.role}`, toolNames: (r: Role) => ["slp_state", `slp_${r}`], stateDirs: STATE, claudePluginDir: PLUGIN_DIR as string | null, codexHome: () => CODEX_HOME };
   return { repo, config, identities, d };
 }
 function worktree(repo: string, branch: string): string {
@@ -3947,7 +3968,15 @@ describe("transformCreate", () => {
     expect(out.config).toMatchObject({ modeId: "default", systemPrompt: "PROMPT supervisor" });
     expect(out.config.mcpServers).toEqual({ other: { type: "http", url: "u" }, slp: { type: "http", url: "http://127.0.0.1:47320/mcp", headers: { Authorization: `Bearer ${token}` }, alwaysLoad: true } });
     expect(out.config.toolPolicy).toEqual({ preapproved: [{ kind: "mcp", server: "slp", tool: "slp_state" }, { kind: "mcp", server: "slp", tool: "slp_supervisor" }] });
-    expect(out.config.providerOptions).toEqual({ sandbox: { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [repo], denyRead: STATE }, network: { allowedDomains: [], allowLocalBinding: false } } });
+    expect(out.config.providerOptions).toEqual({ sandbox: { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [repo], denyRead: STATE }, network: { allowedDomains: [], allowLocalBinding: false } }, ...ISOLATION, additionalDirectories: [repo] });
+    expect(out.env).toMatchObject({ CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" });
+  });
+  it("keeps the operator's and the repo's settings, hooks and MCP servers out of Claude roles, whatever the caller passed", () => {
+    const { d, repo } = deps();
+    const out = transformCreate({ config: { provider: "slp-supervisor", cwd: repo, providerOptions: { extraArgs: { "setting-sources": "user,project,local", verbose: null } } } }, d);
+    expect((out.config.providerOptions as { extraArgs: unknown }).extraArgs).toEqual({ verbose: null, "setting-sources": "", "strict-mcp-config": null, "plugin-dir": PLUGIN_DIR });
+    const bare = transformCreate({ config: { provider: "slp-supervisor", cwd: repo } }, { ...d, claudePluginDir: null });
+    expect((bare.config.providerOptions as { extraArgs: unknown }).extraArgs).toEqual({ "setting-sources": "", "strict-mcp-config": null });
   });
   it("refuses a Supervisor outside any project and starts one Supervisor per idea, each without a feature yet", () => {
     const { d, repo, identities } = deps();
@@ -3987,8 +4016,34 @@ describe("transformCreate", () => {
     const out = transformCreate({ config: { provider: "slp-peer-review", cwd: wt }, env: { SLP_TOKEN: rev.token } }, d);
     expect(out.config.modeId).toBe("auto");
     expect(out.config.providerOptions).toEqual({ sandbox_mode: "workspace-write", approval_policy: "on-request", sandbox_workspace_write: { network_access: false } });
+    expect(out.env).toMatchObject({ CODEX_HOME, SLP_TOKEN: rev.token });
+    expect(out.env).not.toHaveProperty("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD");
     const stale = identities.mint({ ...peerMeta, role: "peer-review", reviewCommit: "0".repeat(40) });
     expect(() => transformCreate({ config: { provider: "slp-peer-review", cwd: worktree(repo, "slp/f/review-T1-2") }, env: { SLP_TOKEN: stale.token } }, d)).toThrow(/not at the review commit/);
+  });
+});
+
+describe("ensureCodexHome", () => {
+  it("shares only auth.json, rewrites config.toml on every call, and fails without a Codex login", () => {
+    const source = tmpDir(); writeFileSync(join(source, "auth.json"), "{}"); writeFileSync(join(source, "config.toml"), "[mcp_servers.cua_repl]\ncommand = \"x\"\n");
+    const dir = join(tmpDir(), "codex-home");
+    expect(ensureCodexHome(dir, source)).toBe(dir);
+    expect(lstatSync(join(dir, "auth.json")).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(join(dir, "auth.json"))).toBe(join(source, "auth.json"));
+    expect(readFileSync(join(dir, "config.toml"), "utf8")).not.toMatch(/^\[(mcp_servers|projects)/m);
+    writeFileSync(join(dir, "config.toml"), `[projects."/x"]\ntrust_level = "trusted"\n`); // Codex may record trust here
+    ensureCodexHome(dir, source);
+    expect(readFileSync(join(dir, "config.toml"), "utf8")).not.toMatch(/trust_level/);
+    expect(() => ensureCodexHome(join(tmpDir(), "h"), tmpDir())).toThrow(/log in to Codex/);
+  });
+});
+
+describe("findSuperpowersDir", () => {
+  it("picks the newest numeric version and returns null when Superpowers is absent", () => {
+    const home = tmpDir(); const root = join(home, "plugins", "cache", "claude-plugins-official", "superpowers");
+    for (const v of ["6.4.1", "6.10.0", "6.9.9", "notes"]) mkdirSync(join(root, v), { recursive: true });
+    expect(findSuperpowersDir(home)).toBe(join(root, "6.10.0"));
+    expect(findSuperpowersDir(tmpDir())).toBeNull();
   });
 });
 
@@ -4012,6 +4067,7 @@ Expected: FAIL, "Cannot find module".
 
 `plugin/server/agentConfig.ts`:
 ```ts
+import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { projectForCwd, type SlpConfig } from "./config";
 import { currentBranch, gitCommonDir, headOf } from "./git";
@@ -4026,6 +4082,10 @@ export interface CreateRequest {
 export interface AgentConfigDeps {
   identities: IdentityRegistry; config: SlpConfig; setup(): RoleSetup; mcpUrl(): string;
   promptFor(ident: Identity): string; toolNames(role: Role): string[]; stateDirs: string[];
+  /** Superpowers, loaded back with --plugin-dir; null runs Claude roles without it. */
+  claudePluginDir: string | null;
+  /** CODEX_HOME for Codex roles; may create it (ensureCodexHome). */
+  codexHome(): string;
 }
 
 const asRecord = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
@@ -4040,6 +4100,50 @@ export function claudeSandbox(ident: Identity, config: SlpConfig, cwd: string, s
     filesystem: { denyWrite: [impl ? join(cwd, ".git") : cwd], denyRead: stateDirs },
     network: { allowedDomains: impl ? config.sandbox.claudeAllowedDomains : [], allowLocalBinding: false },
   };
+}
+
+/**
+ * Claude roles start without the operator's or the repo's settings. Paseo loads user, project and local settings, so hooks
+ * in a checkout's .claude/settings.json would run outside the sandbox, and .mcp.json servers, the operator's MCP servers,
+ * plugins and claude.ai connectors would load. The SDK appends extraArgs after its own flags, so "--setting-sources="
+ * (empty) overrides Paseo's list. CLAUDE.md comes back through --add-dir plus CLAUDE_ISOLATION_ENV; Superpowers through --plugin-dir.
+ */
+export function claudeIsolation(cwd: string, pluginDir: string | null, extraArgs: unknown): { additionalDirectories: string[]; extraArgs: Record<string, string | null> } {
+  return {
+    additionalDirectories: [cwd],
+    extraArgs: { ...(asRecord(extraArgs) as Record<string, string | null>), "setting-sources": "", "strict-mcp-config": null, ...(pluginDir ? { "plugin-dir": pluginDir } : {}) },
+  };
+}
+export const CLAUDE_ISOLATION_ENV = { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" } as const;
+
+const CODEX_CONFIG = "# Written by the SLP plugin before each Codex role starts. No MCP servers and no trusted projects:\n# the agent gets only what Paseo passes for its session.\n";
+
+/** A CODEX_HOME that shares only auth.json with the operator's Codex home (their MCP servers include computer use). */
+export function ensureCodexHome(dir: string, sourceHome: string): string {
+  const auth = join(sourceHome, "auth.json");
+  if (!existsSync(auth)) throw new Error(`SLP: ${auth} not found; log in to Codex before starting a Codex role.`);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeFileSync(join(dir, "config.toml"), CODEX_CONFIG);
+  const link = join(dir, "auth.json");
+  let target: string | null = null;
+  try { target = lstatSync(link).isSymbolicLink() ? readlinkSync(link) : ""; } catch { target = null; }
+  if (target !== auth) { rmSync(link, { force: true }); symlinkSync(auth, link); }
+  return dir;
+}
+
+/** Newest Superpowers in Claude Code's plugin cache, or null. */
+export function findSuperpowersDir(claudeHome: string): string | null {
+  const root = join(claudeHome, "plugins", "cache", "claude-plugins-official", "superpowers");
+  let versions: string[];
+  try { versions = readdirSync(root).filter((v) => /^\d+(\.\d+)*$/.test(v)); } catch { return null; }
+  const parts = (v: string) => v.split(".").map(Number);
+  versions.sort((a, b) => {
+    const x = parts(a), y = parts(b);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) { const diff = (x[i] ?? 0) - (y[i] ?? 0); if (diff) return diff; }
+    return 0;
+  });
+  const newest = versions.at(-1);
+  return newest ? join(root, newest) : null;
 }
 
 /** Lead and Peers must run in a worktree Paseo created for them, never in the main checkout. */
@@ -4067,13 +4171,15 @@ export function transformCreate(req: CreateRequest, deps: AgentConfigDeps): Crea
   if (ident.role !== role) throw new Error(`SLP: token role ${ident.role} does not match provider ${req.config.provider}`);
   recordPlacement(ident, req.config.cwd, deps.identities);
   const vendor = deps.setup().vendor[role];
+  const base = asRecord(req.config.providerOptions);
   const providerOptions = vendor === "claude"
-    ? { ...asRecord(req.config.providerOptions), sandbox: claudeSandbox(ident, deps.config, req.config.cwd, deps.stateDirs) }
-    : { ...asRecord(req.config.providerOptions), sandbox_mode: "workspace-write", approval_policy: "on-request", sandbox_workspace_write: { network_access: false } };
+    ? { ...base, sandbox: claudeSandbox(ident, deps.config, req.config.cwd, deps.stateDirs), ...claudeIsolation(req.config.cwd, deps.claudePluginDir, base.extraArgs) }
+    : { ...base, sandbox_mode: "workspace-write", approval_policy: "on-request", sandbox_workspace_write: { network_access: false } };
+  const runtimeEnv: Record<string, string> = vendor === "claude" ? { ...CLAUDE_ISOLATION_ENV } : { CODEX_HOME: deps.codexHome() };
   const preapproved: McpToolRef[] = deps.toolNames(role).map((tool) => ({ kind: "mcp", server: "slp", tool }));
   return {
     ...req,
-    env: { ...req.env, SLP_TOKEN: token! },
+    env: { ...req.env, ...runtimeEnv, SLP_TOKEN: token! },
     config: {
       ...req.config,
       modeId: vendor === "claude" ? "default" : "auto",
@@ -4481,7 +4587,7 @@ export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: 
     paseo: () => paseo, run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs: [home], worktreeRoot: tmpDir("slp-wts-"),
     pendingPermissions: new Map(), log: () => undefined,
   };
-  paseo.beforeCreate = (req) => transformCreate(req, { identities, config, setup: () => TEST_SETUP, mcpUrl: () => "http://127.0.0.1:1/mcp", promptFor: (i) => `PROMPT ${i.role}`, toolNames: () => [], stateDirs: [] });
+  paseo.beforeCreate = (req) => transformCreate(req, { identities, config, setup: () => TEST_SETUP, mcpUrl: () => "http://127.0.0.1:1/mcp", promptFor: (i) => `PROMPT ${i.role}`, toolNames: () => [], stateDirs: [], claudePluginDir: null, codexHome: () => pjoin(home, "codex-home") });
   paseo.onSessionOpen = (agentId, env) => bindSession({ agentId, env }, identities);
   return { ctx, paseo, repo, home, config };
 }
@@ -6609,7 +6715,7 @@ async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean)
     ctx.nudges.reset(ident.agentId!);
     const flags = out.flags.outsideTouchSet.length ? ` Outside touch set: ${out.flags.outsideTouchSet.join(", ")}.` : "";
     const excluded = out.flags.excludedSensitive.length ? ` Excluded sensitive files: ${out.flags.excludedSensitive.join(", ")}.` : "";
-    const protectedFiles = out.flags.excludedProtected.length ? ` Not committed (hooks or paseo.json; a human must change these): ${out.flags.excludedProtected.join(", ")}.` : "";
+    const protectedFiles = out.flags.excludedProtected.length ? ` Not committed (git hooks, paseo.json or agent settings; a human must change these): ${out.flags.excludedProtected.join(", ")}.` : "";
     const commitEv = [...ctx.stores.feature(ident.project, feature).all()].reverse().find((e) => e.kind === "commit" && e.data.hash === out.commit);
     for (const other of featuresTouching(ctx, ident.project, feature, (commitEv?.data.files as string[] | undefined) ?? [])) {
       if (ctx.identities.current("supervisor", ident.project, other.slug)) notify(ctx, supervisorAddress(ident.project, other.slug), `${feature} ${ident.task} committed files in your touch set: ${other.files.join(", ")}. Check with your Lead whether the plans collide.`);
@@ -6799,7 +6905,7 @@ Ghi chú về `tick`: tin resume đầu tiên gửi ngay, các tin sau giãn m�
 ```ts
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { bindSession, transformCreate, type CreateRequest } from "./agentConfig";
+import { bindSession, ensureCodexHome, findSuperpowersDir, transformCreate, type CreateRequest } from "./agentConfig";
 import { loadSlpConfig, slpHome, type SlpConfig } from "./config";
 import type { Ctx, PaseoLike } from "./context";
 import { trustRepo, unsafeGitDrivers } from "./git";
@@ -6832,6 +6938,8 @@ export function createRuntime(): Runtime {
     } catch (e) { console.error(`[slp] project ${name}: ${String(e)}`); }
   }
   const stateDirs = [home, process.env.PASEO_HOME ?? join(homedir(), ".paseo")]; // SLP worktrees live in ~/.slp-worktrees, outside both
+  const claudePluginDir = config.runtime.claudePluginDir ?? findSuperpowersDir(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"));
+  if (!claudePluginDir) console.error("[slp] Superpowers not found in Claude Code's plugin cache; Claude roles start without it. Set runtime.claudePluginDir in ~/.slp/config.json.");
   const identities = new IdentityRegistry(join(home, "identities.json"));
   const router = new Router({
     file: join(home, "router.json"), now: () => new Date(),
@@ -6875,7 +6983,8 @@ export function createRuntime(): Runtime {
         identities, config, setup: () => ctx.setup(), mcpUrl: () => `http://127.0.0.1:${config.mcp.port}/mcp`,
         promptFor: (ident) => promptFor(ident, { task: ident.feature && ident.task ? deriveFeature(ident.feature, ctx.stores.feature(ident.project, ident.feature).all()).tasks.get(ident.task) ?? null : null }),
         toolNames: (role) => tools.filter((t) => t.roles.includes(role)).map((t) => t.name),
-        stateDirs,
+        stateDirs, claudePluginDir,
+        codexHome: () => ensureCodexHome(join(home, "codex-home"), process.env.CODEX_HOME ?? join(homedir(), ".codex")),
       });
     },
     bindSession: (req) => bindSession(req, identities),
@@ -7029,6 +7138,8 @@ Nhờ anh tạo agent bằng provider `SLP Supervisor` trong workspace thư mụ
 | 23 | Supervisor thứ hai cho một ý tưởng khác trong cùng project: brief cho slug đã có bị từ chối; nó đọc được digest feature đầu (`slp_state {all: true}`) nhưng `slp_send` tới Lead của feature đầu bị từ chối | Timeline của Supervisor thứ hai |
 | 24 | Reload plugin khi mọi agent SLP đang idle và có một job resume đã đến hạn: có hook nào chạy mà không cần anh làm gì không (review Codex 2026-10-22, F14). Không có thì ghi lại: timer chỉ chạy khi có hook đầu tiên (anh mở tab, agent đổi trạng thái); job vẫn còn trong `resume.json`, chỉ đến muộn | `paseo plugin logs slp`; `resume.json` |
 | 25 | `workspaces.create({ source: { kind: "directory" } })` rồi `workspace.agents.create({ parent })`: agent có `cwd` là worktree và hiện dưới cha trong sidebar (source 0.12 nói vậy; xác nhận trên app thật) | Sidebar; `paseo ls --json` |
+| 26 | Cô lập vai Claude (rev 5.7). Probe 2026-10-23 đã kiểm từng cờ trên Claude Code 2.1.308, chưa kiểm qua SDK 0.3.246 mà Paseo dùng. Repo tạm có `.claude/settings.json` với hook `UserPromptSubmit` chạy `touch ~/.slp-t21-hook`, `.mcp.json` khai một server, và CLAUDE.md có một câu kiểm. Tạo Supervisor rồi một Peer: sau turn đầu `~/.slp-t21-hook` không tồn tại; agent trả lời đúng câu kiểm trong CLAUDE.md; tool MCP chỉ có `slp` (và `paseo` nếu được inject), không có `nia`/`gitnexus`/connector claude.ai; có skill `superpowers:*`. Sai một ý thì sửa T16 trước khi dùng thật. Xoá `~/.slp-t21-hook` nếu có | Timeline agent; `ls ~/.slp-t21-hook` |
+| 27 | Reviewer Codex chạy với `CODEX_HOME=~/.slp/codex-home`: `ps eww` của tiến trình `codex app-server` thuộc reviewer có biến đó; reviewer vẫn đăng nhập được và không có tool `cua_repl`/`gitnexus` | `ps eww`; timeline reviewer |
 
 - [ ] **Step 4: Dọn dẹp và khôi phục**
 

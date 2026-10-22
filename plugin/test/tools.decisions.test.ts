@@ -214,6 +214,15 @@ describe("challenges, questions, messages", () => {
     expect(deriveFeature("cache", w.events()).challenges.get("C2")!.open).toBe(true);
     expect(own.text).toMatch(/raised by lead; only its parent role/);
   });
+  it("does not let a Lead resolve a challenge the Supervisor raised: resolving goes down the tree, never up", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_challenge", { feature: "cache", target: "T2", level: "plan", claim: "the plan skips a step", evidence: "plan v1 lists no migration before T2", impact: "T2", smallest_correction: "add the step" });
+    const r = await w.call(w.lead, "slp_resolve", { challenge: "C1", outcome: "rejected", reason: "the Lead closes the Supervisor's challenge" });
+    expect(r.isError).toBe(true);
+    expect(w.events().filter((e) => e.kind === "challenge_resolved")).toHaveLength(0);
+    expect(deriveFeature("cache", w.events()).challenges.get("C1")!.open).toBe(true);
+    expect(r.text).toMatch(/C1 was raised by supervisor; only its parent role resolves it/);
+  });
   it("lets only the parent role answer a question: a Supervisor cannot answer a Peer's", async () => {
     const w = world();
     await w.call(w.peer, "slp_ask", { question: "Does retry include other sessions?" });

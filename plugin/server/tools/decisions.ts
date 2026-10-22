@@ -4,7 +4,7 @@ import type { Identity } from "../identity";
 import type { ToolDef } from "../mcp/server";
 import { checkPlan, contractsOf } from "../planCheck";
 import { findHumanQuote, messageUsed } from "../quote";
-import { edgeAllowed, type Address } from "../router";
+import type { Address } from "../router";
 import type { Role } from "../roles";
 import { deriveFeature, type PlanTask } from "../store/derive";
 import { defineTool, ToolError } from "./define";
@@ -22,6 +22,9 @@ function addPremises(ctx: Ctx, who: Identity, feature: string, premises: z.infer
 function otherFeatures(ctx: Ctx, project: string, feature: string) {
   return ctx.stores.features(project).filter((f) => f !== feature).map((slug) => ({ slug, touchSet: [...deriveFeature(slug, ctx.stores.feature(project, slug).all()).tasks.values()].filter((t) => t.status !== "accepted" && t.status !== "dropped").flatMap((t) => t.touchSet) }));
 }
+
+/** Who answers an item raised by `role`: resolving and answering go down the tree, never up. */
+const parentRoleOf = (role: Role): Role | null => (role === "peer-impl" || role === "peer-review" ? "lead" : role === "lead" ? "supervisor" : null);
 
 function parentAddress(ident: Identity): Address | null {
   if (ident.role === "peer-impl" || ident.role === "peer-review") return leadAddress(ident.project, ident.feature!);
@@ -230,11 +233,11 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
         const c = deriveFeature(feature, events).challenges.get(a.challenge);
         if (!c?.open) throw new ToolError(`${a.challenge} is not open`);
         if (c.level === "spec") throw new ToolError(`${a.challenge} is spec-level: only the human decides it (slp_human_decision)`);
-        // Only the role above the raiser resolves it, and that is checked before anything is written.
+        // Only the raiser's parent role resolves it, and that is checked before anything is written.
         const ev = events.find((e) => e.kind === "challenge" && e.id === a.challenge)!;
         const raiser = ctx.identities.byAgent(ev.by_agent ?? "");
         const to: Address = { role: (raiser?.role ?? ev.by_role) as Role, project: who.project, feature, task: raiser?.task ?? (typeof ev.data.task === "string" ? ev.data.task : null) };
-        if (!edgeAllowed(who, to)) throw new ToolError(`${a.challenge} was raised by ${to.role}; only its parent role resolves it`);
+        if (who.role !== parentRoleOf(to.role)) throw new ToolError(`${a.challenge} was raised by ${to.role}; only its parent role resolves it`);
         appendAs(ctx, who, feature, { kind: "challenge_resolved", refs: [a.challenge], data: { outcome: a.outcome, reason: a.reason } });
         if (raiser) routeFrom(ctx, who, to, `${a.challenge} ${a.outcome}: ${a.reason}`);
         return `${a.challenge} ${a.outcome}.`;
@@ -259,10 +262,10 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
         const feature = requireFeature(who, a.feature);
         const q = ctx.stores.feature(who.project, feature).all().find((e) => e.kind === "ask" && e.id === a.question);
         if (!q) throw new ToolError(`unknown question ${a.question}`);
-        // Only the role above the asker answers it, and that is checked before anything is written.
+        // Only the asker's parent role answers it, and that is checked before anything is written.
         const asker = ctx.identities.byAgent(q.by_agent ?? "");
         const to: Address = { role: (asker?.role ?? q.by_role) as Role, project: who.project, feature, task: asker?.task ?? (typeof q.data.task === "string" ? q.data.task : null) };
-        if (!edgeAllowed(who, to)) throw new ToolError(`${a.question} was raised by ${to.role}; only its parent role answers it`);
+        if (who.role !== parentRoleOf(to.role)) throw new ToolError(`${a.question} was raised by ${to.role}; only its parent role answers it`);
         appendAs(ctx, who, feature, { kind: "answer", refs: [a.question], data: { answer: a.answer } });
         if (asker) routeFrom(ctx, who, to, `Answer to ${a.question}: ${a.answer}`);
         return `Answered ${a.question}.`;

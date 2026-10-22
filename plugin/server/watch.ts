@@ -11,7 +11,8 @@ interface FeatureWatch { tick: number; lastAt: string; lastSeq: number; lastChan
 type WatchState = Record<string, FeatureWatch>;
 
 export const watchKey = (project: string, feature: string): string => `watch:${project}:${feature}`;
-const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+/** Peer-chosen text (commands, paths, file names) goes on one line: a newline could forge a pack section or blow the line budget. */
+const cut = (s: string, n: number) => { const t = s.replace(/\s+/g, " ").trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 const minutes = (from: number, now: Date) => Math.max(0, Math.round((now.getTime() - from) / 60_000));
 
 interface ItemLike { type?: string; name?: string; status?: string; text?: string; detail?: { type?: string; command?: string; filePath?: string; query?: string; exitCode?: number | null } }
@@ -44,7 +45,7 @@ export function repeats(items: readonly unknown[]): string[] {
   }
   return [
     ...[...shells].filter(([, n]) => n >= 3).map(([c, n]) => `ran ${n}× $ ${cut(c, 60)}`),
-    ...[...reads].filter(([, n]) => n >= 4).map(([f, n]) => `read ${n}× ${f}`),
+    ...[...reads].filter(([, n]) => n >= 4).map(([f, n]) => `read ${n}× ${cut(f, 80)}`),
   ];
 }
 
@@ -125,7 +126,7 @@ async function agentPack(ctx: Ctx, ident: Identity, now: Date): Promise<string[]
       const last = lastFileChange(ident.worktree);
       const base = assigned ? String(assigned.data.base) : null;
       const stat = base ? git(ident.worktree, ["diff", "--shortstat", "--ignore-submodules=all", base], true).stdout.trim() : "";
-      lines.push(`- files: ${changed.length ? `${changed.length} uncommitted (${changed.slice(0, 5).join(", ")}${changed.length > 5 ? ", …" : ""}), last change ${last ? `${minutes(last, now)} min ago` : "unknown"}` : "no uncommitted changes"}${stat ? `; vs BASE: ${stat}` : ""}`);
+      lines.push(`- files: ${changed.length ? `${changed.length} uncommitted (${changed.slice(0, 5).map((f) => f.replace(/\s+/g, " ")).join(", ")}${changed.length > 5 ? ", …" : ""}), last change ${last ? `${minutes(last, now)} min ago` : "unknown"}` : "no uncommitted changes"}${stat ? `; vs BASE: ${stat}` : ""}`);
     }
   }
   const items = await timeline(ctx, agentId, 60);

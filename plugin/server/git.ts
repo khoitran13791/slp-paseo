@@ -58,7 +58,7 @@ export const diffStat = (cwd: string, from: string, to: string): string => git(c
 export const deleteBranch = (repo: string, branch: string): void => { git(repo, ["branch", "-D", branch], true); };
 
 function porcelain(worktree: string, untracked: "all" | "no"): string[] {
-  const parts = git(worktree, ["status", "--porcelain=v1", "-z", `--untracked-files=${untracked}`]).stdout.split("\0").filter(Boolean);
+  const parts = git(worktree, ["status", "--porcelain=v1", "-z", `--untracked-files=${untracked}`, "--ignore-submodules=all"]).stdout.split("\0").filter(Boolean);
   const files: string[] = [];
   for (let i = 0; i < parts.length; i++) {
     const entry = parts[i]!;
@@ -69,6 +69,13 @@ function porcelain(worktree: string, untracked: "all" | "no"): string[] {
 }
 export const changedFiles = (worktree: string): string[] => porcelain(worktree, "all");
 export const trackedChanges = (worktree: string): string[] => porcelain(worktree, "no");
+
+/** Nested repositories: gitlinks in the index, or new directories with their own .git. Git would run their own config (filters, fsmonitor) outside the sandbox, so the plugin never stages them. */
+export function nestedRepos(worktree: string): string[] {
+  const linked = git(worktree, ["ls-files", "-s", "-z"]).stdout.split("\0").filter((l) => l.startsWith("160000 ")).map((l) => l.slice(l.indexOf("\t") + 1));
+  const fresh = porcelain(worktree, "all").filter((p) => p.endsWith("/") && existsSync(join(worktree, p, ".git"))).map((p) => p.slice(0, -1));
+  return [...new Set([...linked, ...fresh])];
+}
 
 const SENSITIVE = [/^\.env(\..*)?$/, /\.pem$/, /\.key$/, /^id_(rsa|ed25519|ecdsa)(\.pub)?$/, /\.p12$/, /^credentials\.json$/];
 export const isSensitivePath = (p: string): boolean => SENSITIVE.some((re) => re.test(basename(p)));
@@ -84,8 +91,9 @@ export function hooksDir(cwd: string): string | null {
  * (.claude/, .codex/, .mcp.json: hooks and MCP servers) when an agent session opens in a checkout of the branch.
  */
 export function isProtectedPath(p: string, hookDir: string | null): boolean {
-  if (p === "paseo.json" || p === ".mcp.json") return true;
-  return [".husky", ".githooks", ".claude", ".codex", ...(hookDir ? [hookDir] : [])].some((d) => p.startsWith(`${d}/`));
+  const q = p.toLowerCase().replace(/\/+$/, "");
+  if (q === "paseo.json" || q === ".mcp.json") return true;
+  return [".husky", ".githooks", ".claude", ".codex", ...(hookDir ? [hookDir.toLowerCase().replace(/\/+$/, "")] : [])].some((d) => q === d || q.startsWith(`${d}/`));
 }
 
 /**
@@ -135,7 +143,7 @@ export class NoChangesError extends Error {}
 
 /** Stages everything except `exclude` and commits with hooks off. Commits a pending merge as a merge commit. */
 export function commitAll(worktree: string, opts: { message: string; trailers: Record<string, string>; exclude: string[] }): string {
-  git(worktree, ["add", "-A", "--", ".", ...opts.exclude.map((p) => `:(exclude,literal)${p}`)]);
+  git(worktree, ["add", "-A", "--", ".", ...[...opts.exclude, ...nestedRepos(worktree)].map((p) => `:(exclude,literal)${p}`)]);
   const merging = git(worktree, ["rev-parse", "-q", "--verify", "MERGE_HEAD"], true).code === 0;
   if (!merging && git(worktree, ["diff", "--cached", "--quiet"], true).code === 0) throw new NoChangesError("nothing to commit");
   const trailers = Object.entries(opts.trailers).map(([k, v]) => `${k}: ${v}`).join("\n");
@@ -151,15 +159,17 @@ export function commitTrailer(cwd: string, rev: string, key: string): string | n
 export function mergeNoHooks(worktree: string, ref: string, message: string): { ok: true; hash: string } | { ok: false; conflicts: string[] } {
   const r = git(worktree, ["merge", "--no-ff", "--no-verify", "-m", message, ref], true);
   if (r.code === 0) return { ok: true, hash: headOf(worktree) };
-  const conflicts = git(worktree, ["diff", "--name-only", "--diff-filter=U"], true).stdout.split("\n").filter(Boolean);
+  const conflicts = git(worktree, ["diff", "--name-only", "--diff-filter=U", "--ignore-submodules=all"], true).stdout.split("\n").filter(Boolean);
   git(worktree, ["merge", "--abort"], true);
   return { ok: false, conflicts };
 }
 
 /** Starts `git merge --no-commit` and leaves conflict markers in place for a Peer to resolve. Returns conflicted files. */
 export function startMerge(worktree: string, ref: string): string[] {
-  git(worktree, ["merge", "--no-ff", "--no-commit", "--no-verify", ref], true);
-  return git(worktree, ["diff", "--name-only", "--diff-filter=U"], true).stdout.split("\n").filter(Boolean);
+  const r = git(worktree, ["merge", "--no-ff", "--no-commit", "--no-verify", ref], true);
+  const merging = git(worktree, ["rev-parse", "-q", "--verify", "MERGE_HEAD"], true).code === 0;
+  if (r.code !== 0 && !merging) throw new Error(`git merge ${ref} did not start: ${r.stderr.trim()}`);
+  return git(worktree, ["diff", "--name-only", "--diff-filter=U", "--ignore-submodules=all"], true).stdout.split("\n").filter(Boolean);
 }
 
 /**

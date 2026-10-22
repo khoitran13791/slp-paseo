@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addWorktree, changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, NoChangesError, removeWorktree, startMerge, trackedChanges, trustRepo, unsafeGitDrivers, UntrustedGitDirError } from "../server/git";
+import { addWorktree, changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, nestedRepos, NoChangesError, removeWorktree, startMerge, trackedChanges, trustRepo, unsafeGitDrivers, UntrustedGitDirError } from "../server/git";
 import { initRepo, sh, tmpDir } from "./helpers";
 
 function withHusky(repo: string, marker: string): void {
@@ -127,5 +127,39 @@ describe("git helpers", () => {
     expect(existsSync(marker)).toBe(false);
     expect(existsSync(path)).toBe(false);
     expect(sh(r, "git", ["branch", "--list", "slp/f/T9-1"])).toBe("");
+  });
+  it("treats case variants, bare names and similar names of protected paths correctly", () => {
+    expect([".claude", ".husky", ".CLAUDE/x", ".Codex/config.toml", "Paseo.json", ".MCP.json"].map((p) => isProtectedPath(p, "hooks"))).toEqual([true, true, true, true, true, true]);
+    expect(isProtectedPath("hooks", "hooks")).toBe(true);
+    expect(["src/.mcp.json", "docs/.claude/x.md", ".claudeignore"].map((p) => isProtectedPath(p, "hooks"))).toEqual([false, false, false]);
+  });
+  it("never stages a nested repo, and reports it", () => {
+    const r = repo(); const wt = worktree(r, "slp/f/T9-3"); const vendor = join(wt, "vendor");
+    mkdirSync(vendor); sh(vendor, "git", ["init", "-q", "-b", "main"]); writeFileSync(join(vendor, "x.txt"), "x");
+    sh(vendor, "git", ["add", "."]); sh(vendor, "git", ["-c", "user.name=SLP Test", "-c", "user.email=slp@test.local", "commit", "-qm", "vendor"]);
+    writeFileSync(join(wt, "src.ts"), "x");
+    const hash = commitAll(wt, { message: "T9: src", trailers: {}, exclude: [] });
+    expect(sh(wt, "git", ["ls-tree", "-r", "--name-only", hash]).split("\n")).toEqual(["README.md", "src.ts"]);
+    expect(nestedRepos(wt)).toEqual(["vendor"]);
+  });
+  it("never runs a nested repo's own filter, even when the nested repo is a tracked gitlink", () => {
+    const r = repo(); const wt = worktree(r, "slp/f/T9-2"); const marker = join(tmpDir(), "nested-filter.log");
+    const vendor = join(wt, "vendor"); mkdirSync(vendor);
+    sh(vendor, "git", ["init", "-q", "-b", "main"]); sh(vendor, "git", ["config", "user.name", "SLP Test"]); sh(vendor, "git", ["config", "user.email", "slp@test.local"]);
+    writeFileSync(join(vendor, "file.txt"), "one\n"); sh(vendor, "git", ["add", "."]); sh(vendor, "git", ["commit", "-qm", "vendor"]);
+    sh(wt, "git", ["update-index", "--add", "--cacheinfo", `160000,${sh(vendor, "git", ["rev-parse", "HEAD"])},vendor`]); sh(wt, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "gitlink"]);
+    // The Peer's move: a filter in the nested config, a .gitattributes that selects it, and a stat-dirty tracked file.
+    sh(vendor, "git", ["config", "filter.x.clean", `touch ${marker} && cat`]);
+    writeFileSync(join(vendor, ".gitattributes"), "* filter=x\n");
+    sh(vendor, "touch", ["file.txt"]); // same bytes, new mtime: stat-dirty, so git must hash it through the filter
+    writeFileSync(join(wt, "src.ts"), "x");
+    expect(changedFiles(wt)).toContain("src.ts");
+    trackedChanges(wt);
+    commitAll(wt, { message: "T9: nested", trailers: {}, exclude: [] });
+    expect(existsSync(marker)).toBe(false);
+  });
+  it("startMerge throws when the merge does not start, instead of reporting no conflicts", () => {
+    const r = repo(); const wt = worktree(r, "slp/f/T10-1");
+    expect(() => startMerge(wt, "no-such-ref")).toThrow(/did not start/);
   });
 });

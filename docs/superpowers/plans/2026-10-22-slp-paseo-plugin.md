@@ -8,20 +8,26 @@
 
 **Tech Stack:** TypeScript 5.9, Node 22, `@getpaseo/plugin` 0.12.0 (Paseo ≥ 0.12.0), zod 4, vitest 3, git ≥ 2.38, Codex CLI 0.163 (`codex sandbox`), `gh` (chỉ dùng khi ship).
 
-**Spec:** [`docs/superpowers/specs/2026-10-21-slp-paseo-design.md`](../specs/2026-10-21-slp-paseo-design.md) (rev 2). Bằng chứng nền: [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md).
+**Spec:** [`docs/superpowers/specs/2026-10-21-slp-paseo-design.md`](../specs/2026-10-21-slp-paseo-design.md) (rev 3). Bằng chứng nền: [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md).
 
-**Core mechanism:** agent SLP được tạo → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng) → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `agent.turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer, chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh.
+**Đã kiểm plan (2026-10-22, sau review độc lập):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 23 file, 198 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). Test mới của B2, B3, B4 và M3 đều fail khi gỡ phần sửa tương ứng. Chưa chạy gì trên Paseo thật; phần đó là T20.
+
+**Core mechanism:** `slp_spawn` → Paseo tạo worktree và agent → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng, `toolPolicy`) và ghi worktree thật vào identity → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `turn_started`/`turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer (hook tắt, git dir tin cậy), chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh.
 
 **Decisions:**
 - Mỗi feature dùng một file JSONL chỉ ghi thêm; trạng thái luôn được suy lại từ event, không lưu field status. Vì vậy restart hay compact không làm mất trạng thái.
 - MCP được tự viết bằng JSON-RPC qua HTTP (khoảng 80 dòng, đã chạy được ở spike), không dùng SDK MCP. Đổi lại: không hỗ trợ SSE/streaming. Spike cho thấy cả Claude lẫn Codex chỉ cần JSON.
-- Plugin tự quản worktree bằng `git worktree add` dưới `~/.slp/<project>/worktrees/`, không dùng API worktree của Paseo. Nhờ vậy plugin biết chính xác đường dẫn để cấu hình sandbox và commit.
+- Worktree do Paseo tạo (`agents.create({ worktree: { mode: "branch-off" } })`). Plugin đọc đường dẫn và branch thật trong `before agent.create`. Lý do: khi có `parent` mà không có workspace, Paseo ghi đè `cwd` của agent con bằng `cwd` của cha, nên worktree tự tạo bị bỏ qua (review 2026-10-22, B1).
+- Plugin không tin file `<worktree>/.git`. Mọi lệnh git của plugin tắt hook và fsmonitor, và dùng `--git-dir` lấy từ common dir của repo đã đăng ký. Plugin không bao giờ commit thay đổi ở thư mục hook hay `paseo.json`, vì Paseo tự chạy chúng ngoài sandbox khi tạo worktree (B2).
 - Plan của Lead gửi lên dưới dạng dữ liệu có cấu trúc (danh sách task) kèm markdown, để plugin không phải parse markdown.
 
 **System impact:**
 - Thêm `plugin/` vào repo này.
 - Lúc cài: `~/.paseo/config.json` có thêm 4 provider ID và `pluginsEnabled: true`; thêm `~/.slp/config.json`; anh tạo 4 agent profile.
-- Agent tạo bằng provider `slp-*` mà không qua plugin sẽ bị từ chối (riêng Supervisor được tạo tay trong thư mục project).
+- Agent tạo bằng provider `slp-*` mà không qua plugin sẽ bị từ chối (riêng Supervisor được tạo tay trong thư mục project, không trong một worktree).
+- Mỗi Lead, Peer và reviewer là một workspace worktree trong sidebar Paseo (dưới `~/.paseo/worktrees/`); plugin archive workspace của Peer/reviewer khi task xong.
+- Thay đổi Peer làm ở `.husky/`, `.githooks/`, thư mục `core.hooksPath` hoặc `paseo.json` không bao giờ được commit; Lead được báo để người làm tay.
+- Permission mà plugin không tự quyết thì chờ anh trong app (không còn `slp_permit`).
 
 **Task groups:**
 - Lõi state (T1–T6): config/vai, event store, suy trạng thái, quyền + kiểm câu duyệt, kiểm plan, digest. Mọi thứ khác đọc và ghi qua lõi này.
@@ -36,8 +42,8 @@
 - `paseo-plugin.json` → `"requirements": { "paseo": ">=0.12.0" }`; `@getpaseo/plugin` `0.12.0`. [Spec §12]
 - Provider ID: `slp-supervisor`, `slp-lead`, `slp-peer-impl`, `slp-peer-review`. Vendor mặc định: Supervisor, Lead, Peer-impl = `claude`; Peer-review = `codex`. Reviewer phải khác vendor với Peer-impl khi `flags.crossVendorReview` bật. [Spec §2, §4, §8]
 - State nằm ở `~/.slp/<project>/` (đổi được qua biến môi trường `SLP_HOME`, chỉ để test). Mỗi feature có `events.jsonl` chỉ ghi thêm; plugin là writer duy nhất. Repo của project không chứa file SLP nào. [Spec §5]
-- Plugin không bao giờ chạy code của repo ngoài sandbox. Mọi git commit/merge/push của plugin dùng `-c core.hooksPath=/dev/null` và `--no-verify`. Verify và hook chạy qua `sandbox.runner` (mặc định `["codex","sandbox","-P",":workspace","-C","{worktree}","--"]`). Runner hỏng thì fail closed. [Spec §7 luật chung, §9]
-- Vai Claude chạy mode `default`, kèm `providerOptions.sandbox = { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, network: { allowLocalBinding: false, allowedDomains } }`. Chỉ Peer-impl có `allowedDomains = sandbox.claudeAllowedDomains` (mặc định `["registry.npmjs.org","pypi.org","files.pythonhosted.org"]`); các vai Claude khác dùng `[]` và `filesystem.denyWrite: [cwd]`. Codex reviewer dùng `sandbox_mode: "workspace-write"`, `approval_policy: "on-request"`, `sandbox_workspace_write.network_access: false`. [Spec §4]
+- Plugin không bao giờ chạy code của repo ngoài sandbox. Mọi lệnh git của plugin dùng `-c core.hooksPath=/dev/null -c core.fsmonitor=false` và `--git-dir`/`--work-tree` cố định từ common dir tin cậy; commit/merge/push thêm `--no-verify`. Verify và hook chạy qua `sandbox.runner` (mặc định `["codex","sandbox","-P",":workspace","-C","{worktree}","--"]`). Runner hỏng thì fail closed và báo Supervisor. [Spec §7 luật chung, §9]
+- Vai Claude chạy mode `default`, kèm `providerOptions.sandbox = { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite, denyRead: ["~/.slp", "~/.paseo"] }, network: { allowLocalBinding: false, allowedDomains } }`. Chỉ Peer-impl có `allowedDomains = sandbox.claudeAllowedDomains` (mặc định `["registry.npmjs.org","pypi.org","files.pythonhosted.org"]`) và `denyWrite: [<worktree>/.git]`; các vai Claude khác dùng `[]` và `denyWrite: [cwd]`. Codex reviewer dùng `sandbox_mode: "workspace-write"`, `approval_policy: "on-request"`, `sandbox_workspace_write.network_access: false`. Tool `slp_*` được duyệt sẵn qua `toolPolicy.preapproved`. [Spec §4]
 - MCP server `slp` dạng `http` tại `http://127.0.0.1:<mcp.port>/mcp` (mặc định port `47320`), header `Authorization: Bearer <token riêng của agent>`. [Spec §7.1]
 - Tin do plugin gửi mang `messageId` có tiền tố `slp-`. Tin tới một agent đang chạy phải chờ tới khi agent `idle` (Paseo mặc định *ngắt* turn đang chạy). [Spec §7.1 Router]
 - Commit thay Peer có message `T#: <message của Peer>`, kèm trailer `SLP-Task: T#` và `SLP-Agent: <agentId>`. [Spec System impact]
@@ -48,9 +54,10 @@
 ## Review Focus
 
 - **Đường dẫn qua symlink, và `/tmp` thực ra là `/private/tmp` trên macOS:** một file nằm trong worktree nhưng trỏ ra ngoài phải bị chặn ghi; một đường dẫn hợp lệ viết theo dạng `/tmp/...` vẫn phải được nhận là nằm trong worktree. Test ở T1 (`projectForCwd`) và T14.
-- **Daemon/plugin restart giữa lúc xếp tin và lúc giao, hoặc giữa lúc dính limit và lúc reset:** hàng đợi tin, lịch resume và tập `messageId` plugin đã cấp đều phải còn sau restart; tin của plugin không được bị nhận nhầm thành tin của anh. Test ở T12 và T13.
+- **Daemon/plugin restart giữa lúc xếp tin và lúc giao, hoặc giữa lúc dính limit và lúc reset:** hàng đợi tin, lịch resume và số lần resume phải còn sau restart; tin của plugin (tiền tố `slp-`) không được bị nhận nhầm thành tin của anh. Test ở T12 và T13.
 - **Sự kiện tới trễ hoặc tới hai lần** (hai lần `turn_ended` cho cùng một report): không được commit hai lần. Test ở T11.
 - **Nhiều tin cùng chờ một agent đang rảnh:** phải gộp thành một prompt, không được gửi liên tiếp khiến tin sau ngắt tin trước. Test ở T12.
+- **Worktree bị Peer sửa (`.git` giả, hook mới, `paseo.json` mới):** plugin không được chạy bất cứ thứ gì từ đó ngoài sandbox, và không được đưa hook hay `paseo.json` vào commit. Test ở T9, T11, T14, T16.
 - **Một turn bình thường có nhắc chữ "rate limit"** (ví dụ Peer đang làm bộ giới hạn tốc độ) không được coi là dính usage limit. Test ở T13.
 
 ---
@@ -204,22 +211,24 @@ describe("roles", () => {
     expect(roleOfProvider("slp-peer-impl/claude-sonnet-5")).toBe("peer-impl");
     expect(roleOfProvider("claude")).toBeNull();
   });
+  // Shape of `paseo.config.get().config` (MutableDaemonConfig): the file's `agents.providers`
+  // is exposed as top-level `providers`, and `agentProfiles` is top-level too
+  // (paseo 0.12 daemon-config-store.ts:210, protocol messages.ts:174-210).
   it("reads vendors and profiles from the daemon config", () => {
-    const s = resolveRoleSetup({ agents: { providers }, agentProfiles: [{ id: "p", name: "Lead", provider: "slp-lead", model: "claude-opus-5-5", thinkingOptionId: "high" }] }, { crossVendorReview: true });
+    const s = resolveRoleSetup({ providers, agentProfiles: [{ id: "p", name: "Lead", provider: "slp-lead", model: "claude-opus-5-5", thinkingOptionId: "high" }] }, { crossVendorReview: true });
     expect(s.vendor).toEqual({ supervisor: "claude", lead: "claude", "peer-impl": "claude", "peer-review": "codex" });
     expect(s.profile.lead).toEqual({ model: "claude-opus-5-5", thinkingOptionId: "high", featureValues: undefined });
     expect(s.profile.supervisor).toBeUndefined();
   });
-  it("also finds profiles under daemon.agentProfiles", () => {
-    const s = resolveRoleSetup({ agents: { providers }, daemon: { agentProfiles: [{ provider: "slp-supervisor", model: "m" }] } }, { crossVendorReview: true });
-    expect(s.profile.supervisor?.model).toBe("m");
+  it("does not read the file-shaped agents.providers key", () => {
+    expect(() => resolveRoleSetup({ agents: { providers } }, { crossVendorReview: true })).toThrow(/slp-supervisor/);
   });
   it("rejects a reviewer on the same vendor as the implementer", () => {
-    expect(() => resolveRoleSetup({ agents: { providers: { ...providers, "slp-peer-review": { extends: "claude" } } } }, { crossVendorReview: true })).toThrow(/different vendor/);
-    expect(() => resolveRoleSetup({ agents: { providers: { ...providers, "slp-peer-review": { extends: "claude" } } } }, { crossVendorReview: false })).not.toThrow();
+    expect(() => resolveRoleSetup({ providers: { ...providers, "slp-peer-review": { extends: "claude" } } }, { crossVendorReview: true })).toThrow(/different vendor/);
+    expect(() => resolveRoleSetup({ providers: { ...providers, "slp-peer-review": { extends: "claude" } } }, { crossVendorReview: false })).not.toThrow();
   });
   it("rejects a missing provider", () => {
-    expect(() => resolveRoleSetup({ agents: { providers: { "slp-lead": { extends: "claude" } } } }, { crossVendorReview: true })).toThrow(/slp-supervisor/);
+    expect(() => resolveRoleSetup({ providers: { "slp-lead": { extends: "claude" } } }, { crossVendorReview: true })).toThrow(/slp-supervisor/);
   });
   it("builds provider strings and normalizes models", () => {
     expect(providerString("lead", "claude-opus-5-5")).toBe("slp-lead/claude-opus-5-5");
@@ -335,17 +344,17 @@ export interface RoleProfile { model?: string; thinkingOptionId?: string; featur
 export interface RoleSetup { vendor: Record<Role, Vendor>; profile: Partial<Record<Role, RoleProfile>> }
 
 interface ProfileLike { provider?: string; model?: string; thinkingOptionId?: string; featureValues?: Record<string, unknown> }
+/** `paseo.config.get().config`: providers and agentProfiles are top-level (not `agents.providers`). */
 interface DaemonConfigLike {
-  agents?: { providers?: Record<string, { extends?: string } | undefined> };
+  providers?: Record<string, { extends?: string } | undefined>;
   agentProfiles?: ProfileLike[];
-  daemon?: { agentProfiles?: ProfileLike[] };
 }
 
 export function resolveRoleSetup(raw: unknown, opts: { crossVendorReview: boolean }): RoleSetup {
   const cfg = (raw ?? {}) as DaemonConfigLike;
   const vendor = {} as Record<Role, Vendor>;
   for (const role of ROLES) {
-    const base = cfg.agents?.providers?.[ROLE_PROVIDER[role]]?.extends;
+    const base = cfg.providers?.[ROLE_PROVIDER[role]]?.extends;
     if (base !== "claude" && base !== "codex") {
       throw new Error(`SLP: provider ${ROLE_PROVIDER[role]} must exist in ~/.paseo/config.json and extend "claude" or "codex" (found ${base ?? "nothing"})`);
     }
@@ -354,7 +363,7 @@ export function resolveRoleSetup(raw: unknown, opts: { crossVendorReview: boolea
   if (opts.crossVendorReview && vendor["peer-review"] === vendor["peer-impl"]) {
     throw new Error("SLP: slp-peer-review must use a different vendor than slp-peer-impl");
   }
-  const profiles = cfg.agentProfiles ?? cfg.daemon?.agentProfiles ?? [];
+  const profiles = cfg.agentProfiles ?? [];
   const profile: Partial<Record<Role, RoleProfile>> = {};
   for (const role of ROLES) {
     const p = profiles.find((x) => x.provider === ROLE_PROVIDER[role]);
@@ -758,15 +767,15 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
         break;
       }
       case "human_decision":
-        if (e.data.decides === "approve_brief" && st.brief?.sha256 === e.data.target) st.brief.approved = true;
-        if (e.data.decides === "approve_spec" && st.spec?.sha256 === e.data.target) {
+        if (e.data.decides === "approve_brief" && st.brief && st.brief.sha256 === e.data.target) st.brief.approved = true;
+        if (e.data.decides === "approve_spec" && st.spec && st.spec.sha256 === e.data.target) {
           st.spec.approved = true;
           for (const p of st.premises.values()) if (p.status === "proposed" && p.seq < e.seq) p.status = p.kind === "hypothesis" ? "open" : "active";
         }
         if (e.data.decides === "change_goal") st.halted = true;
         break;
       case "plan_approved":
-        if (st.plan?.sha256 === e.data.sha256) st.plan.approved = true;
+        if (st.plan && st.plan.sha256 === e.data.sha256) st.plan.approved = true;
         break;
       case "supersede": {
         const old = e.supersedes ? st.premises.get(e.supersedes) : undefined;
@@ -1293,39 +1302,51 @@ git commit -m "feat(plugin): bounded per-feature digest"
 
 **Interfaces:**
 - Consumes: `Role` (T1)
-- Produces: `Identity { token; role; project; feature: string|null; task: string|null; worktree: string|null; reviewCommit: string|null; agentId: string|null; parentAgentId: string|null; createdAt; retiredAt: string|null }`, `IdentityMeta`, `class IdentityRegistry { mint(meta, now?); bind(token, agentId); byToken(token); byAgent(agentId); current(role, project, feature, task?); active(project); retire(token, now?) }`
+- Produces: `Identity { tokenHash; role; project; feature: string|null; task: string|null; worktree: string|null; workspaceId: string|null; branch: string|null; reviewCommit: string|null; agentId: string|null; parentAgentId: string|null; createdAt; retiredAt: string|null }`, `IdentityMeta`, `hashToken(token): string`, `class IdentityRegistry { mint(meta, now?): Identity & { token: string }; bind(token, agentId); byToken(token); byAgent(agentId); place(tokenHash, { worktree, workspaceId, branch }); current(role, project, feature, task?); active(project); retire(tokenHash, now?) }`
+
+Registry chỉ lưu `sha256(token)`. Token thô chỉ có trong giá trị trả về của `mint()`, rồi nằm trong `env`/header MCP của chính agent đó. Đọc được `identities.json` cũng không lấy được token để mạo danh (review M1). `worktree`/`workspaceId`/`branch` được điền lúc `before agent.create`, vì worktree do Paseo tạo và chỉ biết đường dẫn ở bước đó (review B1).
 
 - [ ] **Step 1: Viết test thất bại**
 
 `plugin/test/identity.test.ts`:
 ```ts
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { IdentityRegistry } from "../server/identity";
+import { hashToken, IdentityRegistry } from "../server/identity";
 import { tmpDir } from "./helpers";
 
-const meta = { role: "lead" as const, project: "p", feature: "f", task: null, worktree: "/w", reviewCommit: null, parentAgentId: "sup" };
+const meta = { role: "lead" as const, project: "p", feature: "f", task: null, reviewCommit: null, parentAgentId: "sup" };
 
 describe("IdentityRegistry", () => {
-  it("mints unguessable tokens, binds once, and persists with owner-only permissions", () => {
+  it("mints unguessable tokens, stores only their hash, binds once, and persists owner-only", () => {
     const file = join(tmpDir(), "identities.json");
     const r = new IdentityRegistry(file);
     const a = r.mint(meta);
     expect(a.token).toMatch(/^[0-9a-f]{48}$/);
+    expect(a.tokenHash).toBe(hashToken(a.token));
+    expect(readFileSync(file, "utf8")).not.toContain(a.token);
     r.bind(a.token, "agent-1");
     r.bind(a.token, "agent-1");
     expect(() => r.bind(a.token, "agent-2")).toThrow(/already bound/);
     expect(() => r.bind("nope", "agent-1")).toThrow(/unknown SLP token/);
+    expect(() => r.bind(a.tokenHash, "agent-1")).toThrow(/unknown SLP token/);
     const r2 = new IdentityRegistry(file);
-    expect(r2.byAgent("agent-1")?.token).toBe(a.token);
+    expect(r2.byAgent("agent-1")?.tokenHash).toBe(a.tokenHash);
+    expect(r2.byToken(a.token)?.agentId).toBe("agent-1");
     expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
+  it("records the placement Paseo chose", () => {
+    const r = new IdentityRegistry(join(tmpDir(), "i.json"));
+    const a = r.mint(meta);
+    r.place(a.tokenHash, { worktree: "/wt/feat-f", workspaceId: "ws-1", branch: "feat/f" });
+    expect(r.byToken(a.token)).toMatchObject({ worktree: "/wt/feat-f", workspaceId: "ws-1", branch: "feat/f" });
   });
   it("resolves the current agent for a role after rotation and hides retired identities", () => {
     const r = new IdentityRegistry(join(tmpDir(), "i.json"));
     const old = r.mint(meta); r.bind(old.token, "lead-1");
     const fresh = r.mint(meta); r.bind(fresh.token, "lead-2");
-    r.retire(old.token);
+    r.retire(old.tokenHash);
     expect(r.current("lead", "p", "f")?.agentId).toBe("lead-2");
     expect(r.byToken(old.token)).toBeNull();
     expect(r.byAgent("lead-1")).toBeNull();
@@ -1343,17 +1364,21 @@ Expected: FAIL, "Cannot find module".
 
 `plugin/server/identity.ts`:
 ```ts
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Role } from "./roles";
 
 export interface Identity {
-  token: string; role: Role; project: string; feature: string | null; task: string | null;
-  worktree: string | null; reviewCommit: string | null; agentId: string | null; parentAgentId: string | null;
+  tokenHash: string; role: Role; project: string; feature: string | null; task: string | null;
+  worktree: string | null; workspaceId: string | null; branch: string | null;
+  reviewCommit: string | null; agentId: string | null; parentAgentId: string | null;
   createdAt: string; retiredAt: string | null;
 }
-export type IdentityMeta = Pick<Identity, "role" | "project" | "feature" | "task" | "worktree" | "reviewCommit" | "parentAgentId">;
+export type IdentityMeta = Pick<Identity, "role" | "project" | "feature" | "task" | "reviewCommit" | "parentAgentId">;
+export type Placement = Pick<Identity, "worktree" | "workspaceId" | "branch">;
+
+export const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 
 export class IdentityRegistry {
   private readonly items: Identity[];
@@ -1362,11 +1387,13 @@ export class IdentityRegistry {
     this.items = existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as Identity[]) : [];
   }
 
-  mint(meta: IdentityMeta, now = new Date()): Identity {
-    const id: Identity = { ...meta, token: randomBytes(24).toString("hex"), agentId: null, createdAt: now.toISOString(), retiredAt: null };
+  /** The raw token is returned once and never stored. */
+  mint(meta: IdentityMeta, now = new Date()): Identity & { token: string } {
+    const token = randomBytes(24).toString("hex");
+    const id: Identity = { ...meta, tokenHash: hashToken(token), worktree: null, workspaceId: null, branch: null, agentId: null, createdAt: now.toISOString(), retiredAt: null };
     this.items.push(id);
     this.save();
-    return id;
+    return { ...id, token };
   }
 
   bind(token: string, agentId: string): Identity {
@@ -1378,7 +1405,15 @@ export class IdentityRegistry {
   }
 
   byToken(token: string): Identity | null {
-    return this.items.find((i) => i.token === token && !i.retiredAt) ?? null;
+    const h = hashToken(token);
+    return this.items.find((i) => i.tokenHash === h && !i.retiredAt) ?? null;
+  }
+
+  place(tokenHash: string, placement: Placement): void {
+    const id = this.items.find((i) => i.tokenHash === tokenHash);
+    if (!id) throw new Error("unknown SLP identity");
+    Object.assign(id, placement);
+    this.save();
   }
 
   byAgent(agentId: string): Identity | null {
@@ -1393,8 +1428,8 @@ export class IdentityRegistry {
     return this.items.filter((i) => i.project === project && !i.retiredAt);
   }
 
-  retire(token: string, now = new Date()): void {
-    const id = this.items.find((i) => i.token === token);
+  retire(tokenHash: string, now = new Date()): void {
+    const id = this.items.find((i) => i.tokenHash === tokenHash);
     if (id && !id.retiredAt) { id.retiredAt = now.toISOString(); this.save(); }
   }
 
@@ -1443,7 +1478,7 @@ import { startMcpServer } from "../server/mcp/server";
 import { defineTool, ToolError } from "../server/tools/define";
 
 const ident = (role: Identity["role"], token: string): Identity =>
-  ({ token, role, project: "p", feature: "f", task: null, worktree: null, reviewCommit: null, agentId: `${role}-1`, parentAgentId: null, createdAt: "", retiredAt: null });
+  ({ tokenHash: token, role, project: "p", feature: "f", task: null, worktree: null, workspaceId: null, branch: null, reviewCommit: null, agentId: `${role}-1`, parentAgentId: null, createdAt: "", retiredAt: null });
 const ids = new Map([["tok-peer", ident("peer-impl", "tok-peer")], ["tok-lead", ident("lead", "tok-lead")]]);
 const calls: string[] = [];
 const tools = [
@@ -1468,16 +1503,16 @@ describe("MCP server", () => {
   });
   it("lists only the caller's tools, answers initialize, and accepts notifications", async () => {
     const post = await server();
-    const init = await (await post("tok-peer", { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } })).json();
+    const init: any = await (await post("tok-peer", { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } })).json();
     expect(init.result.serverInfo.name).toBe("slp");
-    const list = await (await post("tok-peer", { jsonrpc: "2.0", id: 2, method: "tools/list" })).json();
+    const list: any = await (await post("tok-peer", { jsonrpc: "2.0", id: 2, method: "tools/list" })).json();
     expect(list.result.tools.map((t: { name: string }) => t.name)).toEqual(["slp_echo", "slp_refuse"]);
     expect(list.result.tools[0].inputSchema.properties.text.type).toBe("string");
     expect((await post("tok-peer", { jsonrpc: "2.0", method: "notifications/initialized" })).status).toBe(202);
   });
   it("calls tools, refuses tools outside the role, validates args, and reports handler errors", async () => {
     const post = await server();
-    const call = async (token: string, name: string, args: unknown) => (await (await post(token, { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name, arguments: args } })).json()).result;
+    const call = async (token: string, name: string, args: unknown) => ((await (await post(token, { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name, arguments: args } })).json()) as any).result;
     expect(await call("tok-peer", "slp_echo", { text: "hi" })).toEqual({ content: [{ type: "text", text: "peer-impl:hi" }], isError: false });
     expect(await call("tok-peer", "slp_lead_only", {})).toMatchObject({ isError: true, content: [{ text: "Tool slp_lead_only is not available to role peer-impl." }] });
     expect((await call("tok-peer", "slp_echo", { text: 3 })).isError).toBe(true);
@@ -1607,81 +1642,114 @@ git commit -m "feat(plugin): role-filtered MCP server over HTTP"
 
 ---
 
-### Task 9: Git helper (hook tắt)
+### Task 9: Git helper (hook tắt, git dir tin cậy)
 
 **Files:**
-- Create: `plugin/server/git.ts`
+- Create: `plugin/server/git.ts`, `plugin/server/touch.ts`
+- Modify: `plugin/server/planCheck.ts` (dùng `normTouch` từ `touch.ts`)
 - Test: `plugin/test/git.test.ts`
 
 **Interfaces:**
-- Produces: `git(cwd, args, allowFail?): { code; stdout; stderr }`, `headOf(cwd)`, `gitCommonDir(cwd)`, `isAncestor(cwd, a, b)`, `addWorktree(repo, path, { from; branch?; detach? })`, `removeWorktree(repo, path)`, `changedFiles(worktree): string[]`, `trackedChanges(worktree): string[]`, `isSensitivePath(p): boolean`, `class NoChangesError`, `commitAll(worktree, { message; trailers; exclude }): string`, `mergeNoHooks(worktree, ref, message): { ok: true; hash } | { ok: false; conflicts: string[] }`, `pushNoHooks(worktree, remote, branch)`, `filesOutside(files, touchSet): string[]`, `hookFile(worktree, name): string | null`, `diffStat(cwd, from, to): string`
+- Produces: `trustRepo(repo): void`, `class UntrustedGitDirError`, `git(cwd, args, allowFail?): { code; stdout; stderr }`, `headOf(cwd)`, `currentBranch(cwd)`, `gitCommonDir(cwd)`, `isAncestor(cwd, a, b)`, `deleteBranch(repo, branch)`, `changedFiles(worktree): string[]`, `trackedChanges(worktree): string[]`, `isSensitivePath(p): boolean`, `hooksDir(cwd): string | null`, `isProtectedPath(p, hookDir): boolean`, `class NoChangesError`, `commitAll(worktree, { message; trailers; exclude }): string`, `commitTrailer(cwd, rev, key): string | null`, `mergeNoHooks(worktree, ref, message): { ok: true; hash } | { ok: false; conflicts: string[] }`, `startMerge(worktree, ref): string[]`, `pushNoHooks(worktree, remote, branch)`, `filesOutside(files, touchSet): string[]`, `hookFile(worktree, name): string | null`, `diffStat(cwd, from, to): string`
+
+Ba lớp chặn code của repo chạy ngoài sandbox qua git (review B2):
+- Mọi lệnh git của plugin có `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, không riêng commit/merge/push.
+- Plugin không tin file `<worktree>/.git`, vì file này nằm trong cwd của Peer và Peer ghi được. `git()` tự tìm admin dir bằng cách đọc ngược `<common dir>/worktrees/*/gitdir` của repo đã đăng ký qua `trustRepo`; common dir nằm ngoài sandbox của mọi vai. Sau đó chạy với `--git-dir` và `--work-tree` cố định. Thư mục không thuộc repo nào đã đăng ký thì `git()` ném `UntrustedGitDirError`, tức là fail closed.
+- Paseo tự chạy `git worktree add` (có hook `post-checkout`) và lệnh `worktree.setup` trong `paseo.json` khi tạo worktree mới, ngoài sandbox. Vì vậy plugin không bao giờ commit thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath` của repo) hay ở `paseo.json`. Các file này bị loại khỏi commit như file nhạy cảm và được báo cho Lead. Nhờ vậy nội dung mà Paseo chạy khi tạo worktree luôn là nội dung anh đã merge.
 
 - [ ] **Step 1: Viết test thất bại**
 
 `plugin/test/git.test.ts`:
 ```ts
-import { existsSync, writeFileSync, chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addWorktree, changedFiles, commitAll, filesOutside, gitCommonDir, headOf, hookFile, isSensitivePath, mergeNoHooks, NoChangesError, trackedChanges } from "../server/git";
+import { changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, NoChangesError, startMerge, trackedChanges, trustRepo, UntrustedGitDirError } from "../server/git";
 import { initRepo, sh, tmpDir } from "./helpers";
 
 function withHusky(repo: string, marker: string): void {
   mkdirSync(join(repo, ".husky"), { recursive: true });
-  for (const h of ["pre-commit", "commit-msg", "post-commit", "pre-merge-commit", "post-merge"]) {
+  for (const h of ["pre-commit", "commit-msg", "post-commit", "pre-merge-commit", "post-merge", "post-checkout"]) {
     writeFileSync(join(repo, ".husky", h), `#!/bin/sh\necho ${h} >> "${marker}"\n`); chmodSync(join(repo, ".husky", h), 0o755);
   }
   sh(repo, "git", ["add", ".husky"]); sh(repo, "git", ["commit", "-qm", "husky"]);
   sh(repo, "git", ["config", "core.hooksPath", ".husky"]);
 }
+function repo(): string { const r = initRepo(); trustRepo(r); return r; }
+function worktree(r: string, branch: string): string {
+  const wt = join(tmpDir(), branch.replaceAll("/", "-"));
+  sh(r, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "-b", branch, wt, "main"]);
+  return wt;
+}
 
 describe("git helpers", () => {
   it("lists changed files including untracked names with spaces", () => {
-    const repo = initRepo();
-    writeFileSync(join(repo, "README.md"), "changed\n"); writeFileSync(join(repo, "a file.txt"), "x");
-    expect(changedFiles(repo).sort()).toEqual(["README.md", "a file.txt"]);
-    expect(trackedChanges(repo)).toEqual(["README.md"]);
+    const r = repo();
+    writeFileSync(join(r, "README.md"), "changed\n"); writeFileSync(join(r, "a file.txt"), "x");
+    expect(changedFiles(r).sort()).toEqual(["README.md", "a file.txt"]);
+    expect(trackedChanges(r)).toEqual(["README.md"]);
+  });
+  it("refuses directories that are not a registered repo or one of its worktrees", () => {
+    expect(() => headOf(tmpDir())).toThrow(UntrustedGitDirError);
+    expect(() => headOf(initRepo())).toThrow(UntrustedGitDirError);
+  });
+  it("ignores a forged .git file in a worktree and never runs fsmonitor", () => {
+    const r = repo(); const wt = worktree(r, "slp/f/T1-1"); const marker = join(tmpDir(), "fsmonitor.log");
+    const rogue = join(wt, "rogue"); mkdirSync(rogue);
+    sh(rogue, "git", ["init", "-q", "--bare", "."]);
+    writeFileSync(join(wt, "evil.sh"), `#!/bin/sh\necho ran >> "${marker}"\n`); chmodSync(join(wt, "evil.sh"), 0o755);
+    sh(rogue, "git", ["config", "--file", join(rogue, "config"), "core.fsmonitor", join(wt, "evil.sh")]);
+    writeFileSync(join(wt, ".git"), `gitdir: ${rogue}\n`);
+    writeFileSync(join(wt, "src.ts"), "x");
+    expect(changedFiles(wt)).toContain("src.ts");
+    expect(currentBranch(wt)).toBe("slp/f/T1-1");
+    expect(existsSync(marker)).toBe(false);
   });
   it("commits with trailers, never runs repo hooks, and excludes given paths", () => {
-    const repo = initRepo(); const marker = join(tmpDir(), "hooks.log"); withHusky(repo, marker);
-    writeFileSync(join(repo, "src.ts"), "x"); writeFileSync(join(repo, ".env"), "SECRET=1");
-    const hash = commitAll(repo, { message: "T1: add src", trailers: { "SLP-Task": "T1", "SLP-Agent": "a1" }, exclude: [".env"] });
-    expect(headOf(repo)).toBe(hash);
-    expect(sh(repo, "git", ["log", "-1", "--format=%B"])).toBe("T1: add src\n\nSLP-Task: T1\nSLP-Agent: a1");
-    expect(sh(repo, "git", ["show", "--name-only", "--format=", "HEAD"])).toBe("src.ts");
+    const r = repo(); const marker = join(tmpDir(), "hooks.log"); withHusky(r, marker);
+    writeFileSync(join(r, "src.ts"), "x"); writeFileSync(join(r, ".env"), "SECRET=1");
+    const hash = commitAll(r, { message: "T1: add src", trailers: { "SLP-Task": "T1", "SLP-Agent": "a1" }, exclude: [".env"] });
+    expect(headOf(r)).toBe(hash);
+    expect(sh(r, "git", ["log", "-1", "--format=%B"])).toBe("T1: add src\n\nSLP-Task: T1\nSLP-Agent: a1");
+    expect(commitTrailer(r, hash, "SLP-Task")).toBe("T1");
+    expect(commitTrailer(r, "HEAD~1", "SLP-Task")).toBeNull();
+    expect(sh(r, "git", ["show", "--name-only", "--format=", "HEAD"])).toBe("src.ts");
     expect(existsSync(marker)).toBe(false);
-    expect(() => commitAll(repo, { message: "m", trailers: {}, exclude: [".env"] })).toThrow(NoChangesError);
+    expect(() => commitAll(r, { message: "m", trailers: {}, exclude: [".env"] })).toThrow(NoChangesError);
   });
   it("merges without hooks and reports conflicts, leaving the tree clean", () => {
-    const repo = initRepo(); const marker = join(tmpDir(), "hooks.log"); withHusky(repo, marker);
-    sh(repo, "git", ["checkout", "-qb", "side"]); writeFileSync(join(repo, "README.md"), "side\n"); sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "side"]);
-    sh(repo, "git", ["checkout", "-q", "main"]); writeFileSync(join(repo, "other.txt"), "o"); sh(repo, "git", ["add", "."]); sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "main"]);
-    const ok = mergeNoHooks(repo, "side", "Merge side");
+    const r = repo(); const marker = join(tmpDir(), "hooks.log"); withHusky(r, marker);
+    sh(r, "git", ["-c", "core.hooksPath=/dev/null", "checkout", "-qb", "side"]); writeFileSync(join(r, "README.md"), "side\n"); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "side"]);
+    sh(r, "git", ["-c", "core.hooksPath=/dev/null", "checkout", "-q", "main"]); writeFileSync(join(r, "other.txt"), "o"); sh(r, "git", ["add", "."]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "main"]);
+    const ok = mergeNoHooks(r, "side", "Merge side");
     expect(ok.ok).toBe(true);
     expect(existsSync(marker)).toBe(false);
-    sh(repo, "git", ["checkout", "-qb", "c1", "HEAD~1"]); writeFileSync(join(repo, "README.md"), "c1\n"); sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "c1"]);
-    sh(repo, "git", ["checkout", "-q", "main"]); writeFileSync(join(repo, "README.md"), "main\n"); sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "m2"]);
-    expect(mergeNoHooks(repo, "c1", "Merge c1")).toEqual({ ok: false, conflicts: ["README.md"] });
-    expect(changedFiles(repo)).toEqual([]);
+    sh(r, "git", ["-c", "core.hooksPath=/dev/null", "checkout", "-qb", "c1", "HEAD~1"]); writeFileSync(join(r, "README.md"), "c1\n"); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "c1"]);
+    sh(r, "git", ["-c", "core.hooksPath=/dev/null", "checkout", "-q", "main"]); writeFileSync(join(r, "README.md"), "main\n"); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "m2"]);
+    expect(mergeNoHooks(r, "c1", "Merge c1")).toEqual({ ok: false, conflicts: ["README.md"] });
+    expect(changedFiles(r)).toEqual([]);
   });
-  it("creates branch and detached worktrees that share the common dir", () => {
-    const repo = initRepo(); const base = tmpDir();
-    addWorktree(repo, join(base, "feat"), { branch: "feat/x", from: "main" });
-    addWorktree(repo, join(base, "rev"), { detach: true, from: "main" });
-    expect(gitCommonDir(join(base, "feat"))).toBe(gitCommonDir(repo));
-    expect(sh(join(base, "feat"), "git", ["branch", "--show-current"])).toBe("feat/x");
-    addWorktree(repo, join(base, "feat2"), { branch: "feat/y", from: "main" });
-    sh(repo, "git", ["worktree", "remove", join(base, "feat2")]);
-    addWorktree(repo, join(base, "feat3"), { branch: "feat/y", from: "main" });
-    expect(sh(join(base, "feat3"), "git", ["branch", "--show-current"])).toBe("feat/y");
+  it("starts a merge that leaves conflict markers for a Peer, and commitAll then records a merge commit", () => {
+    const r = repo();
+    sh(r, "git", ["checkout", "-qb", "other"]); writeFileSync(join(r, "README.md"), "other\n"); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "other"]);
+    sh(r, "git", ["-c", "core.hooksPath=/dev/null", "checkout", "-q", "main"]);
+    const wt = worktree(r, "slp/f/T2-1"); writeFileSync(join(wt, "README.md"), "mine\n"); sh(wt, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "mine"]);
+    expect(startMerge(wt, "other")).toEqual(["README.md"]);
+    writeFileSync(join(wt, "README.md"), "resolved\n");
+    const hash = commitAll(wt, { message: "T2: resolve", trailers: {}, exclude: [] });
+    expect(sh(wt, "git", ["rev-list", "--parents", "-n", "1", hash]).split(" ")).toHaveLength(3);
   });
-  it("classifies sensitive paths and touch-set outsiders, and finds hooks", () => {
+  it("classifies sensitive and protected paths and touch-set outsiders, and finds hooks", () => {
     expect(["a/.env", ".env.local", "k.pem", "x.key", "id_rsa", "id_ed25519.pub", "c.p12", "credentials.json"].every(isSensitivePath)).toBe(true);
     expect(isSensitivePath("src/env.ts")).toBe(false);
+    expect(["paseo.json", ".husky/pre-commit", ".githooks/x", "hooks/pre-push"].map((p) => isProtectedPath(p, "hooks"))).toEqual([true, true, true, true]);
+    expect(["src/paseo.json", "src/hooks/a.ts"].map((p) => isProtectedPath(p, "hooks"))).toEqual([false, false]);
     expect(filesOutside(["src/a.ts", "test/a.test.ts", "package.json"], ["src/", "test/**"])).toEqual(["package.json"]);
-    const repo = initRepo(); const marker = join(tmpDir(), "h.log"); withHusky(repo, marker);
-    expect(hookFile(repo, "pre-commit")).toBe(join(repo, ".husky", "pre-commit"));
-    expect(hookFile(initRepo(), "pre-commit")).toBeNull();
+    const r = repo(); const marker = join(tmpDir(), "h.log"); withHusky(r, marker);
+    expect(hooksDir(r)).toBe(".husky");
+    expect(hookFile(r, "pre-commit")).toBe(join(r, ".husky", "pre-commit"));
+    expect(hookFile(repo(), "pre-commit")).toBeNull();
+    expect(git(r, ["config", "--get", "core.fsmonitor"], true).code).toBe(0);
   });
 });
 ```
@@ -1696,35 +1764,63 @@ Expected: FAIL, "Cannot find module".
 `plugin/server/git.ts`:
 ```ts
 import { spawnSync } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { basename, isAbsolute, join } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { matchTouch } from "./touch";
 
-const NO_HOOKS = ["-c", "core.hooksPath=/dev/null"];
+const HARDEN = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"];
 export interface GitResult { code: number; stdout: string; stderr: string }
+export class UntrustedGitDirError extends Error {}
 
-export function git(cwd: string, args: string[], allowFail = false): GitResult {
-  const r = spawnSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+const trusted = new Set<string>(); // realpath of each registered repo's common dir
+
+function spawnGit(cwd: string, args: string[], allowFail: boolean): GitResult {
+  const r = spawnSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_DIR: undefined, GIT_WORK_TREE: undefined } });
   const out = { code: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
   if (!allowFail && out.code !== 0) throw new Error(`git ${args.join(" ")} failed (${out.code}): ${out.stderr.trim()}`);
   return out;
 }
 
+/** Registers a project repo. Its common dir is the only source the plugin trusts for git metadata. */
+export function trustRepo(repo: string): void {
+  const dotGit = join(realpathSync(repo), ".git");
+  if (!existsSync(join(dotGit, "HEAD"))) throw new UntrustedGitDirError(`SLP: ${repo} is not the main checkout of a git repo`);
+  trusted.add(dotGit);
+}
+
+const safeReal = (p: string): string | null => { try { return realpathSync(p); } catch { return null; } };
+
+function gitDirFor(cwd: string): string {
+  const real = safeReal(cwd);
+  if (real) {
+    for (const common of trusted) {
+      if (real === dirname(common)) return common;
+      const admin = join(common, "worktrees");
+      for (const name of existsSync(admin) ? readdirSync(admin) : []) {
+        let back: string;
+        try { back = readFileSync(join(admin, name, "gitdir"), "utf8").trim(); } catch { continue; }
+        if (safeReal(dirname(back)) === real) return join(admin, name);
+      }
+    }
+  }
+  throw new UntrustedGitDirError(`SLP: ${cwd} is not a registered repo or one of its worktrees`);
+}
+
+function run(cwd: string, args: string[], allowFail: boolean, harden: string[]): GitResult {
+  return spawnGit(cwd, [...harden, `--git-dir=${gitDirFor(cwd)}`, `--work-tree=${cwd}`, ...args], allowFail);
+}
+
+/** Every plugin git call: hooks and fsmonitor off, git dir pinned from the trusted common dir. */
+export function git(cwd: string, args: string[], allowFail = false): GitResult {
+  return run(cwd, args, allowFail, HARDEN);
+}
+
 export const headOf = (cwd: string): string => git(cwd, ["rev-parse", "HEAD"]).stdout.trim();
+export const currentBranch = (cwd: string): string => git(cwd, ["branch", "--show-current"]).stdout.trim();
 export const gitCommonDir = (cwd: string): string => realpathSync(git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).stdout.trim());
 export const isAncestor = (cwd: string, ancestor: string, descendant: string): boolean => git(cwd, ["merge-base", "--is-ancestor", ancestor, descendant], true).code === 0;
 export const diffStat = (cwd: string, from: string, to: string): string => git(cwd, ["diff", "--stat", `${from}...${to}`]).stdout.trim();
-
-export function addWorktree(repo: string, path: string, opts: { from: string; branch?: string; detach?: boolean }): void {
-  if (opts.detach) { git(repo, ["worktree", "add", "--detach", path, opts.from]); return; }
-  if (!opts.branch) throw new Error("addWorktree needs a branch or detach");
-  const exists = git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${opts.branch}`], true).code === 0;
-  git(repo, exists ? ["worktree", "add", path, opts.branch] : ["worktree", "add", "-b", opts.branch, path, opts.from]);
-}
-
-export function removeWorktree(repo: string, path: string): void {
-  git(repo, ["worktree", "remove", "--force", path], true);
-}
+export const deleteBranch = (repo: string, branch: string): void => { git(repo, ["branch", "-D", branch], true); };
 
 function porcelain(worktree: string, untracked: "all" | "no"): string[] {
   const parts = git(worktree, ["status", "--porcelain=v1", "-z", `--untracked-files=${untracked}`]).stdout.split("\0").filter(Boolean);
@@ -1742,26 +1838,51 @@ export const trackedChanges = (worktree: string): string[] => porcelain(worktree
 const SENSITIVE = [/^\.env(\..*)?$/, /\.pem$/, /\.key$/, /^id_(rsa|ed25519|ecdsa)(\.pub)?$/, /\.p12$/, /^credentials\.json$/];
 export const isSensitivePath = (p: string): boolean => SENSITIVE.some((re) => re.test(basename(p)));
 
+/** Repo-relative core.hooksPath (husky: ".husky"); null when unset or absolute. Read without the hooksPath override. */
+export function hooksDir(cwd: string): string | null {
+  const v = run(cwd, ["config", "--get", "core.hooksPath"], true, ["-c", "core.fsmonitor=false"]).stdout.trim();
+  return v && !isAbsolute(v) ? v.replace(/^\.\//, "").replace(/\/$/, "") : null;
+}
+
+/** Files Paseo executes outside any sandbox when it creates a worktree: hooks and paseo.json. */
+export function isProtectedPath(p: string, hookDir: string | null): boolean {
+  if (p === "paseo.json") return true;
+  return [".husky", ".githooks", ...(hookDir ? [hookDir] : [])].some((d) => p.startsWith(`${d}/`));
+}
+
 export class NoChangesError extends Error {}
 
+/** Stages everything except `exclude` and commits with hooks off. Commits a pending merge as a merge commit. */
 export function commitAll(worktree: string, opts: { message: string; trailers: Record<string, string>; exclude: string[] }): string {
   git(worktree, ["add", "-A", "--", ".", ...opts.exclude.map((p) => `:(exclude,literal)${p}`)]);
-  if (git(worktree, ["diff", "--cached", "--quiet"], true).code === 0) throw new NoChangesError("nothing to commit");
+  const merging = git(worktree, ["rev-parse", "-q", "--verify", "MERGE_HEAD"], true).code === 0;
+  if (!merging && git(worktree, ["diff", "--cached", "--quiet"], true).code === 0) throw new NoChangesError("nothing to commit");
   const trailers = Object.entries(opts.trailers).map(([k, v]) => `${k}: ${v}`).join("\n");
-  git(worktree, [...NO_HOOKS, "commit", "--no-verify", "-q", "-m", trailers ? `${opts.message}\n\n${trailers}` : opts.message]);
+  git(worktree, ["commit", "--no-verify", "-q", "-m", trailers ? `${opts.message}\n\n${trailers}` : opts.message]);
   return headOf(worktree);
 }
 
+export function commitTrailer(cwd: string, rev: string, key: string): string | null {
+  const v = git(cwd, ["log", "-1", `--format=%(trailers:key=${key},valueonly)`, rev], true).stdout.trim();
+  return v || null;
+}
+
 export function mergeNoHooks(worktree: string, ref: string, message: string): { ok: true; hash: string } | { ok: false; conflicts: string[] } {
-  const r = git(worktree, [...NO_HOOKS, "merge", "--no-ff", "--no-verify", "-m", message, ref], true);
+  const r = git(worktree, ["merge", "--no-ff", "--no-verify", "-m", message, ref], true);
   if (r.code === 0) return { ok: true, hash: headOf(worktree) };
   const conflicts = git(worktree, ["diff", "--name-only", "--diff-filter=U"], true).stdout.split("\n").filter(Boolean);
   git(worktree, ["merge", "--abort"], true);
   return { ok: false, conflicts };
 }
 
+/** Starts `git merge --no-commit` and leaves conflict markers in place for a Peer to resolve. Returns conflicted files. */
+export function startMerge(worktree: string, ref: string): string[] {
+  git(worktree, ["merge", "--no-ff", "--no-commit", "--no-verify", ref], true);
+  return git(worktree, ["diff", "--name-only", "--diff-filter=U"], true).stdout.split("\n").filter(Boolean);
+}
+
 export function pushNoHooks(worktree: string, remote: string, branch: string): void {
-  git(worktree, [...NO_HOOKS, "push", "--no-verify", remote, `${branch}:${branch}`]);
+  git(worktree, ["push", "--no-verify", remote, `${branch}:${branch}`]);
 }
 
 export function filesOutside(files: string[], touchSet: string[]): string[] {
@@ -1770,10 +1891,10 @@ export function filesOutside(files: string[], touchSet: string[]): string[] {
 
 export function hookFile(worktree: string, name: string): string | null {
   // core.hooksPath (e.g. husky's ".husky") is relative to the worktree root; otherwise use the repo's hooks dir.
-  const configured = git(worktree, ["config", "--get", "core.hooksPath"], true).stdout.trim();
+  const configured = run(worktree, ["config", "--get", "core.hooksPath"], true, ["-c", "core.fsmonitor=false"]).stdout.trim();
   const p = configured
     ? join(isAbsolute(configured) ? configured : join(git(worktree, ["rev-parse", "--show-toplevel"]).stdout.trim(), configured), name)
-    : git(worktree, ["rev-parse", "--git-path", `hooks/${name}`]).stdout.trim();
+    : run(worktree, ["rev-parse", "--git-path", `hooks/${name}`], false, ["-c", "core.fsmonitor=false"]).stdout.trim();
   const abs = isAbsolute(p) ? p : join(worktree, p);
   return existsSync(abs) ? abs : null;
 }
@@ -1782,13 +1903,18 @@ export function hookFile(worktree: string, name: string): string | null {
 `plugin/server/touch.ts` (dùng chung cho git và planCheck):
 ```ts
 const norm = (e: string) => e.replace(/\/\*\*$/, "/");
+export const normTouch = norm;
 export function matchTouch(entry: string, file: string): boolean {
   const e = norm(entry);
   return e.endsWith("/") ? file.startsWith(e) : file === e;
 }
 ```
 
-Sửa `plugin/server/planCheck.ts` để dùng `norm` từ `touch.ts` thay cho bản sao cục bộ: `import { normTouch } from "./touch"`. Thêm `export const normTouch = norm;` vào `touch.ts`, rồi xoá hàm `norm` trong planCheck.
+Sửa `plugin/server/planCheck.ts`: xoá hàm `norm` cục bộ, thay bằng `import { normTouch } from "./touch"`.
+
+Ghi chú cho người làm:
+- Test "forged .git" chứng minh hai điều cùng lúc: plugin bỏ qua file `.git` giả, và fsmonitor không chạy. Test cuối kiểm `core.fsmonitor` vẫn đọc được (giá trị `false` từ `-c`).
+- `trustRepo` được gọi ở runtime (T19) cho mọi project trong `~/.slp/config.json`, và trong helper test của T11, T17, T18.
 
 - [ ] **Step 4: Chạy test, phải pass**
 
@@ -1799,7 +1925,7 @@ Expected: PASS.
 
 ```bash
 git add plugin/server/git.ts plugin/server/touch.ts plugin/server/planCheck.ts plugin/test/git.test.ts
-git commit -m "feat(plugin): git helpers that never run repo hooks"
+git commit -m "feat(plugin): git helpers with hooks off and a pinned, trusted git dir"
 ```
 
 ---
@@ -1926,13 +2052,16 @@ git commit -m "feat(plugin): sandboxed command runner with timeout and fail-clos
 - Test: `plugin/test/evidence.test.ts`
 
 **Interfaces:**
-- Consumes: `EventStore`, `SlpEvent` (T2); `TaskState` (T3); `changedFiles`, `commitAll`, `isSensitivePath`, `filesOutside`, `hookFile`, `headOf` (T9); `RunFn` (T10); `SlpConfig`, `ProjectConfig` (T1)
-- Produces: `PipelineDeps { store: EventStore; config: SlpConfig; project: ProjectConfig; run: RunFn; now(): Date }`, `ReportOutcome`, `processReport(deps, task: TaskState, report: SlpEvent): Promise<ReportOutcome>`, `processChallengeEvidence(deps, task: TaskState, challenge: SlpEvent): Promise<{ commit: string | null; exitCode: number | null } | null>`, `verifyFeature(deps, feature: string, leadWorktree: string): Promise<{ commit: string; ok: boolean; stderrTail: string }>`
+- Consumes: `EventStore`, `SlpEvent` (T2); `TaskState` (T3); `changedFiles`, `commitAll`, `commitTrailer`, `git`, `hooksDir`, `isProtectedPath`, `isSensitivePath`, `filesOutside`, `hookFile`, `headOf`, `trustRepo` (T9); `RunFn` (T10); `SlpConfig`, `ProjectConfig` (T1)
+- Produces: `PipelineDeps { store: EventStore; config: SlpConfig; project: ProjectConfig; run: RunFn; now(): Date }`, `CommitFlags { outsideTouchSet; excludedSensitive; excludedProtected }`, `ReportOutcome`, `processReport(deps, task: TaskState, report: SlpEvent): Promise<ReportOutcome>`, `processChallengeEvidence(deps, task: TaskState, challenge: SlpEvent): Promise<{ commit: string | null; exitCode: number | null; runnerError?: string } | null>`, `verifyFeature(deps, feature: string, leadWorktree: string): Promise<{ commit: string; ok: boolean; stderrTail: string; runnerError?: string }>`
 
 Các quyết định của pipeline:
-- Chỉ chạy khi turn của Peer đã kết thúc (hook ở T19 gọi), nên Peer không còn đang ghi file dở.
-- Chống chạy hai lần theo `report.seq`: nếu đã có `commit` hoặc `ops` loại `report_rejected` mang cùng `reportSeq`, trả lại kết quả cũ.
+- Chỉ chạy khi turn của Peer đã kết thúc (hook ở T19 gọi, tuần tự theo agent), nên Peer không còn đang ghi file dở.
+- Chống chạy hai lần theo `report.seq`: nếu đã có `commit` hoặc `ops` loại `report_rejected` mang cùng `reportSeq`, trả lại kết quả cũ. Nếu commit đã có mà chưa có `evidence` cho commit đó (lần trước runner hỏng), chạy verify lại.
 - Hook `pre-commit` của repo, nếu có, chạy **trong sandbox** trước lệnh verify, trên cây file đã commit.
+- File nhạy cảm (`.env*`, khoá) và file được bảo vệ (hook, `paseo.json`, xem T9) không bao giờ vào commit; Lead được báo qua `flags`.
+- **Runner hỏng không phải lỗi của Peer** (review M6). Trước mỗi lần verify, plugin chạy `true` qua runner. Lệnh đó fail thì ghi `ops runner_failed`, không ghi `evidence`, và trả về `runnerError`. Hook ở T19 báo Supervisor, không nhắn Peer. Task không thể accepted vì thiếu evidence, tức là fail closed.
+- **Phục hồi sau crash giữa commit và ghi event** (review M5): worktree sạch, HEAD khác BASE, HEAD mang trailer `SLP-Task` của đúng task và chưa có event `commit` cho HEAD. Khi đó plugin ghi `commit` cho HEAD (`recovered: true`) rồi verify tiếp, thay vì từ chối "no changes".
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -1943,14 +2072,14 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { parseSlpConfig } from "../server/config";
 import { processChallengeEvidence, processReport, verifyFeature } from "../server/evidence";
-import { headOf } from "../server/git";
+import { commitAll, headOf, trustRepo } from "../server/git";
 import { runSandboxed } from "../server/sandbox";
 import type { TaskState } from "../server/store/derive";
 import { EventStore } from "../server/store/events";
 import { FAKE_RUNNER, initRepo, sh, tmpDir } from "./helpers";
 
 function setup(over: Record<string, unknown> = {}) {
-  const repo = initRepo();
+  const repo = initRepo(); trustRepo(repo);
   const config = parseSlpConfig({ projects: { p: { repo, verify: ["test -f src.ts"] } }, sandbox: { runner: FAKE_RUNNER }, ...over });
   const store = new EventStore(join(tmpDir(), "events.jsonl"));
   const run = vi.fn(runSandboxed);
@@ -1959,15 +2088,15 @@ function setup(over: Record<string, unknown> = {}) {
   const report = store.append({ feature: "f", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done", message: "add src" } });
   return { repo, store, run, deps, task, report };
 }
+const verifyCalls = (run: ReturnType<typeof vi.fn>) => run.mock.calls.filter((c) => c[2] !== "true");
 
 describe("processReport", () => {
   it("commits the worktree, then runs verify in the sandbox and records evidence", async () => {
     const { repo, store, run, deps, task, report } = setup();
     writeFileSync(join(repo, "src.ts"), "x"); writeFileSync(join(repo, "extra.md"), "y");
     const out = await processReport(deps, task, report);
-    expect(out).toMatchObject({ outcome: "committed", evidenceOk: true, flags: { outsideTouchSet: ["extra.md"], excludedSensitive: [] } });
-    const kinds = store.all().map((e) => e.kind);
-    expect(kinds).toEqual(["report", "commit", "evidence"]);
+    expect(out).toMatchObject({ outcome: "committed", evidenceOk: true, flags: { outsideTouchSet: ["extra.md"], excludedSensitive: [], excludedProtected: [] } });
+    expect(store.all().map((e) => e.kind)).toEqual(["report", "commit", "evidence"]);
     expect(store.all()[1]!.data).toMatchObject({ task: "T1", reportSeq: report.seq, files: ["extra.md", "src.ts"] });
     expect(run).toHaveBeenCalledWith(FAKE_RUNNER, repo, "test -f src.ts", 900);
     expect(sh(repo, "git", ["log", "-1", "--format=%s"])).toBe("T1: add src");
@@ -1990,19 +2119,29 @@ describe("processReport", () => {
     let s = setup();
     expect(await processReport(s.deps, s.task, s.report)).toEqual({ outcome: "rejected", reason: "no changes in worktree" });
     s = setup(); writeFileSync(join(s.repo, ".env"), "S=1");
-    expect(await processReport(s.deps, s.task, s.report)).toEqual({ outcome: "rejected", reason: "only sensitive files changed: .env" });
+    expect(await processReport(s.deps, s.task, s.report)).toEqual({ outcome: "rejected", reason: "only sensitive or protected files changed: .env" });
     s = setup({ limits: { maxCommitFiles: 2 } }); for (const f of ["a", "b", "c"]) writeFileSync(join(s.repo, f), f);
     expect(await processReport(s.deps, s.task, s.report)).toMatchObject({ outcome: "rejected", reason: expect.stringMatching(/3 files changed \(limit 2\)/) });
+  });
+  it("never commits hook files or paseo.json, and flags them", async () => {
+    const { repo, store, deps, task, report } = setup();
+    mkdirSync(join(repo, ".husky")); writeFileSync(join(repo, ".husky", "post-checkout"), "#!/bin/sh\necho pwned\n");
+    writeFileSync(join(repo, "paseo.json"), '{"worktree":{"setup":["echo pwned"]}}'); writeFileSync(join(repo, "src.ts"), "x");
+    expect(await processReport(deps, task, report)).toMatchObject({ outcome: "committed", flags: { excludedProtected: [".husky/post-checkout", "paseo.json"] } });
+    expect(store.all().find((e) => e.kind === "commit")!.data.files).toEqual(["src.ts"]);
+    expect(sh(repo, "git", ["show", "--name-only", "--format=", "HEAD"])).toBe("src.ts");
   });
   it("runs the repo pre-commit hook through the runner, never during the commit", async () => {
     const { repo, run, deps, task, report } = setup();
     const marker = join(tmpDir(), "hook.log");
     mkdirSync(join(repo, ".husky")); writeFileSync(join(repo, ".husky", "pre-commit"), `#!/bin/sh\necho ran >> "${marker}"\n`); chmodSync(join(repo, ".husky", "pre-commit"), 0o755);
+    sh(repo, "git", ["add", ".husky"]); sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "hooks"]);
     sh(repo, "git", ["config", "core.hooksPath", ".husky"]);
+    const t = { ...task, base: headOf(repo) };
     writeFileSync(join(repo, "src.ts"), "x");
-    run.mockImplementationOnce(async (r, w, c, t) => { expect(existsSync(marker)).toBe(false); return runSandboxed(r, w, c, t); });
-    await processReport(deps, task, report);
-    expect(run.mock.calls[0]![2]).toBe(`'${join(repo, ".husky", "pre-commit")}' && test -f src.ts`);
+    run.mockImplementation(async (r, w, c, s) => { if (c !== "true") expect(existsSync(marker)).toBe(false); return runSandboxed(r, w, c, s); });
+    await processReport(deps, t, report);
+    expect(verifyCalls(run)[0]![2]).toBe(`'${join(repo, ".husky", "pre-commit")}' && test -f src.ts`);
     expect(existsSync(marker)).toBe(true);
   });
   it("skips verification when evidenceCheck is off", async () => {
@@ -2010,6 +2149,24 @@ describe("processReport", () => {
     writeFileSync(join(repo, "src.ts"), "x");
     expect(await processReport(deps, task, report)).toMatchObject({ outcome: "committed", evidenceOk: null });
     expect(run).not.toHaveBeenCalled();
+  });
+  it("fails closed on a broken runner without blaming the Peer, then verifies once the runner works", async () => {
+    const { repo, store, deps, task, report } = setup({ sandbox: { runner: ["/nonexistent/runner"] } });
+    writeFileSync(join(repo, "src.ts"), "x");
+    const a = await processReport(deps, task, report);
+    expect(a).toMatchObject({ outcome: "committed", evidenceOk: null, runnerError: expect.stringMatching(/sandbox runner failed/) });
+    expect(store.all().map((e) => e.kind)).toEqual(["report", "commit", "ops"]);
+    expect(store.all()[2]!.data.type).toBe("runner_failed");
+    const fixed = { ...deps, config: parseSlpConfig({ projects: { p: { repo, verify: ["test -f src.ts"] } }, sandbox: { runner: FAKE_RUNNER } }) };
+    expect(await processReport(fixed, task, report)).toMatchObject({ outcome: "committed", commit: (a as { commit: string }).commit, evidenceOk: true });
+    expect(store.all().filter((e) => e.kind === "commit")).toHaveLength(1);
+  });
+  it("recovers a commit the plugin made just before a crash", async () => {
+    const { repo, store, deps, task, report } = setup();
+    writeFileSync(join(repo, "src.ts"), "x");
+    const hash = commitAll(repo, { message: "T1: add src", trailers: { "SLP-Task": "T1", "SLP-Agent": "peer-1" }, exclude: [] });
+    expect(await processReport(deps, task, report)).toMatchObject({ outcome: "committed", commit: hash, evidenceOk: true, recovered: true });
+    expect(store.all().find((e) => e.kind === "commit")!.data).toMatchObject({ hash, recovered: true, files: ["src.ts"], reportSeq: report.seq });
   });
 });
 
@@ -2025,7 +2182,7 @@ describe("challenge evidence and feature verification", () => {
   });
   it("runs the project's full verify on the lead worktree head", async () => {
     const { repo, store, deps } = setup();
-    writeFileSync(join(repo, "src.ts"), "x"); sh(repo, "git", ["add", "."]); sh(repo, "git", ["commit", "-qm", "x"]);
+    writeFileSync(join(repo, "src.ts"), "x"); sh(repo, "git", ["add", "."]); sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "x"]);
     expect(await verifyFeature(deps, "f", repo)).toMatchObject({ commit: headOf(repo), ok: true });
     expect(store.all().at(-1)!.data).toMatchObject({ scope: "feature", commit: headOf(repo), exitCode: 0 });
   });
@@ -2042,15 +2199,15 @@ Expected: FAIL, "Cannot find module".
 `plugin/server/evidence.ts`:
 ```ts
 import type { ProjectConfig, SlpConfig } from "./config";
-import { changedFiles, commitAll, filesOutside, headOf, hookFile, isSensitivePath, NoChangesError } from "./git";
-import type { RunFn } from "./sandbox";
+import { changedFiles, commitAll, commitTrailer, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, NoChangesError } from "./git";
+import type { RunFn, SandboxResult } from "./sandbox";
 import type { TaskState } from "./store/derive";
 import type { EventStore, SlpEvent } from "./store/events";
 
 export interface PipelineDeps { store: EventStore; config: SlpConfig; project: ProjectConfig; run: RunFn; now(): Date }
-export interface CommitFlags { outsideTouchSet: string[]; excludedSensitive: string[] }
+export interface CommitFlags { outsideTouchSet: string[]; excludedSensitive: string[]; excludedProtected: string[] }
 export type ReportOutcome =
-  | { outcome: "committed"; commit: string; evidenceOk: boolean | null; flags: CommitFlags }
+  | { outcome: "committed"; commit: string; evidenceOk: boolean | null; flags: CommitFlags; runnerError?: string; recovered?: true }
   | { outcome: "rejected"; reason: string };
 
 const shQuote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
@@ -2060,54 +2217,97 @@ function evidenceOkFor(store: EventStore, commit: string): boolean | null {
   return ev ? ev.data.exitCode === 0 && ev.data.timedOut !== true : null;
 }
 
-async function runEvidence(deps: PipelineDeps, feature: string | null, worktree: string, command: string, data: Record<string, unknown>) {
+/** Probes the runner first, so a broken runner is reported as infrastructure, never as a failing test. */
+async function runEvidence(deps: PipelineDeps, feature: string | null, worktree: string, command: string, data: Record<string, unknown>): Promise<SandboxResult | { runnerError: string }> {
+  const probe = await deps.run(deps.config.sandbox.runner, worktree, "true", 60);
+  if (probe.exitCode !== 0) {
+    const runnerError = `sandbox runner failed (exit ${probe.exitCode}): ${probe.stderrTail.trim().slice(-300)}`;
+    deps.store.append({ feature, kind: "ops", by_role: "plugin", by_agent: null, data: { ...data, type: "runner_failed", error: runnerError, summary: `sandbox runner broken: ${runnerError.slice(0, 160)}` } }, deps.now());
+    return { runnerError };
+  }
   const r = await deps.run(deps.config.sandbox.runner, worktree, command, deps.config.limits.verifyTimeoutSeconds);
   deps.store.append({ feature, kind: "evidence", by_role: "plugin", by_agent: null, data: { ...data, command, exitCode: r.exitCode, timedOut: r.timedOut, durationMs: r.durationMs, stdoutTail: r.stdoutTail, stderrTail: r.stderrTail } }, deps.now());
   return r;
 }
 
+async function verifyTask(deps: PipelineDeps, feature: string | null, worktree: string, task: TaskState, hash: string, flags: CommitFlags, recovered: boolean): Promise<ReportOutcome> {
+  const base = { outcome: "committed" as const, commit: hash, flags, ...(recovered ? { recovered: true as const } : {}) };
+  if (!deps.config.flags.evidenceCheck) return { ...base, evidenceOk: null };
+  const hook = hookFile(worktree, "pre-commit");
+  const command = hook ? `${shQuote(hook)} && ${task.verify}` : task.verify;
+  const r = await runEvidence(deps, feature, worktree, command, { scope: "task", task: task.id, commit: hash });
+  if ("runnerError" in r) return { ...base, evidenceOk: null, runnerError: r.runnerError };
+  return { ...base, evidenceOk: r.exitCode === 0 && !r.timedOut };
+}
+
+/** A commit the plugin made but never recorded (crash between commit and append). */
+function orphanCommit(deps: PipelineDeps, task: TaskState, worktree: string): string | null {
+  const head = headOf(worktree);
+  if (head === task.base) return null;
+  if (deps.store.all().some((e) => e.kind === "commit" && e.data.hash === head)) return null;
+  return commitTrailer(worktree, head, "SLP-Task") === task.id ? head : null;
+}
+
 export async function processReport(deps: PipelineDeps, task: TaskState, report: SlpEvent): Promise<ReportOutcome> {
+  const worktree = task.worktree;
   const prior = deps.store.all().find((e) => e.data.reportSeq === report.seq && (e.kind === "commit" || (e.kind === "ops" && e.data.type === "report_rejected")));
-  if (prior?.kind === "commit") return { outcome: "committed", commit: String(prior.data.hash), evidenceOk: evidenceOkFor(deps.store, String(prior.data.hash)), flags: prior.data.flags as CommitFlags };
+  if (prior?.kind === "commit") {
+    const hash = String(prior.data.hash);
+    const flags = prior.data.flags as CommitFlags;
+    const ok = evidenceOkFor(deps.store, hash);
+    if (ok === null && deps.config.flags.evidenceCheck && worktree) return verifyTask(deps, report.feature, worktree, task, hash, flags, prior.data.recovered === true);
+    return { outcome: "committed", commit: hash, evidenceOk: ok, flags, ...(prior.data.recovered === true ? { recovered: true as const } : {}) };
+  }
   if (prior) return { outcome: "rejected", reason: String(prior.data.reason) };
 
   const reject = (reason: string): ReportOutcome => {
     deps.store.append({ feature: report.feature, kind: "ops", by_role: "plugin", by_agent: null, data: { type: "report_rejected", task: task.id, reportSeq: report.seq, reason, summary: `${task.id}: ${reason}` } }, deps.now());
     return { outcome: "rejected", reason };
   };
-  const worktree = task.worktree;
   if (!worktree) return reject("task has no worktree");
   const files = changedFiles(worktree);
+  const hookDir = hooksDir(worktree);
   const excludedSensitive = files.filter(isSensitivePath);
-  const kept = files.filter((f) => !isSensitivePath(f));
-  if (kept.length === 0) return reject(excludedSensitive.length ? `only sensitive files changed: ${excludedSensitive.join(", ")}` : "no changes in worktree");
-  if (kept.length > deps.config.limits.maxCommitFiles) return reject(`${kept.length} files changed (limit ${deps.config.limits.maxCommitFiles}); check .gitignore`);
+  const excludedProtected = files.filter((f) => !isSensitivePath(f) && isProtectedPath(f, hookDir));
+  const kept = files.filter((f) => !isSensitivePath(f) && !isProtectedPath(f, hookDir));
 
   let hash: string;
-  try {
-    hash = commitAll(worktree, { message: `${task.id}: ${String(report.data.message ?? "update")}`, trailers: { "SLP-Task": task.id, "SLP-Agent": String(report.by_agent) }, exclude: excludedSensitive });
-  } catch (error) {
-    if (error instanceof NoChangesError) return reject("no changes in worktree");
-    throw error;
+  let committed: string[];
+  let recovered = false;
+  if (kept.length === 0) {
+    const orphan = orphanCommit(deps, task, worktree);
+    if (!orphan) {
+      const excluded = [...excludedSensitive, ...excludedProtected];
+      return reject(excluded.length ? `only sensitive or protected files changed: ${excluded.join(", ")}` : "no changes in worktree");
+    }
+    hash = orphan; recovered = true;
+    committed = git(worktree, ["diff", "--name-only", `${task.base}..${hash}`]).stdout.split("\n").filter(Boolean);
+  } else {
+    if (kept.length > deps.config.limits.maxCommitFiles) return reject(`${kept.length} files changed (limit ${deps.config.limits.maxCommitFiles}); check .gitignore`);
+    try {
+      hash = commitAll(worktree, { message: `${task.id}: ${String(report.data.message ?? "update")}`, trailers: { "SLP-Task": task.id, "SLP-Agent": String(report.by_agent) }, exclude: [...excludedSensitive, ...excludedProtected] });
+    } catch (error) {
+      if (error instanceof NoChangesError) return reject("no changes in worktree");
+      throw error;
+    }
+    committed = kept;
   }
-  const flags: CommitFlags = { outsideTouchSet: deps.config.flags.touchSetGuard ? filesOutside(kept, task.touchSet) : [], excludedSensitive };
-  deps.store.append({ feature: report.feature, kind: "commit", by_role: "plugin", by_agent: null, data: { task: task.id, hash, base: task.base, files: kept.sort(), flags, reportSeq: report.seq } }, deps.now());
-  if (!deps.config.flags.evidenceCheck) return { outcome: "committed", commit: hash, evidenceOk: null, flags };
-
-  const hook = hookFile(worktree, "pre-commit");
-  const command = hook ? `${shQuote(hook)} && ${task.verify}` : task.verify;
-  const r = await runEvidence(deps, report.feature, worktree, command, { scope: "task", task: task.id, commit: hash });
-  return { outcome: "committed", commit: hash, evidenceOk: r.exitCode === 0 && !r.timedOut, flags };
+  const flags: CommitFlags = { outsideTouchSet: deps.config.flags.touchSetGuard ? filesOutside(committed, task.touchSet) : [], excludedSensitive, excludedProtected };
+  deps.store.append({ feature: report.feature, kind: "commit", by_role: "plugin", by_agent: null, data: { task: task.id, hash, base: task.base, files: [...committed].sort(), flags, reportSeq: report.seq, ...(recovered ? { recovered: true } : {}) } }, deps.now());
+  return verifyTask(deps, report.feature, worktree, task, hash, flags, recovered);
 }
 
-export async function processChallengeEvidence(deps: PipelineDeps, task: TaskState, challenge: SlpEvent): Promise<{ commit: string | null; exitCode: number | null } | null> {
+export async function processChallengeEvidence(deps: PipelineDeps, task: TaskState, challenge: SlpEvent): Promise<{ commit: string | null; exitCode: number | null; runnerError?: string } | null> {
   if (deps.store.all().some((e) => e.data.challengeSeq === challenge.seq)) return null;
   const worktree = task.worktree;
   if (!worktree) return null;
   let commit: string | null = null;
-  const kept = changedFiles(worktree).filter((f) => !isSensitivePath(f));
+  const hookDir = hooksDir(worktree);
+  const files = changedFiles(worktree);
+  const excluded = files.filter((f) => isSensitivePath(f) || isProtectedPath(f, hookDir));
+  const kept = files.filter((f) => !excluded.includes(f));
   if (kept.length > 0 && kept.length <= deps.config.limits.maxCommitFiles) {
-    commit = commitAll(worktree, { message: `${task.id}: evidence for ${challenge.id}`, trailers: { "SLP-Task": task.id, "SLP-Agent": String(challenge.by_agent) }, exclude: changedFiles(worktree).filter(isSensitivePath) });
+    commit = commitAll(worktree, { message: `${task.id}: evidence for ${challenge.id}`, trailers: { "SLP-Task": task.id, "SLP-Agent": String(challenge.by_agent) }, exclude: excluded });
     deps.store.append({ feature: challenge.feature, kind: "commit", by_role: "plugin", by_agent: null, data: { task: task.id, hash: commit, scope: "challenge", challenge: challenge.id, challengeSeq: challenge.seq, files: kept.sort() } }, deps.now());
   }
   const repro = typeof challenge.data.repro_command === "string" ? challenge.data.repro_command : null;
@@ -2116,15 +2316,19 @@ export async function processChallengeEvidence(deps: PipelineDeps, task: TaskSta
     return { commit, exitCode: null };
   }
   const r = await runEvidence(deps, challenge.feature, worktree, repro, { scope: "challenge", task: task.id, challenge: challenge.id, challengeSeq: challenge.seq, commit: commit ?? headOf(worktree) });
+  if ("runnerError" in r) return { commit, exitCode: null, runnerError: r.runnerError };
   return { commit, exitCode: r.exitCode };
 }
 
-export async function verifyFeature(deps: PipelineDeps, feature: string, leadWorktree: string): Promise<{ commit: string; ok: boolean; stderrTail: string }> {
+export async function verifyFeature(deps: PipelineDeps, feature: string, leadWorktree: string): Promise<{ commit: string; ok: boolean; stderrTail: string; runnerError?: string }> {
   const commit = headOf(leadWorktree);
   const r = await runEvidence(deps, feature, leadWorktree, deps.project.verify.join(" && "), { scope: "feature", commit });
+  if ("runnerError" in r) return { commit, ok: false, stderrTail: "", runnerError: r.runnerError };
   return { commit, ok: r.exitCode === 0 && !r.timedOut, stderrTail: r.stderrTail };
 }
 ```
+
+Ghi chú: `repro_command` do Peer khai và chỉ chạy **trong sandbox**. Đây là ngoại lệ duy nhất của câu "không chạy lệnh do Peer khai", và spec §7.1 ghi đúng như vậy.
 
 - [ ] **Step 4: Chạy test, phải pass**
 
@@ -2135,7 +2339,7 @@ Expected: PASS.
 
 ```bash
 git add plugin/server/evidence.ts plugin/test/evidence.test.ts
-git commit -m "feat(plugin): commit-on-behalf and sandboxed evidence pipeline"
+git commit -m "feat(plugin): commit-on-behalf and sandboxed evidence pipeline with runner and crash recovery"
 ```
 
 ---
@@ -2162,7 +2366,7 @@ import { edgeAllowed, Router } from "../server/router";
 import { tmpDir } from "./helpers";
 
 const id = (role: Identity["role"], feature: string | null, project = "p"): Identity =>
-  ({ token: role, role, project, feature, task: null, worktree: null, reviewCommit: null, agentId: `${role}-${feature}`, parentAgentId: null, createdAt: "", retiredAt: null });
+  ({ tokenHash: role, role, project, feature, task: null, worktree: null, workspaceId: null, branch: null, reviewCommit: null, agentId: `${role}-${feature}`, parentAgentId: null, createdAt: "", retiredAt: null });
 
 describe("edgeAllowed (spec §7.3)", () => {
   it("allows only Supervisor⇄Lead and Lead⇄own Peers", () => {
@@ -2193,15 +2397,14 @@ describe("Router", () => {
     expect(sent).toEqual([["lead-a", "first\n\n---\n\nsecond", d1.messageId]]);
     expect(r.pending()).toEqual([]);
   });
-  it("survives a restart: queue and issued message ids are persisted", async () => {
+  it("survives a restart: the queue is persisted; plugin ids are recognised by their prefix", async () => {
     const file = join(tmpDir(), "router.json"); const sent: Array<[string, string, string]> = [];
     const r1 = make(file, new Map(), sent);
     const d = r1.enqueue({ role: "lead", project: "p", feature: "a" }, "hello");
-    const extra = r1.issue();
     const r2 = make(file, new Map([["lead-a", "idle"]]), sent);
     expect(r2.isPluginMessageId(d.messageId)).toBe(true);
-    expect(r2.isPluginMessageId(extra)).toBe(true);
-    expect(r2.isPluginMessageId("human-uuid")).toBe(false);
+    expect(r2.isPluginMessageId(r1.issue())).toBe(true);
+    expect(r2.isPluginMessageId("8f14e45f-ceea-467f-a0e6-1d9b0a5e8f31")).toBe(false);
     expect(await r2.flush()).toBe(1);
   });
   it("keeps a message and counts the attempt when sending fails", async () => {
@@ -2293,8 +2496,8 @@ export interface RouterDeps {
   send(agentId: string, text: string, messageId: string): Promise<void>;
   now(): Date;
 }
-interface RouterState { queue: Delivery[]; issued: string[] }
-const MAX_ISSUED = 20000;
+interface RouterState { queue: Delivery[] }
+const PLUGIN_ID_PREFIX = "slp-";
 
 export function edgeAllowed(from: Identity, to: Address): boolean {
   if (from.project !== to.project) return false;
@@ -2310,15 +2513,12 @@ export class Router {
   private chain: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly deps: RouterDeps) {
-    this.state = readJson<RouterState>(deps.file, { queue: [], issued: [] });
+    this.state = readJson<RouterState>(deps.file, { queue: [] });
   }
 
+  /** Message ids the plugin sends with. The app gives human prompts random UUIDs, so the prefix is enough. */
   issue(): string {
-    const id = `slp-${randomUUID()}`;
-    this.state.issued.push(id);
-    if (this.state.issued.length > MAX_ISSUED) this.state.issued.splice(0, this.state.issued.length - MAX_ISSUED);
-    this.save();
-    return id;
+    return `${PLUGIN_ID_PREFIX}${randomUUID()}`;
   }
 
   enqueue(to: Address, text: string): Delivery {
@@ -2329,7 +2529,7 @@ export class Router {
   }
 
   isPluginMessageId(id: string | null | undefined): boolean {
-    return !!id && this.state.issued.includes(id);
+    return !!id && id.startsWith(PLUGIN_ID_PREFIX);
   }
 
   pending(): readonly Delivery[] {
@@ -2428,7 +2628,9 @@ git commit -m "feat(plugin): persisted router with idle-only grouped delivery; h
 - Consumes: `Vendor` (T1), `readJson`/`writeJson` (T12)
 - Produces: `isLimitTurn(outcome: { kind: string; error?: { message: string } }, lastAssistantText: string | null): boolean`, `UsageWindow { vendor; resetsAt: string | null; usedPct: number | null }`, `usageWindowsFrom(result: unknown): UsageWindow[]`, `resumeAt(windows, vendor, now, attempt): Date`, `ResumeJob { agentId; vendor; at; attempt }`, `class ResumeQueue { schedule(job); due(now): ResumeJob[]; clear(agentId); attemptOf(agentId): number; jobs() }`, `class NudgeTracker { shouldNudge(agentId, max): boolean; reset(agentId) }`
 
-`usageWindowsFrom` đọc payload của `paseo.providers.listUsage()`. Dạng đã thấy qua CLI là `[{ providerId?, sourceLabel, report: { windows: [{ usedPct, resetsAt }] } }]`. Hàm chấp nhận cả mảng trần lẫn object bọc mảng (`entries` / `reports` / `usage`), vì kiểu `ProviderUsageListResponseMessage["payload"]` chưa được kiểm live.
+`usageWindowsFrom` đọc payload của `paseo.providers.listUsage()`: `{ requestId, fetchedAt, providers: [{ providerId, displayName, status, windows: [{ id, label, usedPct?, resetsAt? }] }] }` (`ProviderUsageListResponseMessageSchema`, protocol `messages.ts:6237-6294`). Vendor suy từ `providerId`/`displayName`; giá trị `providerId` thật được ghi lại ở T20.
+
+`ResumeQueue` giữ số lần resume của từng agent tách khỏi danh sách job. `due()` lấy job ra nhưng giữ số lần; chỉ `clear()` (turn kế tiếp không còn dính limit) mới xoá. Nhờ vậy `resumeMaxAttempts` có tác dụng (review M2).
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -2457,16 +2659,19 @@ describe("isLimitTurn", () => {
 });
 
 describe("usage windows and resume time", () => {
-  const payload = [
-    { providerId: "claude", sourceLabel: "Claude", report: { windows: [{ usedPct: 100, resetsAt: "2026-10-22T18:10:00Z" }, { usedPct: 27, resetsAt: "2026-10-24T01:00:00Z" }] } },
-    { sourceLabel: "ChatGPT", report: { windows: [{ usedPct: 10, resetsAt: "2026-10-22T20:00:00Z" }] } },
-    { sourceLabel: "Cursor", report: { status: "unavailable" } },
-  ];
+  const payload = {
+    requestId: "r", fetchedAt: "2026-10-22T17:00:00Z",
+    providers: [
+      { providerId: "claude", displayName: "Claude", status: "available", planLabel: "Max", windows: [{ id: "5h", label: "5 hours", usedPct: 100, resetsAt: "2026-10-22T18:10:00Z" }, { id: "wk", label: "Week", usedPct: 27, resetsAt: "2026-10-24T01:00:00Z" }] },
+      { providerId: "codex", displayName: "ChatGPT", status: "available", planLabel: null, windows: [{ id: "5h", label: "5 hours", usedPct: 10, resetsAt: "2026-10-22T20:00:00Z" }] },
+      { providerId: "cursor", displayName: "Cursor", status: "unavailable", planLabel: null, windows: [] },
+    ],
+  };
   it("maps providers to vendors", () => {
     expect(usageWindowsFrom(payload)).toEqual([
       { vendor: "claude", usedPct: 100, resetsAt: "2026-10-22T18:10:00Z" }, { vendor: "claude", usedPct: 27, resetsAt: "2026-10-24T01:00:00Z" },
       { vendor: "codex", usedPct: 10, resetsAt: "2026-10-22T20:00:00Z" }]);
-    expect(usageWindowsFrom({ entries: payload })).toHaveLength(3);
+    expect(usageWindowsFrom([payload.providers[0]])).toEqual([]);
     expect(usageWindowsFrom(null)).toEqual([]);
   });
   it("waits for the latest exhausted window plus a minute, else backs off", () => {
@@ -2478,7 +2683,7 @@ describe("usage windows and resume time", () => {
 });
 
 describe("persisted queues", () => {
-  it("keeps resume jobs across restarts and returns only due ones", () => {
+  it("keeps resume jobs and attempt counts across restarts and returns only due ones", () => {
     const file = join(tmpDir(), "resume.json");
     new ResumeQueue(file).schedule({ agentId: "a", vendor: "claude", at: "2026-10-22T18:00:00Z", attempt: 1 });
     new ResumeQueue(file).schedule({ agentId: "b", vendor: "codex", at: "2026-10-22T19:00:00Z", attempt: 2 });
@@ -2486,8 +2691,10 @@ describe("persisted queues", () => {
     expect(q.attemptOf("b")).toBe(2);
     expect(q.due(new Date("2026-10-22T18:30:00Z")).map((j) => j.agentId)).toEqual(["a"]);
     expect(new ResumeQueue(file).jobs().map((j) => j.agentId)).toEqual(["b"]);
-    q.clear("b");
+    expect(new ResumeQueue(file).attemptOf("a")).toBe(1);
+    q.clear("a"); q.clear("b");
     expect(new ResumeQueue(file).jobs()).toEqual([]);
+    expect(new ResumeQueue(file).attemptOf("a")).toBe(0);
   });
   it("nudges at most max times per agent until reset", () => {
     const n = new NudgeTracker(join(tmpDir(), "nudge.json"));
@@ -2522,16 +2729,18 @@ export function isLimitTurn(outcome: { kind: string; error?: { message: string }
 
 export interface UsageWindow { vendor: Vendor; resetsAt: string | null; usedPct: number | null }
 
+interface UsagePayloadLike { providers?: Array<{ providerId?: string; displayName?: string; windows?: Array<{ usedPct?: number | null; resetsAt?: string | null }> }> }
+
+/** Reads `paseo.providers.listUsage()` (ProviderUsageListResponseMessage payload). */
 export function usageWindowsFrom(result: unknown): UsageWindow[] {
-  const r = result as Record<string, unknown> | null;
-  const entries: unknown[] = Array.isArray(result) ? result : ((r?.entries ?? r?.reports ?? r?.usage ?? []) as unknown[]);
+  const providers = (result as UsagePayloadLike | null)?.providers;
+  if (!Array.isArray(providers)) return [];
   const out: UsageWindow[] = [];
-  for (const entry of entries) {
-    const e = entry as Record<string, any>;
-    const label = String(e?.providerId ?? e?.sourceLabel ?? e?.sourceId ?? "").toLowerCase();
+  for (const p of providers) {
+    const label = `${p.providerId ?? ""} ${p.displayName ?? ""}`.toLowerCase();
     const vendor: Vendor | null = /claude|anthropic/.test(label) ? "claude" : /codex|chatgpt|openai/.test(label) ? "codex" : null;
     if (!vendor) continue;
-    for (const w of (e?.report?.windows ?? e?.windows ?? []) as Array<Record<string, unknown>>) {
+    for (const w of p.windows ?? []) {
       out.push({ vendor, usedPct: typeof w.usedPct === "number" ? w.usedPct : null, resetsAt: typeof w.resetsAt === "string" ? w.resetsAt : null });
     }
   }
@@ -2548,18 +2757,31 @@ export function resumeAt(windows: UsageWindow[], vendor: Vendor, now: Date, atte
 
 export interface ResumeJob { agentId: string; vendor: Vendor; at: string; attempt: number }
 
+interface ResumeState { jobs: ResumeJob[]; attempts: Record<string, number> }
+
+/** Jobs leave the queue when due; attempt counts stay until clear() (a later turn ended without a limit). */
 export class ResumeQueue {
-  private items: ResumeJob[];
-  constructor(private readonly file: string) { this.items = readJson<ResumeJob[]>(file, []); }
-  schedule(job: ResumeJob): void { this.items = [...this.items.filter((j) => j.agentId !== job.agentId), job]; writeJson(this.file, this.items); }
-  attemptOf(agentId: string): number { return this.items.find((j) => j.agentId === agentId)?.attempt ?? 0; }
+  private state: ResumeState;
+  constructor(private readonly file: string) { this.state = readJson<ResumeState>(file, { jobs: [], attempts: {} }); }
+  schedule(job: ResumeJob): void {
+    this.state.jobs = [...this.state.jobs.filter((j) => j.agentId !== job.agentId), job];
+    this.state.attempts[job.agentId] = job.attempt;
+    this.save();
+  }
+  attemptOf(agentId: string): number { return this.state.attempts[agentId] ?? 0; }
   due(now: Date): ResumeJob[] {
-    const due = this.items.filter((j) => Date.parse(j.at) <= now.getTime());
-    if (due.length) { this.items = this.items.filter((j) => !due.includes(j)); writeJson(this.file, this.items); }
+    const due = this.state.jobs.filter((j) => Date.parse(j.at) <= now.getTime());
+    if (due.length) { this.state.jobs = this.state.jobs.filter((j) => !due.includes(j)); this.save(); }
     return due;
   }
-  clear(agentId: string): void { if (this.items.some((j) => j.agentId === agentId)) { this.items = this.items.filter((j) => j.agentId !== agentId); writeJson(this.file, this.items); } }
-  jobs(): readonly ResumeJob[] { return this.items; }
+  clear(agentId: string): void {
+    if (!this.state.jobs.some((j) => j.agentId === agentId) && !(agentId in this.state.attempts)) return;
+    this.state.jobs = this.state.jobs.filter((j) => j.agentId !== agentId);
+    delete this.state.attempts[agentId];
+    this.save();
+  }
+  jobs(): readonly ResumeJob[] { return this.state.jobs; }
+  private save(): void { writeJson(this.file, this.state); }
 }
 
 export class NudgeTracker {
@@ -2575,7 +2797,7 @@ export class NudgeTracker {
 }
 ```
 
-Note cho người làm: thường thì attempt mới = `attemptOf(agentId) + 1`; do ResumeQueue.due() xoá job, hook ở T19 tự nhớ attempt cho tới khi turn kế tiếp kết thúc mà không còn dính limit (lúc đó gọi `clear`).
+Note cho người làm: attempt mới = `attemptOf(agentId) + 1`. Hook ở T19 gọi `clear` khi một turn kết thúc mà không dính limit.
 
 - [ ] **Step 4: Chạy test, phải pass**
 
@@ -2599,7 +2821,13 @@ git commit -m "feat(plugin): limit detection, usage-based resume times, persiste
 
 **Interfaces:**
 - Consumes: `Identity` (T7)
-- Produces: `PermissionLike { id: string; name?: string; kind?: string; title?: string; description?: string; input?: Record<string, unknown>; detail?: { type?: string; command?: string } }`, `PermissionDecision = { action: "allow" } | { action: "deny"; message: string } | { action: "defer"; reason: string } | { action: "ignore" }`, `decidePermission(req, ident: Identity | null, realpath?: (p: string) => string): PermissionDecision`
+- Produces: `PermissionLike { id: string; name?: string; kind?: string; title?: string; description?: string; input?: Record<string, unknown>; detail?: { type?: string; command?: string } }`, `PermissionDecision = { action: "allow" } | { action: "deny"; message: string } | { action: "defer"; reason: string } | { action: "ignore" }`, `PermissionOptions { deniedRoots: string[]; realpath?: (p: string) => string }`, `decidePermission(req, ident: Identity | null, opts?: PermissionOptions): PermissionDecision`
+
+Tool `slp_*` không đi qua đây: `toolPolicy.preapproved` ở T16 cho phép sẵn (Claude: `allowedTools`; Codex: `approval_mode: "approve"`). `defer` nghĩa là plugin không quyết: request vẫn chờ trong app cho anh, như Paseo vốn làm (không còn `slp_permit`).
+
+Hai chặn mới so với spike:
+- `Write`/`Edit` vào `<worktree>/.git` bị từ chối, vì file này trỏ git tới admin dir. Paseo tự chạy git trong mọi workspace, ngoài sandbox (review B2).
+- Mọi tool có đường dẫn trong `deniedRoots` (`~/.slp`, `~/.paseo`) bị từ chối. Paseo lưu header MCP, tức token của mọi agent, trong agent storage dưới `~/.paseo` (`agent-storage.ts:30`). `WebFetch` tới localhost cũng bị từ chối (review M1).
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -2613,17 +2841,23 @@ import { decidePermission } from "../server/permissions";
 import { tmpDir } from "./helpers";
 
 const ident = (role: Identity["role"], worktree: string | null): Identity =>
-  ({ token: "t", role, project: "p", feature: "f", task: "T1", worktree, reviewCommit: null, agentId: "a", parentAgentId: null, createdAt: "", retiredAt: null });
+  ({ tokenHash: "t", role, project: "p", feature: "f", task: "T1", worktree, workspaceId: null, branch: null, reviewCommit: null, agentId: "a", parentAgentId: null, createdAt: "", retiredAt: null });
 const bash = (command: string, extra: Record<string, unknown> = {}) => ({ id: "r", name: "Bash", kind: "tool", input: { command, ...extra } });
 
 describe("decidePermission", () => {
   it("ignores agents that are not SLP roles", () => {
     expect(decidePermission(bash("rm -rf /"), null)).toEqual({ action: "ignore" });
   });
-  it("allows the plugin's own MCP tools for both vendors", () => {
-    expect(decidePermission({ id: "r", name: "mcp__slp__slp_report" }, ident("peer-impl", "/w"))).toEqual({ action: "allow" });
-    expect(decidePermission({ id: "r", name: "CodexMcpElicitation", title: 'Allow the slp MCP server to run tool "slp_review"?' }, ident("peer-review", "/w"))).toEqual({ action: "allow" });
+  it("leaves other MCP servers to the human (slp_* tools are preapproved by toolPolicy)", () => {
     expect(decidePermission({ id: "r", name: "CodexMcpElicitation", title: 'Allow the github MCP server to run tool "x"?' }, ident("peer-review", "/w")).action).toBe("defer");
+  });
+  it("denies any tool that touches the SLP or Paseo state dirs, and WebFetch to loopback", () => {
+    const opts = { deniedRoots: ["/home/u/.slp", "/home/u/.paseo"], realpath: (p: string) => p };
+    expect(decidePermission({ id: "r", name: "Read", input: { file_path: "/home/u/.paseo/agents/a.json" } }, ident("peer-impl", "/w"), opts).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "Grep", input: { path: "/home/u/.slp" } }, ident("lead", "/w"), opts).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "WebFetch", input: { url: "http://127.0.0.1:47320/mcp" } }, ident("lead", "/w"), opts).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "WebFetch", input: { url: "http://localhost:6767/" } }, ident("lead", "/w"), opts).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "WebFetch", input: { url: "https://docs.example.com/" } }, ident("lead", "/w"), opts).action).toBe("defer");
   });
   it.each(["/Applications/Paseo.app/Contents/Resources/bin/paseo ls", "paseo send x hi", "cd x && paseo ls", "git push origin main", "git commit -m x", "git -c core.hooksPath=/dev/null commit -m x", "git merge main", "git worktree add ../x"])(
     "denies plugin-reserved command: %s", (command) => {
@@ -2643,6 +2877,12 @@ describe("decidePermission", () => {
     expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, "escape", "x.ts") } }, peer).action).toBe("deny");
     expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, "..", "x.ts") } }, peer).action).toBe("deny");
     expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, "src", "a.ts") } }, ident("lead", wt))).toEqual({ action: "deny", message: "SLP: role lead does not edit files." });
+  });
+  it("denies edits to the worktree's .git link", () => {
+    const wt = tmpDir(); const peer = ident("peer-impl", wt);
+    expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, ".git") } }, peer).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "Edit", input: { file_path: join(wt, ".git", "config") } }, peer).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, ".github", "ci.yml") } }, peer).action).toBe("allow");
   });
   it("accepts /tmp paths that resolve inside a /private/tmp worktree", () => {
     const viaTmp = mkdtempSync("/tmp/slp-wt-");          // on macOS /tmp is a symlink to /private/tmp
@@ -2671,6 +2911,8 @@ import type { Identity } from "./identity";
 
 export interface PermissionLike { id: string; name?: string; kind?: string; title?: string; description?: string; input?: Record<string, unknown>; detail?: { type?: string; command?: string } }
 export type PermissionDecision = { action: "allow" } | { action: "deny"; message: string } | { action: "defer"; reason: string } | { action: "ignore" };
+export interface PermissionOptions { deniedRoots: string[]; realpath?: (p: string) => string }
+const LOOPBACK = /^(localhost|127(\.\d+){3}|\[?::1\]?|0\.0\.0\.0)$/i;
 
 const SHELL = new Set(["Bash", "CodexBash", "shell", "exec_command"]);
 const WRITE = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
@@ -2693,12 +2935,20 @@ function resolveExisting(p: string, realpath: (p: string) => string): string {
 }
 const inside = (p: string, root: string) => p === root || p.startsWith(root + sep);
 
-export function decidePermission(req: PermissionLike, ident: Identity | null, realpath: (p: string) => string = realpathSync): PermissionDecision {
+export function decidePermission(req: PermissionLike, ident: Identity | null, opts: PermissionOptions = { deniedRoots: [] }): PermissionDecision {
   if (!ident) return { action: "ignore" };
+  const realpath = opts.realpath ?? realpathSync;
   const name = req.name ?? "";
-  if (name.startsWith("mcp__slp__")) return { action: "allow" };
-  if (name === "CodexMcpElicitation") {
-    return /\bthe slp MCP server\b/i.test(`${req.title ?? ""} ${req.description ?? ""}`) ? { action: "allow" } : { action: "defer", reason: `mcp: ${req.title ?? name}` };
+  for (const key of ["file_path", "path", "notebook_path"]) {
+    const v = req.input?.[key];
+    if (typeof v !== "string" || !v) continue;
+    const target = resolveExisting(v, realpath);
+    if (opts.deniedRoots.some((root) => inside(target, resolveExisting(root, realpath)))) return { action: "deny", message: "SLP: plugin and Paseo state are off limits. Use slp_state." };
+  }
+  if (name === "WebFetch" && typeof req.input?.url === "string") {
+    let host = "";
+    try { host = new URL(req.input.url).hostname; } catch { /* not a URL */ }
+    if (LOOPBACK.test(host)) return { action: "deny", message: "SLP: local network services are off limits." };
   }
   if (SHELL.has(name)) {
     const command = String(req.input?.command ?? req.detail?.command ?? "");
@@ -2709,9 +2959,10 @@ export function decidePermission(req: PermissionLike, ident: Identity | null, re
   if (WRITE.has(name)) {
     if (ident.role !== "peer-impl" || !ident.worktree) return { action: "deny", message: `SLP: role ${ident.role} does not edit files.` };
     const target = String(req.input?.file_path ?? req.input?.notebook_path ?? "");
-    return inside(resolveExisting(target, realpath), resolveExisting(ident.worktree, realpath))
-      ? { action: "allow" }
-      : { action: "deny", message: `SLP: ${target} is outside your worktree.` };
+    const wt = resolveExisting(ident.worktree, realpath);
+    const abs = resolveExisting(target, realpath);
+    if (inside(abs, join(wt, ".git"))) return { action: "deny", message: "SLP: the worktree's .git link is managed by the plugin." };
+    return inside(abs, wt) ? { action: "allow" } : { action: "deny", message: `SLP: ${target} is outside your worktree.` };
   }
   return { action: "defer", reason: `${req.kind ?? "tool"}: ${name}` };
 }
@@ -2753,7 +3004,7 @@ import { leadKickoff, promptFor, reviewBrief, taskBrief } from "../server/prompt
 import type { PremiseState, TaskState } from "../server/store/derive";
 
 const ident = (role: Identity["role"], extra: Partial<Identity> = {}): Identity =>
-  ({ token: "t", role, project: "demo", feature: "cache", task: "T4", worktree: "/w/T4", reviewCommit: "abc1234", agentId: "a", parentAgentId: null, createdAt: "", retiredAt: null, ...extra });
+  ({ tokenHash: "t", role, project: "demo", feature: "cache", task: "T4", worktree: "/w/T4", workspaceId: null, branch: null, reviewCommit: "abc1234", agentId: "a", parentAgentId: null, createdAt: "", retiredAt: null, ...extra });
 const task: TaskState = { id: "T4", title: "Cache results", dependsOn: ["D2", "H1"], verifies: [], touchSet: ["src/cache/"], verify: "npm test -- cache", status: "assigned", closure: ["D2", "H1"], agentId: "a", worktree: "/w/T4", branch: "b", base: "c", attempt: 1, lastCommit: "abc1234", evidenceOk: true, reviewOk: false, reopened: false, acceptedAtSeq: null };
 const premises = new Map<string, PremiseState>([
   ["D2", { id: "D2", kind: "decision", title: "Redis is available", status: "active", supersededBy: null, supersededAtSeq: null, seq: 1, byRole: "supervisor" }],
@@ -2902,6 +3153,7 @@ You own exactly one task inside your worktree ${worktree}. Technical judgment in
 - Use superpowers:test-driven-development: a failing test, minimal code, a passing test. Run the task's verify command yourself before you report: ${verify}
 - Stay inside your worktree, and inside the task's touch set unless the task truly needs more; explain any extra file in your report.
 - Do not commit, push or merge. The plugin commits your worktree when you report.
+- Do not edit git hooks (.husky/, .githooks/) or paseo.json: the plugin never commits them. If the task needs that, say so in your report.
 
 ## End every turn with exactly one of these
 - slp_report {status: "done" | "done_with_concerns" | "blocked", message: a one-line commit message, report: what you did, a summary of the test output, concerns}. Then end your turn.
@@ -3015,8 +3267,15 @@ git commit -m "feat(plugin): role prompts and task/review briefs"
 - Test: `plugin/test/agentConfig.test.ts`
 
 **Interfaces:**
-- Consumes: `IdentityRegistry`, `Identity` (T7); `SlpConfig`, `projectForCwd` (T1); `RoleSetup`, `roleOfProvider`, `ROLE_PROVIDER` (T1)
-- Produces: `CreateRequest { config: { provider: string; cwd: string; modeId?: string; systemPrompt?: string; providerOptions?: unknown; mcpServers?: Record<string, unknown>; [k: string]: unknown }; env?: Record<string, string> }`, `AgentConfigDeps { identities; config; setup(): RoleSetup; mcpUrl(): string; promptFor(ident: Identity): string }`, `transformCreate(req, deps): CreateRequest`, `bindSession(req: { agentId: string; env: Record<string, string> }, identities): void`, `claudeSandbox(ident, config, cwd): Record<string, unknown>`
+- Consumes: `IdentityRegistry`, `Identity` (T7); `SlpConfig`, `projectForCwd` (T1); `RoleSetup`, `roleOfProvider`, `ROLE_PROVIDER`, `Role` (T1); `currentBranch`, `headOf`, `gitCommonDir` (T9)
+- Produces: `CreateRequest { config: { provider: string; cwd: string; modeId?: string; systemPrompt?: string; providerOptions?: unknown; toolPolicy?: { preapproved: McpToolRef[] }; mcpServers?: Record<string, unknown>; [k: string]: unknown }; env?: Record<string, string> }`, `AgentConfigDeps { identities; config; setup(): RoleSetup; mcpUrl(): string; promptFor(ident: Identity): string; toolNames(role: Role): string[]; stateDirs: string[] }`, `transformCreate(req, deps): CreateRequest`, `bindSession(req: { agentId: string; env: Record<string, string> }, identities): void`, `claudeSandbox(ident, config, cwd, stateDirs): Record<string, unknown>`
+
+Worktree của Lead và Peer do Paseo tạo (`agents.create({ worktree: { mode: "branch-off", … } })`, T18). Đây là cách duy nhất để agent con chạy đúng worktree: khi có `parent` mà không có workspace, Paseo ghi đè `cwd` bằng `cwd` của cha (`create-agent/intent.ts` `resolvePlacement`, review B1). Hook `before agent.create` chạy sau khi Paseo đã tạo worktree (`agent-manager.ts:1285`), nên `transformCreate`:
+- ghi `worktree = config.cwd` và `branch` thật vào identity (Paseo có thể đổi tên branch để tránh trùng);
+- từ chối nếu `cwd` của Lead hoặc Peer là checkout chính của repo, tức Paseo không tạo worktree;
+- với reviewer, từ chối nếu HEAD của worktree khác `reviewCommit`.
+
+Sandbox của vai Claude có `filesystem.denyRead: stateDirs` (`~/.slp`, `~/.paseo`). Peer-impl có thêm `denyWrite: [<worktree>/.git]` (review M1, B2). Tool `slp_*` của vai được duyệt sẵn qua `toolPolicy.preapproved`, nên không sinh permission request (review m15).
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -3026,17 +3285,26 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { bindSession, transformCreate } from "../server/agentConfig";
 import { parseSlpConfig } from "../server/config";
+import { headOf, trustRepo } from "../server/git";
 import { IdentityRegistry } from "../server/identity";
-import type { RoleSetup } from "../server/roles";
-import { tmpDir } from "./helpers";
+import type { Role, RoleSetup } from "../server/roles";
+import { initRepo, sh, tmpDir } from "./helpers";
 
+const STATE = ["/home/u/.slp", "/home/u/.paseo"];
 function deps() {
-  const repo = tmpDir("slp-proj-");
+  const repo = initRepo(); trustRepo(repo);
   const config = parseSlpConfig({ projects: { demo: { repo, verify: ["npm test"] } } });
   const identities = new IdentityRegistry(join(tmpDir(), "ids.json"));
   const setup: RoleSetup = { vendor: { supervisor: "claude", lead: "claude", "peer-impl": "claude", "peer-review": "codex" }, profile: {} };
-  return { repo, config, identities, d: { identities, config, setup: () => setup, mcpUrl: () => "http://127.0.0.1:47320/mcp", promptFor: (i: { role: string }) => `PROMPT ${i.role}` } };
+  const d = { identities, config, setup: () => setup, mcpUrl: () => "http://127.0.0.1:47320/mcp", promptFor: (i: { role: string }) => `PROMPT ${i.role}`, toolNames: (r: Role) => ["slp_state", `slp_${r}`], stateDirs: STATE };
+  return { repo, config, identities, d };
 }
+function worktree(repo: string, branch: string): string {
+  const wt = join(tmpDir(), branch.replaceAll("/", "-"));
+  sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "-b", branch, wt, "main"]);
+  return wt;
+}
+const peerMeta = { role: "peer-impl" as const, project: "demo", feature: "f", task: "T1", reviewCommit: null, parentAgentId: "lead-1" };
 
 describe("transformCreate", () => {
   it("leaves non-SLP providers untouched", () => {
@@ -3044,14 +3312,15 @@ describe("transformCreate", () => {
     const req = { config: { provider: "claude/claude-haiku-4-5", cwd: "/x" } };
     expect(transformCreate(req, d)).toBe(req);
   });
-  it("mints a Supervisor for a configured project and wires prompt, MCP, mode and sandbox", () => {
+  it("mints a Supervisor for a configured project and wires prompt, MCP, tool policy, mode and sandbox", () => {
     const { d, repo, identities } = deps();
     const out = transformCreate({ config: { provider: "slp-supervisor", cwd: repo, mcpServers: { other: { type: "http", url: "u" } } } }, d);
     const token = out.env!.SLP_TOKEN!;
     expect(identities.byToken(token)).toMatchObject({ role: "supervisor", project: "demo", feature: null });
     expect(out.config).toMatchObject({ modeId: "default", systemPrompt: "PROMPT supervisor" });
     expect(out.config.mcpServers).toEqual({ other: { type: "http", url: "u" }, slp: { type: "http", url: "http://127.0.0.1:47320/mcp", headers: { Authorization: `Bearer ${token}` }, alwaysLoad: true } });
-    expect(out.config.providerOptions).toEqual({ sandbox: { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [repo] }, network: { allowedDomains: [], allowLocalBinding: false } } });
+    expect(out.config.toolPolicy).toEqual({ preapproved: [{ kind: "mcp", server: "slp", tool: "slp_state" }, { kind: "mcp", server: "slp", tool: "slp_supervisor" }] });
+    expect(out.config.providerOptions).toEqual({ sandbox: { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [repo], denyRead: STATE }, network: { allowedDomains: [], allowLocalBinding: false } } });
   });
   it("refuses a Supervisor outside any project and a second live Supervisor", () => {
     const { d, repo, identities } = deps();
@@ -3061,32 +3330,45 @@ describe("transformCreate", () => {
     expect(() => transformCreate({ config: { provider: "slp-supervisor", cwd: repo } }, d)).toThrow(/already has a Supervisor/);
   });
   it("refuses Lead and Peer agents created outside slp_spawn, and mismatched tokens", () => {
-    const { d, identities } = deps();
+    const { d, identities, repo } = deps();
     expect(() => transformCreate({ config: { provider: "slp-lead", cwd: "/x" } }, d)).toThrow(/only be created through slp_spawn/);
-    const peer = identities.mint({ role: "peer-impl", project: "demo", feature: "f", task: "T1", worktree: "/w", reviewCommit: null, parentAgentId: "lead-1" });
-    expect(() => transformCreate({ config: { provider: "slp-lead", cwd: "/w" }, env: { SLP_TOKEN: peer.token } }, d)).toThrow(/does not match/);
+    const peer = identities.mint(peerMeta);
+    expect(() => transformCreate({ config: { provider: "slp-lead", cwd: worktree(repo, "slp/f/T1-1") }, env: { SLP_TOKEN: peer.token } }, d)).toThrow(/does not match/);
   });
-  it("gives a Peer-impl network access to registries only and no denyWrite", () => {
-    const { d, identities } = deps();
-    const peer = identities.mint({ role: "peer-impl", project: "demo", feature: "f", task: "T1", worktree: "/w", reviewCommit: null, parentAgentId: "lead-1" });
-    const out = transformCreate({ config: { provider: "slp-peer-impl/claude-sonnet-5", cwd: "/w" }, env: { SLP_TOKEN: peer.token } }, d);
-    expect((out.config.providerOptions as { sandbox: unknown }).sandbox).toEqual({ enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: {}, network: { allowedDomains: ["registry.npmjs.org", "pypi.org", "files.pythonhosted.org"], allowLocalBinding: false } });
+  it("records the worktree and branch Paseo created, and refuses the main checkout", () => {
+    const { d, identities, repo } = deps();
+    const wt = worktree(repo, "slp/f/T1-1");
+    const peer = identities.mint(peerMeta);
+    transformCreate({ config: { provider: "slp-peer-impl/claude-sonnet-5", cwd: wt }, env: { SLP_TOKEN: peer.token } }, d);
+    expect(identities.byToken(peer.token)).toMatchObject({ worktree: wt, branch: "slp/f/T1-1" });
+    const other = identities.mint({ ...peerMeta, task: "T2" });
+    expect(() => transformCreate({ config: { provider: "slp-peer-impl", cwd: repo }, env: { SLP_TOKEN: other.token } }, d)).toThrow(/did not create a worktree/);
   });
-  it("configures a Codex reviewer with workspace-write and no network", () => {
-    const { d, identities } = deps();
-    const rev = identities.mint({ role: "peer-review", project: "demo", feature: "f", task: "T1", worktree: "/r", reviewCommit: "abc", parentAgentId: "lead-1" });
-    const out = transformCreate({ config: { provider: "slp-peer-review", cwd: "/r" }, env: { SLP_TOKEN: rev.token } }, d);
+  it("gives a Peer-impl registry-only network, and denies writing the .git link and reading state dirs", () => {
+    const { d, identities, repo } = deps();
+    const wt = worktree(repo, "slp/f/T1-1");
+    const peer = identities.mint(peerMeta);
+    const out = transformCreate({ config: { provider: "slp-peer-impl/claude-sonnet-5", cwd: wt }, env: { SLP_TOKEN: peer.token } }, d);
+    expect((out.config.providerOptions as { sandbox: unknown }).sandbox).toEqual({ enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [join(wt, ".git")], denyRead: STATE }, network: { allowedDomains: ["registry.npmjs.org", "pypi.org", "files.pythonhosted.org"], allowLocalBinding: false } });
+  });
+  it("configures a Codex reviewer with workspace-write and no network, at exactly the review commit", () => {
+    const { d, identities, repo } = deps();
+    const wt = worktree(repo, "slp/f/review-T1-1");
+    const rev = identities.mint({ ...peerMeta, role: "peer-review", reviewCommit: headOf(wt) });
+    const out = transformCreate({ config: { provider: "slp-peer-review", cwd: wt }, env: { SLP_TOKEN: rev.token } }, d);
     expect(out.config.modeId).toBe("auto");
     expect(out.config.providerOptions).toEqual({ sandbox_mode: "workspace-write", approval_policy: "on-request", sandbox_workspace_write: { network_access: false } });
+    const stale = identities.mint({ ...peerMeta, role: "peer-review", reviewCommit: "0".repeat(40) });
+    expect(() => transformCreate({ config: { provider: "slp-peer-review", cwd: worktree(repo, "slp/f/review-T1-2") }, env: { SLP_TOKEN: stale.token } }, d)).toThrow(/not at the review commit/);
   });
 });
 
 describe("bindSession", () => {
   it("binds the token from env to the agent id and ignores agents without a token", () => {
     const { identities } = deps();
-    const lead = identities.mint({ role: "lead", project: "demo", feature: "f", task: null, worktree: "/l", reviewCommit: null, parentAgentId: "sup" });
+    const lead = identities.mint({ role: "lead", project: "demo", feature: "f", task: null, reviewCommit: null, parentAgentId: "sup" });
     bindSession({ agentId: "lead-1", env: { SLP_TOKEN: lead.token } }, identities);
-    expect(identities.byAgent("lead-1")?.token).toBe(lead.token);
+    expect(identities.byAgent("lead-1")?.tokenHash).toBe(lead.tokenHash);
     expect(() => bindSession({ agentId: "x", env: {} }, identities)).not.toThrow();
   });
 });
@@ -3101,56 +3383,75 @@ Expected: FAIL, "Cannot find module".
 
 `plugin/server/agentConfig.ts`:
 ```ts
+import { join } from "node:path";
 import { projectForCwd, type SlpConfig } from "./config";
+import { currentBranch, gitCommonDir, headOf } from "./git";
 import type { Identity, IdentityRegistry } from "./identity";
-import { ROLE_PROVIDER, roleOfProvider, type RoleSetup } from "./roles";
+import { ROLE_PROVIDER, roleOfProvider, type Role, type RoleSetup } from "./roles";
 
+interface McpToolRef { kind: "mcp"; server: string; tool: string }
 export interface CreateRequest {
-  config: { provider: string; cwd: string; modeId?: string; systemPrompt?: string; providerOptions?: unknown; mcpServers?: Record<string, unknown>; [k: string]: unknown };
+  config: { provider: string; cwd: string; modeId?: string; systemPrompt?: string; providerOptions?: unknown; toolPolicy?: { preapproved: McpToolRef[] }; mcpServers?: Record<string, unknown>; [k: string]: unknown };
   env?: Record<string, string>;
 }
-export interface AgentConfigDeps { identities: IdentityRegistry; config: SlpConfig; setup(): RoleSetup; mcpUrl(): string; promptFor(ident: Identity): string }
+export interface AgentConfigDeps {
+  identities: IdentityRegistry; config: SlpConfig; setup(): RoleSetup; mcpUrl(): string;
+  promptFor(ident: Identity): string; toolNames(role: Role): string[]; stateDirs: string[];
+}
 
 const asRecord = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 
-export function claudeSandbox(ident: Identity, config: SlpConfig, cwd: string): Record<string, unknown> {
+export function claudeSandbox(ident: Identity, config: SlpConfig, cwd: string, stateDirs: string[]): Record<string, unknown> {
   const impl = ident.role === "peer-impl";
   return {
     enabled: true,
     failIfUnavailable: true,
     autoAllowBashIfSandboxed: true,
     allowUnsandboxedCommands: false,
-    filesystem: impl ? {} : { denyWrite: [cwd] },
+    filesystem: { denyWrite: [impl ? join(cwd, ".git") : cwd], denyRead: stateDirs },
     network: { allowedDomains: impl ? config.sandbox.claudeAllowedDomains : [], allowLocalBinding: false },
   };
+}
+
+/** Lead and Peers must run in a worktree Paseo created for them, never in the main checkout. */
+function recordPlacement(ident: Identity, cwd: string, identities: IdentityRegistry): void {
+  if (ident.role === "supervisor") return;
+  if (gitCommonDir(cwd) === join(cwd, ".git")) throw new Error(`SLP: Paseo did not create a worktree for ${ident.role} (cwd is the main checkout ${cwd}).`);
+  if (ident.role === "peer-review" && headOf(cwd) !== ident.reviewCommit) throw new Error(`SLP: reviewer worktree ${cwd} is not at the review commit ${ident.reviewCommit}.`);
+  identities.place(ident.tokenHash, { worktree: cwd, workspaceId: ident.workspaceId, branch: currentBranch(cwd) });
+  Object.assign(ident, { worktree: cwd, branch: currentBranch(cwd) });
 }
 
 export function transformCreate(req: CreateRequest, deps: AgentConfigDeps): CreateRequest {
   const role = roleOfProvider(req.config.provider);
   if (!role) return req;
-  const token = req.env?.SLP_TOKEN;
+  let token = req.env?.SLP_TOKEN;
   let ident = token ? deps.identities.byToken(token) : null;
   if (!ident) {
     if (role !== "supervisor") throw new Error(`SLP: ${ROLE_PROVIDER[role]} agents can only be created through slp_spawn.`);
     const found = projectForCwd(deps.config, req.config.cwd);
     if (!found) throw new Error(`SLP: ${req.config.cwd} is not a project in ~/.slp/config.json.`);
     if (deps.identities.current("supervisor", found.name, null)) throw new Error(`SLP: project ${found.name} already has a Supervisor. Archive it first or let it rotate with slp_checkpoint.`);
-    ident = deps.identities.mint({ role, project: found.name, feature: null, task: null, worktree: null, reviewCommit: null, parentAgentId: null });
+    const minted = deps.identities.mint({ role, project: found.name, feature: null, task: null, reviewCommit: null, parentAgentId: null });
+    ident = minted; token = minted.token;
   }
   if (ident.role !== role) throw new Error(`SLP: token role ${ident.role} does not match provider ${req.config.provider}`);
+  recordPlacement(ident, req.config.cwd, deps.identities);
   const vendor = deps.setup().vendor[role];
   const providerOptions = vendor === "claude"
-    ? { ...asRecord(req.config.providerOptions), sandbox: claudeSandbox(ident, deps.config, req.config.cwd) }
+    ? { ...asRecord(req.config.providerOptions), sandbox: claudeSandbox(ident, deps.config, req.config.cwd, deps.stateDirs) }
     : { ...asRecord(req.config.providerOptions), sandbox_mode: "workspace-write", approval_policy: "on-request", sandbox_workspace_write: { network_access: false } };
+  const preapproved: McpToolRef[] = deps.toolNames(role).map((tool) => ({ kind: "mcp", server: "slp", tool }));
   return {
     ...req,
-    env: { ...req.env, SLP_TOKEN: ident.token },
+    env: { ...req.env, SLP_TOKEN: token! },
     config: {
       ...req.config,
       modeId: vendor === "claude" ? "default" : "auto",
       systemPrompt: deps.promptFor(ident),
       providerOptions,
-      mcpServers: { ...req.config.mcpServers, slp: { type: "http", url: deps.mcpUrl(), headers: { Authorization: `Bearer ${ident.token}` }, alwaysLoad: true } },
+      toolPolicy: { preapproved: [...(req.config.toolPolicy?.preapproved ?? []), ...preapproved] },
+      mcpServers: { ...req.config.mcpServers, slp: { type: "http", url: deps.mcpUrl(), headers: { Authorization: `Bearer ${token}` }, alwaysLoad: true } },
     },
   };
 }
@@ -3161,6 +3462,8 @@ export function bindSession(req: { agentId: string; env: Record<string, string> 
 }
 ```
 
+Ghi chú cho người làm: `gitCommonDir(cwd) === join(cwd, ".git")` đúng khi `cwd` là checkout chính; mọi đường dẫn trong test đều đã qua `realpath` (`tmpDir`). `git()` ném `UntrustedGitDirError` nếu `cwd` không thuộc repo đã `trustRepo`, nên agent SLP không thể chạy ở thư mục lạ.
+
 - [ ] **Step 4: Chạy test, phải pass**
 
 Run: `cd plugin && npx vitest run test/agentConfig.test.ts`
@@ -3170,7 +3473,7 @@ Expected: PASS.
 
 ```bash
 git add plugin/server/agentConfig.ts plugin/test/agentConfig.test.ts
-git commit -m "feat(plugin): bind roles, sandboxes and MCP identity at agent creation"
+git commit -m "feat(plugin): bind roles, sandboxes, tool policy and Paseo-made worktrees at agent creation"
 ```
 
 ---
@@ -3184,11 +3487,14 @@ git commit -m "feat(plugin): bind roles, sandboxes and MCP identity at agent cre
 
 **Interfaces:**
 - Consumes: T1–T16
-- Produces: `AgentRefLike`, `PaseoLike`, `Ctx`, `refreshDigest(ctx, project, feature): string`, `appendAs(ctx, ident, feature, e): SlpEvent`, `routeFrom(ctx, from, to, text): void`, `notify(ctx, to: Address, text): void`, `humanMessagesFor(ctx, ident): readonly SlpEvent[]`, `leadAddress(project, feature): Address`, `supervisorAddress(project): Address`, `appendPlugin(ctx, project, feature | null, e): SlpEvent`, `requireFeature(ident, feature?): string`
-- Produces: `class StoreRegistry { project(p); feature(p, f); featureDir(p, f); features(p); writeDoc(p, f, kind, content): { version; path; sha256 }; readDoc(path); writeDigest(p, f, text); readDigest(p, f); writeReport(p, f, task, content): string; worktreePath(p, f, name): string; file(p, name): string }`
-- Produces: `decisionTools(ctx): ToolDef[]` (gồm: `slp_state`, `slp_brief`, `slp_human_decision`, `slp_spec`, `slp_plan`, `slp_approve_plan`, `slp_rule`, `slp_confirm`, `slp_challenge`, `slp_resolve`, `slp_ask`, `slp_answer`, `slp_send`, `slp_permit`)
+- Produces: `AgentRefLike`, `CreateOptions`, `PaseoLike`, `Ctx`, `refreshDigest(ctx, project, feature): string`, `appendAs(ctx, ident, feature, e): SlpEvent`, `routeFrom(ctx, from, to, text): void`, `notify(ctx, to: Address, text): void`, `syncHumanMessages(ctx, ident): Promise<void>`, `humanMessagesFor(ctx, ident): readonly SlpEvent[]`, `leadAddress(project, feature): Address`, `supervisorAddress(project): Address`, `appendPlugin(ctx, project, feature | null, e): SlpEvent`, `requireFeature(ident, feature?): string`
+- Produces: `class StoreRegistry { project(p); feature(p, f); featureDir(p, f); features(p); writeDoc(p, f, kind, content): { version; path; sha256 }; readDoc(path); writeDigest(p, f, text); readDigest(p, f); writeReport(p, f, task, content): string; file(p, name): string }`
+- Produces (test): `FakePaseo` (tạo worktree thật khi có `worktree`, chạy `beforeCreate` như hook của Paseo, và áp luật "con có `parent` mà không có workspace thì chạy ở cwd của cha"), `makeCtx`, `bound(ctx, meta & { worktree? }, agentId)`, `humanSays(paseo, agentId)`
+- Produces: `decisionTools(ctx): ToolDef[]` (gồm: `slp_state`, `slp_brief`, `slp_human_decision`, `slp_spec`, `slp_plan`, `slp_approve_plan`, `slp_rule`, `slp_confirm`, `slp_challenge`, `slp_resolve`, `slp_ask`, `slp_answer`, `slp_send`)
 
 `slp_checkpoint` cần tạo agent nên nằm ở T18.
+
+**Tin của anh được kéo vào state ngay khi cần** (review B3). `syncHumanMessages` đọc tail timeline của agent và ghi `human_message` cho prompt mới của anh. Hàm này được gọi ở `turn_started`, ở `turn_ended` (T19), và ở đầu mọi tool tạo ra thứ cần anh duyệt hoặc kiểm câu duyệt: `slp_brief`, `slp_human_decision`, `slp_ship_package`, `slp_ship`. Nhờ vậy Supervisor ghi được quyết định ngay trong turn nhận câu "duyệt", và một câu cũ không trở thành câu duyệt cho bản mới.
 
 - [ ] **Step 1: Viết context và registry (cùng step với test vì test cần fake)**
 
@@ -3243,7 +3549,6 @@ export class StoreRegistry {
     writeFileSync(path, content, { mode: 0o600 });
     return path;
   }
-  worktreePath(project: string, feature: string, name: string): string { return join(this.home, project, "worktrees", feature, name); }
 }
 ```
 
@@ -3251,7 +3556,7 @@ export class StoreRegistry {
 ```ts
 import { assertCanWrite } from "./authority";
 import type { SlpConfig } from "./config";
-import type { SeenIds } from "./human";
+import { extractHumanMessages, type SeenIds, type TimelineItemLike } from "./human";
 import type { Identity, IdentityRegistry } from "./identity";
 import { edgeAllowed, type Address, type Router } from "./router";
 import type { RoleSetup } from "./roles";
@@ -3272,10 +3577,14 @@ export interface AgentRefLike {
   respondToPermission(o: { requestId: string; response: { behavior: "allow" | "deny"; message?: string } }): Promise<void>;
   archive(): Promise<unknown>;
 }
+export interface CreateOptions { config: Record<string, unknown>; parent?: string; title?: string; env?: Record<string, string>; prompt?: string; clientMessageId?: string }
 export interface PaseoLike {
   agents: {
     ref(id: string): AgentRefLike;
-    create(o: { config: Record<string, unknown>; cwd: string; parent?: string; title?: string; env?: Record<string, string>; prompt?: string; clientMessageId?: string }): Promise<{ id: string }>;
+    create(o: CreateOptions & { cwd: string; worktree?: { mode: "branch-off"; newBranch: string; base: string } }): Promise<{ id: string; workspaceId?: string | null }>;
+  };
+  workspaces: {
+    ref(id: string): { agents: { create(o: CreateOptions): Promise<{ id: string; workspaceId?: string | null }> }; archive(): Promise<unknown> };
   };
   providers: { listUsage(): Promise<unknown> };
   config: { get(): Promise<{ config: unknown }> };
@@ -3296,6 +3605,8 @@ export interface Ctx {
   toolCalls: Map<string, number>;
   turnStarts: Map<string, number>;
   flags: { checkpointAsked: Set<string>; challengeNudged: Set<string> };
+  /** ~/.slp and ~/.paseo: no agent tool may touch them (T14). */
+  stateDirs: string[];
 }
 
 export const leadAddress = (project: string, feature: string): Address => ({ role: "lead", project, feature });
@@ -3333,6 +3644,19 @@ export function notify(ctx: Ctx, to: Address, text: string): void {
   void ctx.router.flush();
 }
 
+/** Records the human's new prompts to this agent. Safe to call concurrently: seen ids are checked and added synchronously. */
+export async function syncHumanMessages(ctx: Ctx, ident: Identity): Promise<void> {
+  if (!ident.agentId) return;
+  const page = await ctx.paseo().agents.ref(ident.agentId).timeline.refetch({ direction: "tail", limit: 30 });
+  const items = (page.entries ?? []).map((e) => (e.item ?? e) as TimelineItemLike);
+  for (const m of extractHumanMessages(items, (id) => ctx.router.isPluginMessageId(id), ctx.seen)) {
+    appendPlugin(ctx, ident.project, ident.feature, { kind: "human_message", data: { agentId: ident.agentId, text: m.text, messageId: m.messageId, role: ident.role } });
+    if (ident.role === "peer-impl" || ident.role === "peer-review") {
+      notify(ctx, leadAddress(ident.project, ident.feature!), `The human messaged Peer ${ident.task} directly: "${m.text.slice(0, 500)}". Decide whether it changes direction and record it (slp_rule or slp_challenge).`);
+    }
+  }
+}
+
 export function humanMessagesFor(ctx: Ctx, ident: Identity): readonly SlpEvent[] {
   const store = ident.feature ? ctx.stores.feature(ident.project, ident.feature) : ctx.stores.project(ident.project);
   return store.all().filter((e) => e.kind === "human_message" && e.data.agentId === ident.agentId);
@@ -3351,21 +3675,34 @@ export function requireFeature(ident: Identity, feature: string | undefined): st
 Thêm vào `plugin/test/helpers.ts`:
 ```ts
 import { join as pjoin } from "node:path";
+import { bindSession, transformCreate, type CreateRequest } from "../server/agentConfig";
 import { parseSlpConfig, type SlpConfig } from "../server/config";
-import type { AgentRefLike, Ctx, PaseoLike } from "../server/context";
+import type { AgentRefLike, CreateOptions, Ctx, PaseoLike } from "../server/context";
+import { trustRepo } from "../server/git";
 import { SeenIds } from "../server/human";
-import { IdentityRegistry, type Identity } from "../server/identity";
+import { IdentityRegistry, type Identity, type IdentityMeta } from "../server/identity";
 import { Router } from "../server/router";
 import type { RoleSetup } from "../server/roles";
 import { runSandboxed } from "../server/sandbox";
 import { StoreRegistry } from "../server/store/registry";
 import { NudgeTracker, ResumeQueue } from "../server/watchdog";
 
+/**
+ * Mimics the parts of Paseo 0.12 the plugin relies on:
+ * - `worktree: { mode: "branch-off" }` creates a real git worktree and the agent runs there;
+ * - a child with `parent` and no workspace runs in the parent's cwd (create-agent/intent.ts resolvePlacement);
+ * - `beforeCreate` plays the `before agent.create` hook, `onSessionOpen` plays `before agent.session_open`.
+ */
 export class FakePaseo implements PaseoLike {
   sent: Array<{ agentId: string; text: string; messageId?: string }> = [];
-  created: Array<Record<string, unknown> & { id: string }> = [];
+  created: Array<Record<string, unknown> & { id: string; cwd: string; workspaceId: string }> = [];
   responses: Array<{ agentId: string; requestId: string; behavior: string; message?: string }> = [];
   archived: string[] = [];
+  archivedWorkspaces: string[] = [];
+  beforeCreate: ((req: CreateRequest) => CreateRequest) | null = null;
+  onSessionOpen: ((agentId: string, env: Record<string, string>) => void) | null = null;
+  private cwdOfAgent = new Map<string, string>();
+  private cwdOfWorkspace = new Map<string, string>();
   statuses = new Map<string, string>();
   timelines = new Map<string, unknown[]>();
   usageOf = new Map<string, { contextWindowUsedTokens: number; contextWindowMaxTokens: number }>();
@@ -3384,16 +3721,40 @@ export class FakePaseo implements PaseoLike {
         archive: async () => { self.archived.push(id); return {}; },
       };
     },
-    create: async (o: Record<string, unknown>) => { const id = `agent-${this.created.length + 1}`; this.created.push({ ...o, id }); return { id }; },
+    create: async (o: CreateOptions & { cwd: string; worktree?: { mode: "branch-off"; newBranch: string; base: string } }) => {
+      if (o.worktree) {
+        const path = pjoin(tmpDir("slp-wt-"), "wt");
+        sh(o.cwd, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "-b", o.worktree.newBranch, path, o.worktree.base]);
+        return this.register(o, path, null);
+      }
+      return this.register(o, o.parent ? this.cwdOfAgent.get(o.parent) ?? o.cwd : o.cwd, null);
+    },
+  };
+  workspaces = {
+    ref: (wsId: string) => ({
+      agents: { create: async (o: CreateOptions) => this.register(o, this.cwdOfWorkspace.get(wsId)!, wsId) },
+      archive: async () => { this.archivedWorkspaces.push(wsId); return {}; },
+    }),
   };
   providers = { listUsage: async () => this.usage };
   config = { get: async () => ({ config: this.daemonConfig }) };
+
+  private register(o: CreateOptions, cwd: string, workspaceId: string | null): { id: string; workspaceId: string } {
+    const id = `agent-${this.created.length + 1}`;
+    const req: CreateRequest = { config: { ...o.config, provider: String(o.config.provider), cwd }, env: o.env };
+    const out = this.beforeCreate ? this.beforeCreate(req) : req;
+    const ws = workspaceId ?? `ws-${id}`;
+    this.cwdOfAgent.set(id, cwd); this.cwdOfWorkspace.set(ws, cwd);
+    this.created.push({ ...o, cwd, env: out.env, finalConfig: out.config, id, workspaceId: ws });
+    this.onSessionOpen?.(id, out.env ?? {});
+    return { id, workspaceId: ws };
+  }
 }
 
 export const TEST_SETUP: RoleSetup = { vendor: { supervisor: "claude", lead: "claude", "peer-impl": "claude", "peer-review": "codex" }, profile: { "peer-impl": { model: "claude-sonnet-5" } } };
 
 export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: FakePaseo; repo: string; home: string; config: SlpConfig } {
-  const repo = initRepo();
+  const repo = initRepo(); trustRepo(repo);
   const home = tmpDir("slp-home-");
   const config = parseSlpConfig({ projects: { demo: { repo, baseBranch: "main", verify: ["true"] } }, sandbox: { runner: FAKE_RUNNER }, ...over });
   const paseo = new FakePaseo();
@@ -3402,14 +3763,25 @@ export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: 
   const ctx: Ctx = {
     config, setup: () => TEST_SETUP, identities, stores: new StoreRegistry(home), router,
     seen: new SeenIds(pjoin(home, "seen.json")), resumes: new ResumeQueue(pjoin(home, "resume.json")), nudges: new NudgeTracker(pjoin(home, "nudges.json")),
-    paseo: () => paseo, run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() },
+    paseo: () => paseo, run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs: [home],
   };
+  paseo.beforeCreate = (req) => transformCreate(req, { identities, config, setup: () => TEST_SETUP, mcpUrl: () => "http://127.0.0.1:1/mcp", promptFor: (i) => `PROMPT ${i.role}`, toolNames: () => [], stateDirs: [] });
+  paseo.onSessionOpen = (agentId, env) => bindSession({ agentId, env }, identities);
   return { ctx, paseo, repo, home, config };
 }
 
-export function bound(ctx: Ctx, meta: Omit<Identity, "token" | "agentId" | "createdAt" | "retiredAt">, agentId: string): Identity {
+export function bound(ctx: Ctx, meta: IdentityMeta & { worktree?: string | null }, agentId: string): Identity {
   const id = ctx.identities.mint(meta);
+  if (meta.worktree) ctx.identities.place(id.tokenHash, { worktree: meta.worktree, workspaceId: null, branch: null });
   return ctx.identities.bind(id.token, agentId);
+}
+
+/** A prompt the human types to an agent; it shows up in that agent's timeline. */
+export function humanSays(paseo: FakePaseo, agentId: string): (text: string) => Promise<void> {
+  return async (text) => {
+    await new Promise((r) => setTimeout(r, 5)); // the human answers after the item under approval
+    paseo.timelines.set(agentId, [...(paseo.timelines.get(agentId) ?? []), { type: "user_message", text, messageId: `h-${agentId}-${Date.now()}-${Math.random()}` }]);
+  };
 }
 ```
 
@@ -3424,7 +3796,7 @@ import type { Ctx } from "../server/context";
 import type { Identity } from "../server/identity";
 import { deriveFeature } from "../server/store/derive";
 import { decisionTools } from "../server/tools/decisions";
-import { bound, makeCtx } from "./helpers";
+import { bound, humanSays, makeCtx } from "./helpers";
 
 function world() {
   const w = makeCtx();
@@ -3439,8 +3811,7 @@ function world() {
     if (!t.roles.includes(who.role)) return { text: `not available to ${who.role}`, isError: true };
     try { return await t.handler(who, args); } catch (e) { return { text: (e as Error).message, isError: true }; }
   };
-  const human = (who: Identity, text: string) => (who.feature ? w.ctx.stores.feature("demo", who.feature) : w.ctx.stores.project("demo"))
-    .append({ feature: who.feature, kind: "human_message", by_role: "plugin", by_agent: null, data: { agentId: who.agentId, text, messageId: `h-${Math.random()}` } }, new Date(Date.now() + 1000));
+  const human = (who: Identity, text: string) => humanSays(w.paseo, who.agentId!)(text);
   const events = () => w.ctx.stores.feature("demo", "cache").all();
   return { ...w, sup, lead, peer, call, human, events };
 }
@@ -3452,9 +3823,17 @@ describe("brief and human decisions", () => {
     expect(r.text).toMatch(/brief v1/);
     expect(w.events().filter((e) => e.kind === "premise").map((e) => e.id)).toEqual(["D1", "H1"]);
     expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_brief", quote: "duyệt" })).isError).toBe(true);
-    w.human(w.sup, "ok duyệt brief");
+    await w.human(w.sup, "ok duyệt brief");
     expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_brief", quote: "duyệt brief" })).isError).toBeFalsy();
     expect(deriveFeature("cache", w.events()).brief?.approved).toBe(true);
+    expect(w.ctx.stores.project("demo").all().filter((e) => e.kind === "human_message")).toHaveLength(1);
+  });
+  it("does not let an approval typed before a new brief version approve that version", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "v1" });
+    await w.human(w.sup, "duyệt");
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "v2" });
+    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_brief", quote: "duyệt" })).text).toMatch(/quote rejected/);
   });
   it("rejects a hypothesis without verify_by and a brief from a non-supervisor", async () => {
     const w = world();
@@ -3466,7 +3845,7 @@ describe("brief and human decisions", () => {
     await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "decision", title: "memory cache" }] });
     await w.call(w.lead, "slp_challenge", { target: "D1", level: "spec", claim: "memory cache breaks retries", evidence: "test retry.spec fails: expected same body", impact: "T4,T6", smallest_correction: "Redis TTL" });
     await w.call(w.sup, "slp_challenge", { feature: "cache", target: "D1", level: "spec", claim: "ask human", evidence: "see C1 evidence from lead", impact: "T4", smallest_correction: "Redis" });
-    w.human(w.sup, "supersede D1, dùng Redis");
+    await w.human(w.sup, "supersede D1, dùng Redis");
     const r = await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "supersede", target: "D1", quote: "dùng Redis", replacement: { kind: "decision", title: "Redis with TTL" } });
     expect(r.isError).toBeFalsy();
     const st = deriveFeature("cache", w.events());
@@ -3480,7 +3859,7 @@ describe("spec and plan", () => {
   async function approvedSpec(w: ReturnType<typeof world>) {
     await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "hypothesis", title: "h", verify_by: "bench" }] });
     await w.call(w.lead, "slp_spec", { markdown: "# Spec" });
-    w.human(w.sup, "spec ok");
+    await w.human(w.sup, "spec ok");
     await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "spec ok" });
   }
   it("refuses a plan before the spec is approved and a plan with structural errors", async () => {
@@ -3559,15 +3938,6 @@ describe("challenges, questions, messages", () => {
   });
 });
 
-describe("slp_permit", () => {
-  it("lets a lead answer a deferred permission of its own peer only", async () => {
-    const w = world();
-    w.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "ops", by_role: "plugin", by_agent: null, data: { type: "permission_deferred", agentId: "peer-1", requestId: "req-1", parent: "lead-1" } });
-    expect((await w.call(w.lead, "slp_permit", { agent_id: "peer-1", request_id: "req-1", allow: true })).isError).toBeFalsy();
-    expect(w.paseo.responses).toEqual([{ agentId: "peer-1", requestId: "req-1", behavior: "allow", message: undefined }]);
-    expect((await w.call(w.lead, "slp_permit", { agent_id: "peer-9", request_id: "req-9", allow: true })).isError).toBe(true);
-  });
-});
 ```
 
 - [ ] **Step 3: Chạy test, phải fail**
@@ -3580,7 +3950,7 @@ Expected: FAIL, "Cannot find module '../server/tools/decisions'".
 `plugin/server/tools/decisions.ts`:
 ```ts
 import { z } from "zod";
-import { appendAs, humanMessagesFor, leadAddress, notify, refreshDigest, requireFeature, routeFrom, supervisorAddress, type Ctx } from "../context";
+import { appendAs, humanMessagesFor, leadAddress, notify, refreshDigest, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, type Ctx } from "../context";
 import type { Identity } from "../identity";
 import type { ToolDef } from "../mcp/server";
 import { checkPlan } from "../planCheck";
@@ -3631,7 +4001,8 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
       name: "slp_brief", description: "Save a new brief version for a feature (creates the feature) with its premises D#/H#.",
       roles: ["supervisor"],
       input: z.object({ feature: SLUG, title: z.string().min(1), markdown: z.string().min(1), premises: z.array(Premise).default([]) }),
-      run(who, a) {
+      async run(who, a) {
+        await syncHumanMessages(ctx, who); // a reply the human already sent belongs before this version
         for (const p of a.premises) if (p.kind === "hypothesis" && !p.verify_by) throw new ToolError(`hypothesis "${p.title}" needs verify_by: a measurement that can fail`);
         const doc = ctx.stores.writeDoc(who.project, a.feature, "brief", a.markdown);
         appendAs(ctx, who, a.feature, { kind: "brief", data: { ...doc, title: a.title } });
@@ -3643,7 +4014,8 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
       name: "slp_human_decision", description: "Record the human's decision, quoting their exact words. The plugin checks the quote against messages the human actually sent.",
       roles: ["supervisor", "lead"],
       input: z.object({ feature: SLUG.optional(), decides: z.enum(["approve_brief", "approve_spec", "supersede", "keep", "change_goal"]), target: z.string().optional(), quote: z.string(), replacement: Premise.optional(), reason: z.string().optional() }),
-      run(who, a) {
+      async run(who, a) {
+        await syncHumanMessages(ctx, who); // the approval usually arrives in the turn that calls this tool
         const feature = requireFeature(who, a.feature);
         const events = ctx.stores.feature(who.project, feature).all();
         const st = deriveFeature(feature, events);
@@ -3817,18 +4189,6 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
         return "Queued; delivered when the recipient is idle.";
       },
     }),
-    defineTool({
-      name: "slp_permit", description: "Allow or deny a permission request that the plugin deferred to you.",
-      roles: ["lead", "supervisor"],
-      input: z.object({ feature: SLUG.optional(), agent_id: z.string(), request_id: z.string(), allow: z.boolean(), message: z.string().optional() }),
-      async run(who, a) {
-        const store = who.role === "lead" ? ctx.stores.feature(who.project, who.feature!) : ctx.stores.feature(who.project, requireFeature(who, a.feature));
-        const deferred = store.all().find((e) => e.kind === "ops" && e.data.type === "permission_deferred" && e.data.agentId === a.agent_id && e.data.requestId === a.request_id);
-        if (!deferred || deferred.data.parent !== who.agentId) throw new ToolError("no such deferred request for you");
-        await ctx.paseo().agents.ref(a.agent_id).respondToPermission({ requestId: a.request_id, response: a.allow ? { behavior: "allow" } : { behavior: "deny", message: a.message ?? "Denied by SLP parent role." } });
-        return a.allow ? "Allowed." : "Denied.";
-      },
-    }),
   ];
 }
 ```
@@ -3842,7 +4202,7 @@ Expected: PASS; typecheck sạch.
 
 ```bash
 git add plugin/server/context.ts plugin/server/store/registry.ts plugin/server/tools/decisions.ts plugin/test/helpers.ts plugin/test/tools.decisions.test.ts
-git commit -m "feat(plugin): decision tools (brief, spec, plan, challenges, questions, permits)"
+git commit -m "feat(plugin): decision tools (brief, spec, plan, challenges, questions)"
 ```
 
 ---
@@ -3854,10 +4214,17 @@ git commit -m "feat(plugin): decision tools (brief, spec, plan, challenges, ques
 - Test: `plugin/test/tools.work.test.ts`
 
 **Interfaces:**
-- Consumes: T7, T9, T10, T11, T15, T17
-- Produces: `workTools(ctx): ToolDef[]` (gồm: `slp_spawn`, `slp_report`, `slp_review`, `slp_accept`, `slp_release`, `slp_merge_main`, `slp_ship_package`, `slp_ship`, `slp_checkpoint`), `buildTools(ctx): ToolDef[]`, `pipelineDeps(ctx, project, feature): PipelineDeps`, `processReportFor(ctx, peer: Identity): Promise<ReportOutcome | null>`
+- Consumes: T7, T9, T10, T11, T15, T16 (qua hook), T17
+- Produces: `workTools(ctx): ToolDef[]` (gồm: `slp_spawn`, `slp_report`, `slp_review`, `slp_accept`, `slp_release`, `slp_merge_main`, `slp_ship_package`, `slp_ship`, `slp_checkpoint`), `buildTools(ctx): ToolDef[]`, `pipelineDeps(ctx, project, feature): PipelineDeps`, `processReportFor(ctx, peer: Identity): Promise<ReportOutcome | null>`, `retireAgent(ctx, ident, repo): Promise<void>`
 
-Đường dẫn worktree: `~/.slp/<project>/worktrees/<feature>/lead` cho Lead, `<task>-<n>` cho Peer-impl, `review-<task>-<n>` cho reviewer. Tên branch: `feat/<feature>` cho Lead, `slp/<feature>/<task>-<n>` cho Peer-impl; reviewer dùng worktree detached.
+**Worktree do Paseo tạo** (review B1; đơn giản hoá 1). Plugin gọi `agents.create({ cwd, parent, worktree: { mode: "branch-off", newBranch, base } })`. Paseo tạo worktree dưới `~/.paseo/worktrees/…`, tạo workspace, và chạy agent ở đó. Hook `before agent.create` (T16) ghi đường dẫn và branch thật vào identity; `agents.create` trả về `workspaceId`.
+- Lead: từ checkout chính, `newBranch: feat/<feature>`, `base: <baseBranch>`.
+- Peer-impl: từ worktree của Lead, `newBranch: slp/<feature>/<task>-<n>`, `base: feat/<feature>`.
+- Reviewer: `newBranch: slp/<feature>/review-<task>-<sha7>-<rand>`, `base: <branch của task>`, tức đúng commit cần review, và T16 kiểm lại HEAD. Mỗi reviewer có branch riêng, nên reviewer mới cho cùng commit luôn tạo được (review M4).
+- Xoay vòng: agent mới được tạo trong **workspace cũ** (`workspaces.ref(id).agents.create`). Lead mới dùng lại đúng worktree; Supervisor mới chạy ở thư mục project.
+- Dọn: `slp_accept`, `slp_release` và review bị vô hiệu đều archive workspace (Paseo xoá worktree, giữ branch). Branch của reviewer bị xoá sau đó.
+
+**Task resolve conflict** (review M7). `slp_spawn { role: "peer-impl", merge_base: true }` tạo agent chưa có prompt, rồi plugin chạy `git merge --no-commit <baseBranch>` trong worktree của Peer (hook tắt) để lại marker. Sau đó plugin mới gửi brief kèm danh sách file conflict. Lần `slp_report` kế tiếp tạo merge commit (T9 `commitAll`).
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -3870,21 +4237,21 @@ import type { Identity } from "../server/identity";
 import { headOf } from "../server/git";
 import { deriveFeature } from "../server/store/derive";
 import { buildTools } from "../server/tools";
-import { bound, makeCtx, sh } from "./helpers";
+import { processReportFor } from "../server/tools/work";
+import { bound, humanSays, makeCtx, sh } from "./helpers";
 
 async function ready() {
   const w = makeCtx();
-  const sup = bound(w.ctx, { role: "supervisor", project: "demo", feature: null, task: null, worktree: null, reviewCommit: null, parentAgentId: null }, "sup-1");
+  const sup = bound(w.ctx, { role: "supervisor", project: "demo", feature: null, task: null, reviewCommit: null, parentAgentId: null }, "sup-1");
   const tools = buildTools(w.ctx);
   const call = async (who: Identity, name: string, args: unknown) => {
     const t = tools.find((x) => x.name === name)!;
     if (!t.roles.includes(who.role)) return { text: `not available to ${who.role}`, isError: true };
     try { return await t.handler(who, args); } catch (e) { return { text: (e as Error).message, isError: true }; }
   };
-  const human = (agentId: string, text: string, feature: string | null = null) => (feature ? w.ctx.stores.feature("demo", feature) : w.ctx.stores.project("demo"))
-    .append({ feature, kind: "human_message", by_role: "plugin", by_agent: null, data: { agentId, text, messageId: `h${Math.random()}` } }, new Date(Date.now() + 1000));
+  const human = humanSays(w.paseo, "sup-1");
   await call(sup, "slp_brief", { feature: "cache", title: "Cache", markdown: "# Brief", premises: [] });
-  human("sup-1", "duyệt");
+  await human("duyệt");
   await call(sup, "slp_human_decision", { feature: "cache", decides: "approve_brief", quote: "duyệt" });
   return { ...w, sup, call, human, events: () => w.ctx.stores.feature("demo", "cache").all() };
 }
@@ -3893,11 +4260,9 @@ async function withLeadAndPlan() {
   const r = await ready();
   const spawned = await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", prompt: "go" });
   expect(spawned.isError).toBeFalsy();
-  const leadAgent = r.paseo.created[0]!.id;
-  r.ctx.identities.bind(String((r.paseo.created[0]!.env as Record<string, string>).SLP_TOKEN), leadAgent);
-  const lead = r.ctx.identities.byAgent(leadAgent)!;
+  const lead = r.ctx.identities.byAgent(r.paseo.created[0]!.id)!; // bound by the fake session_open hook
   await r.call(lead, "slp_spec", { markdown: "# Spec" });
-  r.human("sup-1", "spec ok");
+  await r.human("spec ok");
   await r.call(r.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "spec ok" });
   await r.call(lead, "slp_plan", { markdown: "# Plan", tasks: [{ id: "T1", title: "add src", dependsOn: [], verifies: [], touchSet: ["src.ts"], verify: "test -f src.ts" }, { id: "T2", title: "more", dependsOn: ["T1"], verifies: [], touchSet: [], verify: "true" }] });
   await r.call(r.sup, "slp_approve_plan", { feature: "cache", sha256: deriveFeature("cache", r.events()).plan!.sha256 });
@@ -3905,27 +4270,32 @@ async function withLeadAndPlan() {
 }
 
 describe("slp_spawn", () => {
-  it("refuses a Lead before the brief is approved and creates one with its own feature worktree after", async () => {
+  it("refuses a Lead before the brief is approved and starts one in a Paseo worktree on feat/<feature> after", async () => {
     const w = makeCtx();
-    const sup = bound(w.ctx, { role: "supervisor", project: "demo", feature: null, task: null, worktree: null, reviewCommit: null, parentAgentId: null }, "sup-1");
+    const sup = bound(w.ctx, { role: "supervisor", project: "demo", feature: null, task: null, reviewCommit: null, parentAgentId: null }, "sup-1");
     const t = buildTools(w.ctx).find((x) => x.name === "slp_spawn")!;
     await expect(t.handler(sup, { role: "lead", feature: "cache", prompt: "go" })).rejects.toThrow(/brief is not approved/);
     const r = await withLeadAndPlan();
     const created = r.paseo.created[0]!;
-    expect(created).toMatchObject({ cwd: r.ctx.stores.worktreePath("demo", "cache", "lead"), parent: "sup-1", title: "[Lead] cache" });
+    expect(created).toMatchObject({ parent: "sup-1", title: "[Lead] cache", worktree: { mode: "branch-off", newBranch: "feat/cache", base: "main" } });
     expect((created.config as { provider: string }).provider).toBe("slp-lead");
+    expect(r.lead).toMatchObject({ worktree: created.cwd, branch: "feat/cache", workspaceId: created.workspaceId });
+    expect(r.lead.worktree).not.toBe(r.repo);
     expect(sh(r.lead.worktree!, "git", ["branch", "--show-current"])).toBe("feat/cache");
   });
-  it("spawns one Peer-impl at a time with the profile model, a task branch and a brief", async () => {
+  it("spawns one Peer-impl at a time in its own worktree off the feature branch, with the profile model and a brief", async () => {
     const r = await withLeadAndPlan();
     const res = await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "Keep it tiny." });
     expect(res.isError).toBeFalsy();
     const peerCreate = r.paseo.created[1]!;
+    expect(peerCreate).toMatchObject({ parent: r.lead.agentId, worktree: { mode: "branch-off", newBranch: "slp/cache/T1-1", base: "feat/cache" } });
     expect((peerCreate.config as { provider: string }).provider).toBe("slp-peer-impl/claude-sonnet-5");
     expect(String(peerCreate.prompt)).toContain("[SLP] Task T1: add src");
     expect(String(peerCreate.prompt)).toContain("Keep it tiny.");
     expect(r.ctx.router.isPluginMessageId(String(peerCreate.clientMessageId))).toBe(true);
-    expect(sh(String(peerCreate.cwd), "git", ["branch", "--show-current"])).toBe("slp/cache/T1-1");
+    expect(peerCreate.cwd).not.toBe(r.lead.worktree);
+    expect(sh(peerCreate.cwd, "git", ["branch", "--show-current"])).toBe("slp/cache/T1-1");
+    expect(r.events().filter((e) => e.kind === "assign").at(-1)!.data).toMatchObject({ task: "T1", worktree: peerCreate.cwd, branch: "slp/cache/T1-1", base: headOf(r.lead.worktree!) });
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T2", prompt: "x" })).text).toMatch(/one Peer-impl at a time/);
   });
   it("enforces models.allowed and the project writer cap", async () => {
@@ -3936,15 +4306,24 @@ describe("slp_spawn", () => {
     r.ctx.config.projects.demo!.maxWriters = 0;
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/writer cap/);
   });
+  it("starts a resolve task with the base branch merged in and the conflict markers left for the Peer", async () => {
+    const r = await withLeadAndPlan();
+    writeFileSync(join(r.repo, "README.md"), "main side\n"); sh(r.repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "main moves"]);
+    writeFileSync(join(r.lead.worktree!, "README.md"), "feature side\n"); sh(r.lead.worktree!, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "feature moves"]);
+    expect((await r.call(r.lead, "slp_merge_main", {})).text).toMatch(/Conflicts in: README.md/);
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "resolve", merge_base: true })).isError).toBeFalsy();
+    const peerCreate = r.paseo.created[1]!;
+    expect(peerCreate.prompt).toBeUndefined();
+    expect(sh(peerCreate.cwd, "git", ["rev-parse", "-q", "--verify", "MERGE_HEAD"])).toBe(headOf(r.repo));
+    expect(r.paseo.sent.find((s) => s.agentId === peerCreate.id)!.text).toContain("README.md");
+  });
 });
 
 describe("report → review → accept", () => {
   async function reported() {
     const r = await withLeadAndPlan();
     await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" });
-    const peerCreate = r.paseo.created[1]!;
-    r.ctx.identities.bind(String((peerCreate.env as Record<string, string>).SLP_TOKEN), peerCreate.id);
-    const peer = r.ctx.identities.byAgent(peerCreate.id)!;
+    const peer = r.ctx.identities.byAgent(r.paseo.created[1]!.id)!;
     writeFileSync(join(peer.worktree!, "src.ts"), "export const x = 1;\n");
     const rep = await r.call(peer, "slp_report", { status: "done", message: "add src", report: "Added src.ts; test -f passes." });
     expect(rep.text).toMatch(/End your turn/);
@@ -3952,24 +4331,20 @@ describe("report → review → accept", () => {
   }
   it("records the report; the pipeline (run by the hook) commits and verifies", async () => {
     const r = await reported();
-    const { processReportFor } = await import("../server/tools/work");
     const out = await processReportFor(r.ctx, r.peer);
     expect(out).toMatchObject({ outcome: "committed", evidenceOk: true });
-    const t = deriveFeature("cache", r.events()).tasks.get("T1")!;
-    expect(t).toMatchObject({ status: "reported", evidenceOk: true });
+    expect(deriveFeature("cache", r.events()).tasks.get("T1")!).toMatchObject({ status: "reported", evidenceOk: true });
     expect(existsSync(join(r.ctx.stores.featureDir("demo", "cache"), "reports", "T1-1.md"))).toBe(true);
   });
-  it("spawns a reviewer on the exact commit, accepts after a clean review, and merges into feat", async () => {
+  it("spawns a reviewer on the exact commit, accepts after a clean review, merges into feat, and archives the task workspaces", async () => {
     const r = await reported();
-    const { processReportFor } = await import("../server/tools/work");
     await processReportFor(r.ctx, r.peer);
     const commit = deriveFeature("cache", r.events()).tasks.get("T1")!.lastCommit!;
     expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/review/);
     await r.call(r.lead, "slp_spawn", { role: "peer-review", task: "T1", prompt: "review" });
     const revCreate = r.paseo.created[2]!;
     expect((revCreate.config as { provider: string }).provider).toBe("slp-peer-review");
-    expect(headOf(String(revCreate.cwd))).toBe(commit);
-    r.ctx.identities.bind(String((revCreate.env as Record<string, string>).SLP_TOKEN), revCreate.id);
+    expect(headOf(revCreate.cwd)).toBe(commit);
     const rev = r.ctx.identities.byAgent(revCreate.id)!;
     expect((await r.call(rev, "slp_review", { commit: "deadbeef", verdict: "pass", findings: [] })).isError).toBe(true);
     await r.call(rev, "slp_review", { commit, verdict: "pass", findings: [{ severity: "non_blocking", file: "src.ts", line: 1, issue: "name", command: "cat src.ts" }] });
@@ -3977,8 +4352,15 @@ describe("report → review → accept", () => {
     expect(acc.isError).toBeFalsy();
     expect(sh(r.lead.worktree!, "git", ["log", "-1", "--format=%s"])).toBe("Merge T1: add src");
     expect(deriveFeature("cache", r.events()).tasks.get("T1")!.status).toBe("accepted");
-    expect(r.paseo.archived).toEqual(expect.arrayContaining([r.peer.agentId, rev.agentId]));
+    expect(r.paseo.archivedWorkspaces).toEqual(expect.arrayContaining([r.peer.workspaceId, rev.workspaceId]));
     expect(r.ctx.identities.byAgent(r.peer.agentId!)).toBeNull();
+  });
+  it("can start a second reviewer on the same commit", async () => {
+    const r = await reported();
+    await processReportFor(r.ctx, r.peer);
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-review", task: "T1", prompt: "a" })).isError).toBeFalsy();
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-review", task: "T1", prompt: "b" })).isError).toBeFalsy();
+    expect(r.paseo.created[2]!.cwd).not.toBe(r.paseo.created[3]!.cwd);
   });
 });
 
@@ -3993,7 +4375,7 @@ describe("ship", () => {
     const bare = join(r.home, "origin.git"); sh(r.home, "git", ["init", "-q", "--bare", bare]); sh(r.lead.worktree!, "git", ["remote", "add", "origin", bare]);
     r.ctx.config.ship.openPr = false;
     expect((await r.call(r.sup, "slp_ship", { feature: "cache", quote: "ship" })).isError).toBe(true);
-    r.human("sup-1", "ship đi");
+    await r.human("ship đi");
     const shipped = await r.call(r.sup, "slp_ship", { feature: "cache", quote: "ship đi" });
     expect(shipped.isError).toBeFalsy();
     expect(sh(bare, "git", ["rev-parse", "feat/cache"])).toBe(headOf(r.lead.worktree!));
@@ -4002,13 +4384,14 @@ describe("ship", () => {
 });
 
 describe("slp_checkpoint", () => {
-  it("rotates a Lead to a fresh agent with the checkpoint and retires the old identity", async () => {
+  it("rotates a Lead to a fresh agent in the same workspace and retires the old identity", async () => {
     const r = await withLeadAndPlan();
     const res = await r.call(r.lead, "slp_checkpoint", { summary: "T1 next", pending_human: [], promises: ["ship by Friday"] });
     expect(res.text).toMatch(/replacement/);
     const fresh = r.paseo.created.at(-1)!;
     expect(String(fresh.prompt)).toContain("ship by Friday");
-    expect(fresh.parent).toBe("sup-1");
+    expect(fresh).toMatchObject({ parent: "sup-1", cwd: r.lead.worktree, workspaceId: r.lead.workspaceId });
+    expect(r.ctx.identities.byAgent(fresh.id)).toMatchObject({ role: "lead", worktree: r.lead.worktree, branch: "feat/cache" });
     expect(r.ctx.identities.byAgent(r.lead.agentId!)).toBeNull();
     expect(r.paseo.archived).toContain(r.lead.agentId);
   });
@@ -4025,12 +4408,13 @@ Expected: FAIL, "Cannot find module '../server/tools'".
 `plugin/server/tools/work.ts`:
 ```ts
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
-import { appendAs, appendPlugin, humanMessagesFor, leadAddress, notify, refreshDigest, requireFeature, routeFrom, supervisorAddress, type Ctx } from "../context";
+import { appendAs, appendPlugin, humanMessagesFor, leadAddress, notify, refreshDigest, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, type CreateOptions, type Ctx } from "../context";
 import { processReport, verifyFeature, type PipelineDeps, type ReportOutcome } from "../evidence";
-import { addWorktree, diffStat, git, headOf, mergeNoHooks, pushNoHooks, removeWorktree, trackedChanges } from "../git";
+import { deleteBranch, diffStat, git, headOf, mergeNoHooks, pushNoHooks, startMerge } from "../git";
 import type { Identity } from "../identity";
 import type { ToolDef } from "../mcp/server";
 import { leadKickoff, reviewBrief, taskBrief } from "../prompts";
@@ -4046,26 +4430,51 @@ export function pipelineDeps(ctx: Ctx, project: string, feature: string): Pipeli
 }
 const stateOf = (ctx: Ctx, project: string, feature: string): FeatureState => deriveFeature(feature, ctx.stores.feature(project, feature).all());
 
-async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: string | null; task: string | null; worktree: string; reviewCommit?: string | null; parent: string | null; title: string; prompt: string; model?: string }): Promise<{ agentId: string; ident: Identity }> {
-  const ident = ctx.identities.mint({ role, project: o.project, feature: o.feature, task: o.task, worktree: o.worktree, reviewCommit: o.reviewCommit ?? null, parentAgentId: o.parent });
+type Placement =
+  | { kind: "worktree"; from: string; branch: string; base: string } // Paseo creates a worktree off `base`
+  | { kind: "workspace"; workspaceId: string }                     // reuse a workspace (rotation)
+  | { kind: "dir"; cwd: string };                                   // the Supervisor's project directory
+
+async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: string | null; task: string | null; placement: Placement; reviewCommit?: string | null; parent: string | null; title: string; prompt: string; model?: string; deferPrompt?: boolean }): Promise<{ agentId: string; ident: Identity }> {
+  const minted = ctx.identities.mint({ role, project: o.project, feature: o.feature, task: o.task, reviewCommit: o.reviewCommit ?? null, parentAgentId: o.parent });
   const profile = ctx.setup().profile[role] ?? {};
-  const agent = await ctx.paseo().agents.create({
+  const opts: CreateOptions = {
     config: { provider: providerString(role, o.model ?? profile.model), ...(profile.thinkingOptionId ? { thinkingOptionId: profile.thinkingOptionId } : {}), ...(profile.featureValues ? { featureValues: profile.featureValues } : {}) },
-    cwd: o.worktree, ...(o.parent ? { parent: o.parent } : {}), title: o.title, env: { SLP_TOKEN: ident.token }, prompt: o.prompt, clientMessageId: ctx.router.issue(),
-  });
-  return { agentId: agent.id, ident };
+    ...(o.parent ? { parent: o.parent } : {}), title: o.title, env: { SLP_TOKEN: minted.token },
+    ...(o.deferPrompt ? {} : { prompt: o.prompt, clientMessageId: ctx.router.issue() }),
+  };
+  const p = o.placement;
+  let agent: { id: string; workspaceId?: string | null };
+  try {
+    agent = p.kind === "workspace" ? await ctx.paseo().workspaces.ref(p.workspaceId).agents.create(opts)
+      : p.kind === "worktree" ? await ctx.paseo().agents.create({ ...opts, cwd: p.from, worktree: { mode: "branch-off", newBranch: p.branch, base: p.base } })
+      : await ctx.paseo().agents.create({ ...opts, cwd: p.cwd });
+  } catch (error) {
+    ctx.identities.retire(minted.tokenHash);
+    throw error;
+  }
+  const placed = ctx.identities.byToken(minted.token)!; // the before-create hook (T16) recorded worktree and branch
+  if (role !== "supervisor" && !placed.worktree) throw new ToolError("SLP: the plugin hook did not record a worktree for the new agent");
+  ctx.identities.place(placed.tokenHash, { worktree: placed.worktree, branch: placed.branch, workspaceId: agent.workspaceId ?? (p.kind === "workspace" ? p.workspaceId : null) });
+  return { agentId: agent.id, ident: ctx.identities.byToken(minted.token)! };
 }
 
 function activeWriters(ctx: Ctx, project: string): Identity[] {
   return ctx.identities.active(project).filter((i) => i.role === "peer-impl" && i.agentId);
 }
 
+/** Retires the identity and archives the agent's workspace (Paseo removes the worktree, keeps the branch). */
+export async function retireAgent(ctx: Ctx, i: Identity, repo: string): Promise<void> {
+  ctx.identities.retire(i.tokenHash);
+  if (i.workspaceId) await ctx.paseo().workspaces.ref(i.workspaceId).archive().catch(() => undefined);
+  else if (i.agentId) await ctx.paseo().agents.ref(i.agentId).archive().catch(() => undefined);
+  if (i.role === "peer-review" && i.branch) deleteBranch(repo, i.branch);
+}
+
 async function retireTaskAgents(ctx: Ctx, project: string, feature: string, task: string): Promise<void> {
   const repo = ctx.config.projects[project]!.repo;
   for (const i of ctx.identities.active(project).filter((x) => x.feature === feature && x.task === task && (x.role === "peer-impl" || x.role === "peer-review"))) {
-    ctx.identities.retire(i.token);
-    if (i.agentId) await ctx.paseo().agents.ref(i.agentId).archive().catch(() => undefined);
-    if (i.worktree) removeWorktree(repo, i.worktree);
+    await retireAgent(ctx, i, repo);
   }
 }
 
@@ -4083,9 +4492,9 @@ export async function processReportFor(ctx: Ctx, peer: Identity): Promise<Report
 export function workTools(ctx: Ctx): ToolDef[] {
   return [
     defineTool({
-      name: "slp_spawn", description: 'Create a Lead (Supervisor only) or a Peer for a task (Lead only). role: "lead" | "peer-impl" | "peer-review".',
+      name: "slp_spawn", description: 'Create a Lead (Supervisor only) or a Peer for a task (Lead only). role: "lead" | "peer-impl" | "peer-review". merge_base: start a Peer-impl with the base branch merged in, to resolve conflicts.',
       roles: ["supervisor", "lead"],
-      input: z.object({ role: z.enum(["lead", "peer-impl", "peer-review"]), feature: SLUG.optional(), task: z.string().optional(), model: z.string().optional(), prompt: z.string().min(1) }),
+      input: z.object({ role: z.enum(["lead", "peer-impl", "peer-review"]), feature: SLUG.optional(), task: z.string().optional(), model: z.string().optional(), prompt: z.string().min(1), merge_base: z.boolean().optional() }),
       async run(who, a) {
         const feature = requireFeature(who, a.feature);
         const project = ctx.config.projects[who.project]!;
@@ -4094,12 +4503,9 @@ export function workTools(ctx: Ctx): ToolDef[] {
           if (who.role !== "supervisor") throw new ToolError("only the Supervisor spawns Leads");
           if (!st.brief?.approved) throw new ToolError("the brief is not approved by the human yet");
           if (ctx.identities.current("lead", who.project, feature)) throw new ToolError(`feature ${feature} already has a Lead`);
-          const path = ctx.stores.worktreePath(who.project, feature, "lead");
-          git(project.repo, ["fetch", "--quiet", "origin"], true);
-          addWorktree(project.repo, path, { branch: `feat/${feature}`, from: project.baseBranch });
-          const { agentId } = await createAgent(ctx, "lead", { project: who.project, feature, task: null, worktree: path, parent: who.agentId, title: `[Lead] ${feature}`, prompt: leadKickoff(feature, ctx.stores.readDoc(st.brief.path), a.prompt) });
-          appendAs(ctx, who, feature, { kind: "assign", data: { role: "lead", agentId, worktree: path, branch: `feat/${feature}` } });
-          return `Lead ${agentId} started in ${path}.`;
+          const { agentId, ident } = await createAgent(ctx, "lead", { project: who.project, feature, task: null, placement: { kind: "worktree", from: project.repo, branch: `feat/${feature}`, base: project.baseBranch }, parent: who.agentId, title: `[Lead] ${feature}`, prompt: leadKickoff(feature, ctx.stores.readDoc(st.brief.path), a.prompt) });
+          appendAs(ctx, who, feature, { kind: "assign", data: { role: "lead", agentId, worktree: ident.worktree, branch: ident.branch } });
+          return `Lead ${agentId} started in ${ident.worktree} on ${ident.branch}.`;
         }
         if (who.role !== "lead") throw new ToolError("only the Lead spawns Peers");
         if (!st.plan?.approved) throw new ToolError("the plan is not approved yet");
@@ -4112,19 +4518,22 @@ export function workTools(ctx: Ctx): ToolDef[] {
           const model = task.model ?? a.model ?? ctx.setup().profile["peer-impl"]?.model;
           if (model && ctx.config.models.allowed.length && !ctx.config.models.allowed.map(normalizeModel).includes(normalizeModel(model))) throw new ToolError(`model ${model} is not in models.allowed`);
           const attempt = task.attempt + 1;
-          const path = ctx.stores.worktreePath(who.project, feature, `${task.id}-${attempt}`);
-          const base = headOf(who.worktree!);
-          addWorktree(project.repo, path, { branch: `slp/${feature}/${task.id}-${attempt}`, from: base });
-          const prompt = `${taskBrief(feature, task, st.premises, a.prompt)}`;
-          const { agentId } = await createAgent(ctx, "peer-impl", { project: who.project, feature, task: task.id, worktree: path, parent: who.agentId, title: `[Peer ${task.id}] ${feature}`, prompt, model });
-          appendAs(ctx, who, feature, { kind: "assign", data: { task: task.id, agentId, worktree: path, branch: `slp/${feature}/${task.id}-${attempt}`, base, attempt, model: model ?? null } });
-          return `Peer-impl ${agentId} started on ${task.id} in ${path}.`;
+          const prompt = taskBrief(feature, task, st.premises, a.prompt);
+          const { agentId, ident } = await createAgent(ctx, "peer-impl", { project: who.project, feature, task: task.id, placement: { kind: "worktree", from: who.worktree!, branch: `slp/${feature}/${task.id}-${attempt}`, base: who.branch ?? `feat/${feature}` }, parent: who.agentId, title: `[Peer ${task.id}] ${feature}`, prompt, model, deferPrompt: a.merge_base === true });
+          const base = headOf(ident.worktree!);
+          appendAs(ctx, who, feature, { kind: "assign", data: { task: task.id, agentId, worktree: ident.worktree, branch: ident.branch, base, attempt, model: model ?? null, mergeBase: a.merge_base === true } });
+          if (a.merge_base) {
+            git(ident.worktree!, ["fetch", "--quiet", "origin"], true);
+            const conflicts = startMerge(ident.worktree!, project.baseBranch);
+            const note = conflicts.length ? `Resolve the conflict markers in: ${conflicts.join(", ")}.` : "It merged without conflicts; check that the result builds and passes.";
+            await ctx.paseo().agents.ref(agentId).send(`${prompt}\n\n## Merge in progress\nThe plugin started merging ${project.baseBranch} into your branch. ${note} Do not run git; slp_report when done and the plugin records the merge commit.`, { messageId: ctx.router.issue() });
+          }
+          return `Peer-impl ${agentId} started on ${task.id} in ${ident.worktree}.`;
         }
-        if (!task.lastCommit) throw new ToolError(`${task.id} has no commit to review`);
+        if (!task.lastCommit || !task.branch) throw new ToolError(`${task.id} has no commit to review`);
         if (ctx.config.flags.evidenceCheck && !task.evidenceOk) throw new ToolError(`${task.id} has no green evidence on ${task.lastCommit.slice(0, 7)}`);
-        const path = ctx.stores.worktreePath(who.project, feature, `review-${task.id}-${task.attempt}-${task.lastCommit.slice(0, 7)}`);
-        addWorktree(project.repo, path, { detach: true, from: task.lastCommit });
-        const { agentId } = await createAgent(ctx, "peer-review", { project: who.project, feature, task: task.id, worktree: path, reviewCommit: task.lastCommit, parent: who.agentId, title: `[Review ${task.id}] ${feature}`, prompt: reviewBrief(feature, task, task.lastCommit, a.prompt) });
+        const branch = `slp/${feature}/review-${task.id}-${task.lastCommit.slice(0, 7)}-${randomUUID().slice(0, 8)}`;
+        const { agentId } = await createAgent(ctx, "peer-review", { project: who.project, feature, task: task.id, placement: { kind: "worktree", from: who.worktree!, branch, base: task.branch }, reviewCommit: task.lastCommit, parent: who.agentId, title: `[Review ${task.id}] ${feature}`, prompt: reviewBrief(feature, task, task.lastCommit, a.prompt) });
         return `Reviewer ${agentId} started on ${task.lastCommit.slice(0, 7)}.`;
       },
     }),
@@ -4166,8 +4575,8 @@ export function workTools(ctx: Ctx): ToolDef[] {
         if (!t.reviewOk) throw new ToolError(`${a.task} has no clean review on ${t.lastCommit.slice(0, 7)}; spawn a peer-review first`);
         if ([...st.challenges.values()].some((c) => c.open && c.target === a.task)) throw new ToolError(`${a.task} has an open challenge`);
         const merged = mergeNoHooks(who.worktree!, t.branch, `Merge ${t.id}: ${t.title}`);
-        if (!merged.ok) throw new ToolError(`merge conflict in: ${merged.conflicts.join(", ")}. Plan a resolve task.`);
-        appendPlugin(ctx, who.project, who.feature!, { kind: "merge", data: { task: t.id, source: t.branch, target: `feat/${who.feature}`, hash: merged.hash } });
+        if (!merged.ok) throw new ToolError(`merge conflict in: ${merged.conflicts.join(", ")}. Plan a resolve task (slp_spawn with merge_base for conflicts with the base branch).`);
+        appendPlugin(ctx, who.project, who.feature!, { kind: "merge", data: { task: t.id, source: t.branch, target: who.branch, hash: merged.hash } });
         appendAs(ctx, who, who.feature!, { kind: "release", data: { task: t.id, outcome: "accepted" } });
         await retireTaskAgents(ctx, who.project, who.feature!, t.id);
         return `${t.id} accepted and merged (${merged.hash.slice(0, 7)}).`;
@@ -4190,9 +4599,9 @@ export function workTools(ctx: Ctx): ToolDef[] {
       run(who) {
         const project = ctx.config.projects[who.project]!;
         git(who.worktree!, ["fetch", "--quiet", "origin"], true);
-        const merged = mergeNoHooks(who.worktree!, project.baseBranch, `Merge ${project.baseBranch} into feat/${who.feature}`);
-        if (!merged.ok) return `Conflicts in: ${merged.conflicts.join(", ")}. Add a resolve task to the plan and assign it to a Peer-impl.`;
-        appendPlugin(ctx, who.project, who.feature!, { kind: "merge", data: { source: project.baseBranch, target: `feat/${who.feature}`, hash: merged.hash } });
+        const merged = mergeNoHooks(who.worktree!, project.baseBranch, `Merge ${project.baseBranch} into ${who.branch}`);
+        if (!merged.ok) return `Conflicts in: ${merged.conflicts.join(", ")}. Add a resolve task to the plan, then slp_spawn it as a peer-impl with merge_base: true.`;
+        appendPlugin(ctx, who.project, who.feature!, { kind: "merge", data: { source: project.baseBranch, target: who.branch, hash: merged.hash } });
         return `Merged ${project.baseBranch} (${merged.hash.slice(0, 7)}). Re-run acceptance before shipping.`;
       },
     }),
@@ -4201,9 +4610,11 @@ export function workTools(ctx: Ctx): ToolDef[] {
       roles: ["supervisor"],
       input: z.object({ feature: SLUG, summary: z.string().min(1) }),
       async run(who, a) {
+        await syncHumanMessages(ctx, who); // an earlier "ship" must not approve this package
         const lead = ctx.identities.current("lead", who.project, a.feature);
         if (!lead?.worktree) throw new ToolError("feature has no Lead worktree");
         const v = await verifyFeature(pipelineDeps(ctx, who.project, a.feature), a.feature, lead.worktree);
+        if (v.runnerError) throw new ToolError(`cannot verify: ${v.runnerError}. Fix sandbox.runner in ~/.slp/config.json and retry.`);
         const events = ctx.stores.feature(who.project, a.feature).all();
         const st = deriveFeature(a.feature, events);
         const blockers = acceptanceBlockers(st, events, v.commit);
@@ -4220,7 +4631,8 @@ export function workTools(ctx: Ctx): ToolDef[] {
       name: "slp_ship", description: "Push the feature branch and open a PR, only after the human approved the latest ship package.",
       roles: ["supervisor"],
       input: z.object({ feature: SLUG, quote: z.string() }),
-      run(who, a) {
+      async run(who, a) {
+        await syncHumanMessages(ctx, who); // the approval usually arrives in this very turn
         const lead = ctx.identities.current("lead", who.project, a.feature);
         if (!lead?.worktree) throw new ToolError("feature has no Lead worktree");
         const head = headOf(lead.worktree);
@@ -4228,7 +4640,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
         const ok = verifyShipApproval(events, humanMessagesFor(ctx, who), { agentId: who.agentId!, quote: a.quote, commit: head });
         if (!ok.ok) throw new ToolError(`ship refused: ${ok.reason}`);
         appendAs(ctx, who, a.feature, { kind: "human_decision", data: { decides: "approve_ship", target: head, quote: a.quote, messageSeq: ok.seq } });
-        const branch = `feat/${a.feature}`;
+        const branch = lead.branch ?? `feat/${a.feature}`;
         pushNoHooks(lead.worktree, ctx.config.ship.remote, branch);
         let pr: string | null = null;
         if (ctx.config.ship.openPr) {
@@ -4254,8 +4666,10 @@ export function workTools(ctx: Ctx): ToolDef[] {
         if (who.feature) appendAs(ctx, who, who.feature, { kind: "checkpoint", data: { path: file } });
         else ctx.stores.project(who.project).append({ feature: null, kind: "checkpoint", by_role: who.role, by_agent: who.agentId, data: { path: file } }, ctx.now());
         const digests = who.feature ? refreshDigest(ctx, who.project, who.feature) : ctx.stores.features(who.project).map((f) => refreshDigest(ctx, who.project, f)).join("\n");
-        const { agentId } = await createAgent(ctx, who.role, { project: who.project, feature: who.feature, task: null, worktree: who.worktree ?? ctx.config.projects[who.project]!.repo, parent: who.parentAgentId, title: who.role === "lead" ? `[Lead] ${who.feature}` : "[Supervisor]", prompt: `[SLP] You take over the ${who.role} role from a previous agent.\n\n${body}\n\n## Current state\n${digests}` });
-        ctx.identities.retire(who.token);
+        if (who.role === "lead" && !who.workspaceId) throw new ToolError("no workspace recorded for this Lead; cannot rotate in place");
+        const placement: Placement = who.role === "lead" ? { kind: "workspace", workspaceId: who.workspaceId! } : { kind: "dir", cwd: ctx.config.projects[who.project]!.repo };
+        const { agentId } = await createAgent(ctx, who.role, { project: who.project, feature: who.feature, task: null, placement, parent: who.parentAgentId, title: who.role === "lead" ? `[Lead] ${who.feature}` : "[Supervisor]", prompt: `[SLP] You take over the ${who.role} role from a previous agent.\n\n${body}\n\n## Current state\n${digests}` });
+        ctx.identities.retire(who.tokenHash);
         if (who.agentId) await ctx.paseo().agents.ref(who.agentId).archive().catch(() => undefined);
         if (who.role === "supervisor") notify(ctx, supervisorAddress(who.project), "You replaced the previous Supervisor. Create your heartbeat now (see your role prompt).");
         return `Started replacement agent ${agentId}. End your turn now.`;
@@ -4277,7 +4691,9 @@ export function buildTools(ctx: Ctx): ToolDef[] {
 }
 ```
 
-Lưu ý: test `slp_checkpoint` mong agent cũ bị archive và identity cũ bị retire. Với Supervisor, `createAgent` truyền `worktree = repo` cho identity mới. Hook `before agent.create` vẫn kiểm cwd thuộc project, và token có sẵn nên không vướng luật "đã có Supervisor".
+Lưu ý:
+- Test `slp_checkpoint` mong agent cũ bị archive (chỉ agent, không archive workspace), và identity cũ bị retire. Với Supervisor, identity mới có token sẵn nên hook không vướng luật "đã có Supervisor".
+- `FakePaseo` (T17) chạy `transformCreate` thật, nên mọi test ở đây cũng kiểm luôn đường B1: agent con có `parent` mà không có `worktree` sẽ chạy ở cwd của cha, và T16 từ chối nếu đó là checkout chính.
 
 - [ ] **Step 4: Chạy test, phải pass**
 
@@ -4288,7 +4704,7 @@ Expected: PASS; typecheck sạch.
 
 ```bash
 git add plugin/server/tools/work.ts plugin/server/tools/index.ts plugin/test/tools.work.test.ts
-git commit -m "feat(plugin): spawn, report, review, accept, ship and checkpoint tools"
+git commit -m "feat(plugin): spawn into Paseo worktrees, report, review, accept, merge-base resolve, ship and checkpoint"
 ```
 
 ---
@@ -4297,13 +4713,24 @@ git commit -m "feat(plugin): spawn, report, review, accept, ship and checkpoint 
 
 **Files:**
 - Create: `plugin/server/hooks.ts`, `plugin/server/runtime.ts`, `plugin/index.server.ts`
-- Test: `plugin/test/hooks.test.ts`
+- Test: `plugin/test/hooks.test.ts`, `plugin/test/runtime.test.ts`
 
 **Interfaces:**
 - Consumes: mọi task trước
-- Produces: `onTurnStarted(ctx, agentId)`, `onTurnEnded(ctx, ev: { agent: { id: string }; outcome: { kind: string; error?: { message: string } } }): Promise<void>`, `onPermissionRequested(ctx, agentId, request: PermissionLike): Promise<void>`, `onAgentArchived(ctx, agentId)`, `onAgentClosed(ctx, agentId)`, `tick(ctx): Promise<void>`, `reconcile(ctx): Promise<void>`, `createRuntime(): Runtime`, `registerHooks(server, rt): Array<() => void>`
+- Produces: `onTurnStarted(ctx, agentId): Promise<void>`, `onTurnEnded(ctx, ev: { agent: { id: string }; outcome: { kind: string; error?: { message: string } } }): Promise<void>`, `onPermissionRequested(ctx, agentId, request: PermissionLike): Promise<void>`, `onAgentArchived(ctx, agentId)`, `onAgentClosed(ctx, agentId)`, `tick(ctx): Promise<void>`, `reconcile(ctx): Promise<void>`, `createRuntime(): Runtime`
 
-Plugin không có client `paseo` dùng được ngoài hook (spike: `PluginServerContext` không có `paseo`). Vì vậy `runtime` giữ lại `context.paseo` của hook đầu tiên. Trước thời điểm đó, timer chưa làm gì; `reconcile` chạy ngay khi giữ được client lần đầu.
+Plugin không có client `paseo` dùng được ngoài hook (spike: `PluginServerContext` không có `paseo`). Vì vậy `runtime` giữ lại `context.paseo` của hook đầu tiên. Đây là một `PaseoApi` sống suốt đời plugin (`plugin-process.ts:276`, review), nên dùng được trong timer. Trước thời điểm đó, timer chưa làm gì; `reconcile` chạy ngay khi giữ được client lần đầu.
+
+Các quyết định của bước nối dây:
+- **Agent không phải SLP không bao giờ chờ setup của SLP** (review B4). `capture` không await; `transformCreate` kiểm `roleOfProvider` trước, trả `req` nguyên vẹn nếu không phải vai SLP, chỉ sau đó mới await setup. Setup hỏng (thiếu provider, reviewer cùng vendor) chỉ làm hỏng việc tạo agent SLP.
+- **`onTurnEnded` chạy tuần tự theo agent** (review M3). Handler `turn_ended` trả về ngay (verify có thể lâu hơn 30 s), nhưng mỗi agent có một chuỗi promise riêng.
+  - Đoạn từ kiểm `prior` tới ghi `commit` ở T11 là code đồng bộ, nên tự nó không thể commit hai lần.
+  - Cần tuần tự vì phần sau có `await`: hai lần chồng nhau cùng thấy "đã commit, chưa có evidence", rồi cùng chạy verify, cùng nhắn Lead.
+- `turn_started` và `turn_ended` đều gọi `syncHumanMessages` (B3).
+- Runner hỏng: báo Supervisor (và báo Lead là đang chờ), không nhắn Peer (M6).
+- Review bị vô hiệu: retire reviewer, archive workspace của nó, xoá branch review, để Lead spawn reviewer mới (M4).
+- Permission `defer`: plugin không làm gì; request chờ trong app cho anh.
+- Lúc khởi động: `trustRepo` cho mọi project (T9). Project có repo hỏng chỉ bị log; agent của project đó sẽ không qua được `git()`, tức fail closed.
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -4313,15 +4740,14 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { onAgentArchived, onPermissionRequested, onTurnEnded, onTurnStarted, tick } from "../server/hooks";
-import { addWorktree } from "../server/git";
 import { deriveFeature } from "../server/store/derive";
-import { bound, makeCtx } from "./helpers";
+import { bound, makeCtx, sh } from "./helpers";
 
-function world() {
-  const w = makeCtx();
+function world(over: Record<string, unknown> = {}) {
+  const w = makeCtx(over);
   const sup = bound(w.ctx, { role: "supervisor", project: "demo", feature: null, task: null, worktree: null, reviewCommit: null, parentAgentId: null }, "sup-1");
   const lead = bound(w.ctx, { role: "lead", project: "demo", feature: "cache", task: null, worktree: w.repo, reviewCommit: null, parentAgentId: "sup-1" }, "lead-1");
-  const wt = join(w.home, "wt-T1"); addWorktree(w.repo, wt, { branch: "slp/cache/T1-1", from: "main" });
+  const wt = join(w.home, "wt-T1"); sh(w.repo, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "-b", "slp/cache/T1-1", wt, "main"]);
   const peer = bound(w.ctx, { role: "peer-impl", project: "demo", feature: "cache", task: "T1", worktree: wt, reviewCommit: null, parentAgentId: "lead-1" }, "peer-1");
   const store = w.ctx.stores.feature("demo", "cache");
   store.append({ feature: "cache", kind: "plan", by_role: "lead", by_agent: "lead-1", data: { version: 1, sha256: "p", path: "p", tasks: [{ id: "T1", title: "t", dependsOn: [], verifies: [], touchSet: ["a.ts"], verify: "test -f a.ts" }] } });
@@ -4346,12 +4772,23 @@ describe("turn_ended", () => {
   });
   it("schedules a resume on a limit stop and skips the rest of the pipeline", async () => {
     const w = world();
-    w.paseo.usage = [{ sourceLabel: "Claude", report: { windows: [{ usedPct: 100, resetsAt: new Date(Date.now() + 3600_000).toISOString() }] } }];
+    w.paseo.usage = { requestId: "r", fetchedAt: "", providers: [{ providerId: "claude", displayName: "Claude", status: "available", planLabel: null, windows: [{ id: "5h", label: "5h", usedPct: 100, resetsAt: new Date(Date.now() + 3600_000).toISOString() }] }] };
     w.paseo.timelines.set("peer-1", [{ type: "assistant_message", text: "You've hit your usage limit · resets at 3pm" }]);
     await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
     expect(w.ctx.resumes.jobs()).toHaveLength(1);
+    expect(Date.parse(w.ctx.resumes.jobs()[0]!.at)).toBeGreaterThan(Date.now() + 3500_000);
     expect(w.store.all().some((e) => e.kind === "ops" && e.data.type === "limit_hit")).toBe(true);
     expect(w.paseo.sent.filter((s) => s.agentId === "peer-1")).toEqual([]);
+  });
+  it("counts resume attempts across resumes and tells the Supervisor once the cap is reached", async () => {
+    const w = world({ limits: { resumeMaxAttempts: 1 } });
+    const limited = { kind: "failed" as const, error: { message: "429 Too Many Requests" } };
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: limited });
+    expect(w.ctx.resumes.due(new Date(Date.now() + 3 * 3600_000)).map((j) => j.attempt)).toEqual([1]);
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: limited });
+    await w.ctx.router.flush();
+    expect(w.ctx.resumes.jobs()).toEqual([]);
+    expect(w.paseo.sent.some((s) => s.agentId === "sup-1" && s.text.includes("still blocked"))).toBe(true);
   });
   it("commits and verifies after a reported turn and tells the Lead", async () => {
     const w = world();
@@ -4362,6 +4799,33 @@ describe("turn_ended", () => {
     await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
     expect(deriveFeature("cache", w.store.all()).tasks.get("T1")).toMatchObject({ evidenceOk: true });
     expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && /T1 committed [0-9a-f]{7}, verify exit 0/.test(s.text))).toBe(true);
+  });
+  it("handles one agent's turn ends one at a time, so overlapping runs commit and verify once", async () => {
+    const w = world();
+    await onTurnStarted(w.ctx, "peer-1");
+    writeFileSync(join(w.wt, "a.ts"), "x");
+    w.store.append({ feature: "cache", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done", message: "add a" } });
+    w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+    await Promise.all([onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done }), onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done })]);
+    expect(w.store.all().filter((e) => e.kind === "commit")).toHaveLength(1);
+    expect(w.store.all().filter((e) => e.kind === "evidence")).toHaveLength(1);
+    expect(w.store.all().some((e) => e.kind === "ops" && e.data.type === "report_rejected")).toBe(false);
+  });
+  it("tells the Supervisor, not the Peer, when the sandbox runner is broken", async () => {
+    const w = world({ sandbox: { runner: ["/nonexistent/runner"] } });
+    await onTurnStarted(w.ctx, "peer-1");
+    writeFileSync(join(w.wt, "a.ts"), "x");
+    w.store.append({ feature: "cache", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done", message: "add a" } });
+    w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    expect(w.paseo.sent.some((s) => s.agentId === "sup-1" && s.text.includes("sandbox runner"))).toBe(true);
+    expect(w.paseo.sent.filter((s) => s.agentId === "peer-1")).toEqual([]);
+  });
+  it("records a human message at turn start, before any tool runs", async () => {
+    const w = world();
+    w.paseo.timelines.set("sup-1", [{ type: "user_message", text: "ship đi", messageId: "h-9" }]);
+    await onTurnStarted(w.ctx, "sup-1");
+    expect(w.ctx.stores.project("demo").all().map((e) => e.data.text)).toEqual(["ship đi"]);
   });
   it("sends a failing verify back to the Peer", async () => {
     const w = world();
@@ -4381,14 +4845,16 @@ describe("turn_ended", () => {
     await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
     expect(w.paseo.sent.at(-1)).toMatchObject({ agentId: "lead-1", text: expect.stringContaining("stopped without reporting") });
   });
-  it("invalidates a review that changed tracked files", async () => {
+  it("invalidates a review that changed tracked files and retires the reviewer", async () => {
     const w = world();
-    const rwt = join(w.home, "rev"); addWorktree(w.repo, rwt, { detach: true, from: "main" });
+    const rwt = join(w.home, "rev"); sh(w.repo, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "--detach", rwt, "main"]);
     bound(w.ctx, { role: "peer-review", project: "demo", feature: "cache", task: "T1", worktree: rwt, reviewCommit: "abc", parentAgentId: "lead-1" }, "rev-1");
     writeFileSync(join(rwt, "README.md"), "tampered");
     w.ctx.toolCalls.set("rev-1", Date.now() + 1);
     await onTurnEnded(w.ctx, { agent: { id: "rev-1" }, outcome: done });
     expect(w.store.all().some((e) => e.kind === "ops" && e.data.type === "review_invalidated" && e.data.commit === "abc")).toBe(true);
+    expect(w.ctx.identities.byAgent("rev-1")).toBeNull();
+    expect(w.paseo.archived).toContain("rev-1");
   });
   it("asks a Lead to checkpoint once when its context passes the ratio", async () => {
     const w = world();
@@ -4405,15 +4871,14 @@ describe("turn_ended", () => {
 });
 
 describe("permissions, archive, tick", () => {
-  it("allows, denies, and defers to the parent role", async () => {
+  it("denies reserved commands and state-dir access, and leaves the rest to the human", async () => {
     const w = world();
-    await onPermissionRequested(w.ctx, "peer-1", { id: "r1", name: "mcp__slp__slp_report" });
-    await onPermissionRequested(w.ctx, "peer-1", { id: "r2", name: "Bash", input: { command: "git push" } });
+    await onPermissionRequested(w.ctx, "peer-1", { id: "r1", name: "Bash", input: { command: "git push" } });
+    await onPermissionRequested(w.ctx, "peer-1", { id: "r2", name: "Read", input: { file_path: join(w.home, "identities.json") } });
     await onPermissionRequested(w.ctx, "peer-1", { id: "r3", name: "Bash", input: { command: "make bench" } });
     await w.ctx.router.flush();
-    expect(w.paseo.responses.map((r) => `${r.requestId}:${r.behavior}`)).toEqual(["r1:allow", "r2:deny"]);
-    expect(w.store.all().find((e) => e.kind === "ops" && e.data.type === "permission_deferred")!.data).toMatchObject({ agentId: "peer-1", requestId: "r3", parent: "lead-1" });
-    expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && s.text.includes("slp_permit"))).toBe(true);
+    expect(w.paseo.responses.map((r) => `${r.requestId}:${r.behavior}`)).toEqual(["r1:deny", "r2:deny"]);
+    expect(w.paseo.sent).toEqual([]);
   });
   it("retires the identity of an archived agent", () => {
     const w = world();
@@ -4440,31 +4905,21 @@ Expected: FAIL, "Cannot find module".
 
 `plugin/server/hooks.ts`:
 ```ts
-import { appendPlugin, leadAddress, notify, supervisorAddress, type Ctx } from "./context";
+import { appendPlugin, leadAddress, notify, supervisorAddress, syncHumanMessages, type Ctx } from "./context";
 import { processChallengeEvidence } from "./evidence";
 import { trackedChanges } from "./git";
-import { extractHumanMessages, type TimelineItemLike } from "./human";
+import type { TimelineItemLike } from "./human";
 import type { Identity } from "./identity";
 import { decidePermission, type PermissionLike } from "./permissions";
-import type { Address } from "./router";
 import { deriveFeature } from "./store/derive";
-import { pipelineDeps, processReportFor } from "./tools/work";
+import { pipelineDeps, processReportFor, retireAgent } from "./tools/work";
 import { isLimitTurn, resumeAt, usageWindowsFrom } from "./watchdog";
 
-export function onTurnStarted(ctx: Ctx, agentId: string): void {
+/** The human's prompt is already in the timeline when the turn starts; record it before any tool checks a quote. */
+export async function onTurnStarted(ctx: Ctx, agentId: string): Promise<void> {
   ctx.turnStarts.set(agentId, Date.now());
-}
-
-const parentOf = (i: Identity): Address | null =>
-  i.role === "peer-impl" || i.role === "peer-review" ? leadAddress(i.project, i.feature!) : i.role === "lead" ? supervisorAddress(i.project) : null;
-
-function recordHumanMessages(ctx: Ctx, ident: Identity, items: TimelineItemLike[]): void {
-  for (const m of extractHumanMessages(items, (id) => ctx.router.isPluginMessageId(id), ctx.seen)) {
-    appendPlugin(ctx, ident.project, ident.feature, { kind: "human_message", data: { agentId: ident.agentId, text: m.text, messageId: m.messageId, role: ident.role } });
-    if (ident.role === "peer-impl" || ident.role === "peer-review") {
-      notify(ctx, leadAddress(ident.project, ident.feature!), `The human messaged Peer ${ident.task} directly: "${m.text.slice(0, 500)}". Decide whether it changes direction and record it (slp_rule or slp_challenge).`);
-    }
-  }
+  const ident = ctx.identities.byAgent(agentId);
+  if (ident) await syncHumanMessages(ctx, ident);
 }
 
 async function scheduleResume(ctx: Ctx, ident: Identity): Promise<void> {
@@ -4497,7 +4952,13 @@ async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean)
     ctx.nudges.reset(ident.agentId!);
     const flags = out.flags.outsideTouchSet.length ? ` Outside touch set: ${out.flags.outsideTouchSet.join(", ")}.` : "";
     const excluded = out.flags.excludedSensitive.length ? ` Excluded sensitive files: ${out.flags.excludedSensitive.join(", ")}.` : "";
-    notify(ctx, leadAddress(ident.project, feature), `${ident.task} committed ${out.commit.slice(0, 7)}, verify exit ${out.evidenceOk === null ? "skipped" : out.evidenceOk ? "0 ✓" : "non-zero ✗"}.${flags}${excluded}`);
+    const protectedFiles = out.flags.excludedProtected.length ? ` Not committed (hooks or paseo.json; a human must change these): ${out.flags.excludedProtected.join(", ")}.` : "";
+    if (out.runnerError) {
+      notify(ctx, supervisorAddress(ident.project), `The sandbox runner is broken, so ${feature} ${ident.task} @${out.commit.slice(0, 7)} cannot be verified: ${out.runnerError}. Fix sandbox.runner in ~/.slp/config.json; the plugin re-verifies on the Peer's next turn or on restart.`);
+      notify(ctx, leadAddress(ident.project, feature), `${ident.task} committed ${out.commit.slice(0, 7)}; verification waits on the sandbox runner (the Supervisor has been told).${flags}${excluded}${protectedFiles}`);
+      return;
+    }
+    notify(ctx, leadAddress(ident.project, feature), `${ident.task} committed ${out.commit.slice(0, 7)}, verify exit ${out.evidenceOk === null ? "skipped" : out.evidenceOk ? "0 ✓" : "non-zero ✗"}.${flags}${excluded}${protectedFiles}`);
     if (out.evidenceOk === false) {
       const ev = [...ctx.stores.feature(ident.project, feature).all()].reverse().find((e) => e.kind === "evidence" && e.data.commit === out.commit);
       await ctx.paseo().agents.ref(ident.agentId!).send(`[SLP plugin] Verify failed on ${out.commit.slice(0, 7)} (exit ${String(ev?.data.exitCode)}):\n${String(ev?.data.stderrTail ?? "").slice(-1500)}\nFix it and slp_report again.`, { messageId: ctx.router.issue() });
@@ -4522,7 +4983,8 @@ async function nudgeOrEscalate(ctx: Ctx, ident: Identity): Promise<void> {
 async function afterReviewTurn(ctx: Ctx, ident: Identity, calledTool: boolean): Promise<void> {
   if (ident.worktree && trackedChanges(ident.worktree).length > 0) {
     appendPlugin(ctx, ident.project, ident.feature, { kind: "ops", data: { type: "review_invalidated", task: ident.task, commit: ident.reviewCommit, summary: `review of ${ident.task} changed tracked files` } });
-    notify(ctx, leadAddress(ident.project, ident.feature!), `The reviewer of ${ident.task} changed tracked files; its review is invalid. Spawn a new reviewer.`);
+    await retireAgent(ctx, ident, ctx.config.projects[ident.project]!.repo);
+    notify(ctx, leadAddress(ident.project, ident.feature!), `The reviewer of ${ident.task} changed tracked files; its review is invalid and it was stopped. Spawn a new reviewer.`);
     return;
   }
   if (!calledTool) await nudgeOrEscalate(ctx, ident);
@@ -4534,17 +4996,29 @@ async function maybeAskForCheckpoint(ctx: Ctx, ident: Identity): Promise<void> {
   const u = ref.lastUsage;
   if (!u?.contextWindowMaxTokens || !u.contextWindowUsedTokens) return;
   const ratio = u.contextWindowUsedTokens / u.contextWindowMaxTokens;
-  if (ratio < ctx.config.rotation.contextRatio || ctx.flags.checkpointAsked.has(ident.token)) return;
-  ctx.flags.checkpointAsked.add(ident.token);
+  if (ratio < ctx.config.rotation.contextRatio || ctx.flags.checkpointAsked.has(ident.tokenHash)) return;
+  ctx.flags.checkpointAsked.add(ident.tokenHash);
   await ref.send(`[SLP plugin] Your context is at ${Math.round(ratio * 100)}%. Call slp_checkpoint now, then end your turn.`, { messageId: ctx.router.issue() });
 }
 
-export async function onTurnEnded(ctx: Ctx, ev: { agent: { id: string }; outcome: { kind: string; error?: { message: string } } }): Promise<void> {
+type TurnEnded = { agent: { id: string }; outcome: { kind: string; error?: { message: string } } };
+const chains = new WeakMap<Ctx, Map<string, Promise<void>>>();
+
+/** Runs one agent's turn-end handling at a time, so a real turn_ended and reconcile never process the same report together. */
+export function onTurnEnded(ctx: Ctx, ev: TurnEnded): Promise<void> {
+  const byAgent = chains.get(ctx) ?? new Map<string, Promise<void>>();
+  chains.set(ctx, byAgent);
+  const next = (byAgent.get(ev.agent.id) ?? Promise.resolve()).then(() => turnEnded(ctx, ev));
+  byAgent.set(ev.agent.id, next.catch(() => undefined));
+  return next;
+}
+
+async function turnEnded(ctx: Ctx, ev: TurnEnded): Promise<void> {
   const ident = ctx.identities.byAgent(ev.agent.id);
   if (!ident) return;
+  await syncHumanMessages(ctx, ident).catch(() => undefined);
   const page = await ctx.paseo().agents.ref(ev.agent.id).timeline.refetch({ direction: "tail", limit: 30 }).catch(() => ({ entries: [] }));
   const items = (page.entries ?? []).map((e) => (e.item ?? e) as TimelineItemLike);
-  recordHumanMessages(ctx, ident, items);
   const lastText = [...items].reverse().find((i) => i.type === "assistant_message")?.text ?? null;
   if (isLimitTurn(ev.outcome, lastText)) { await scheduleResume(ctx, ident); return; }
   ctx.resumes.clear(ev.agent.id);
@@ -4556,23 +5030,19 @@ export async function onTurnEnded(ctx: Ctx, ev: { agent: { id: string }; outcome
   await ctx.router.flush();
 }
 
+/** `defer` means the plugin does not decide: the request stays pending in the app for the human. */
 export async function onPermissionRequested(ctx: Ctx, agentId: string, request: PermissionLike): Promise<void> {
   const ident = ctx.identities.byAgent(agentId);
-  const decision = decidePermission(request, ident);
-  if (decision.action === "ignore" || !ident) return;
+  const decision = decidePermission(request, ident, { deniedRoots: ctx.stateDirs });
+  if (decision.action === "ignore" || decision.action === "defer" || !ident) return;
   const ref = ctx.paseo().agents.ref(agentId);
   if (decision.action === "allow") { await ref.respondToPermission({ requestId: request.id, response: { behavior: "allow" } }); return; }
-  if (decision.action === "deny") { await ref.respondToPermission({ requestId: request.id, response: { behavior: "deny", message: decision.message } }); return; }
-  const parent = parentOf(ident);
-  const parentAgent = parent ? ctx.identities.current(parent.role, parent.project, parent.feature)?.agentId ?? null : null;
-  const feature = ident.feature ?? null;
-  appendPlugin(ctx, ident.project, feature ?? (parent?.feature ?? null), { kind: "ops", data: { type: "permission_deferred", agentId, requestId: request.id, parent: parentAgent, summary: `${ident.role} ${ident.task ?? ""} asks: ${decision.reason}`.trim() } });
-  if (parent) notify(ctx, parent, `${ident.role}${ident.task ? ` ${ident.task}` : ""} asks permission: ${decision.reason}. Decide with slp_permit {agent_id: "${agentId}", request_id: "${request.id}", allow}.`);
+  await ref.respondToPermission({ requestId: request.id, response: { behavior: "deny", message: decision.message } });
 }
 
 export function onAgentArchived(ctx: Ctx, agentId: string): void {
   const ident = ctx.identities.byAgent(agentId);
-  if (ident) ctx.identities.retire(ident.token);
+  if (ident) ctx.identities.retire(ident.tokenHash);
 }
 
 export function onAgentClosed(ctx: Ctx, agentId: string): void {
@@ -4620,16 +5090,18 @@ Ghi chú về `tick`: tin resume đầu tiên gửi ngay, các tin sau giãn m�
 
 `plugin/server/runtime.ts`:
 ```ts
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { bindSession, transformCreate, type CreateRequest } from "./agentConfig";
 import { loadSlpConfig, slpHome, type SlpConfig } from "./config";
 import type { Ctx, PaseoLike } from "./context";
+import { trustRepo } from "./git";
 import { reconcile, tick } from "./hooks";
 import { SeenIds } from "./human";
 import { IdentityRegistry } from "./identity";
 import { startMcpServer } from "./mcp/server";
 import { promptFor } from "./prompts";
-import { resolveRoleSetup, type RoleSetup } from "./roles";
+import { resolveRoleSetup, roleOfProvider, type RoleSetup } from "./roles";
 import { Router } from "./router";
 import { runSandboxed, checkRunner } from "./sandbox";
 import { deriveFeature } from "./store/derive";
@@ -4645,6 +5117,10 @@ export function createRuntime(): Runtime {
   let paseo: PaseoLike | null = null;
   let setup: RoleSetup | null = null;
   let setupPromise: Promise<RoleSetup> | null = null;
+  for (const [name, project] of Object.entries(config.projects)) {
+    try { trustRepo(project.repo); } catch (e) { console.error(`[slp] project ${name}: ${String(e)}`); }
+  }
+  const stateDirs = [home, process.env.PASEO_HOME ?? join(homedir(), ".paseo")];
   const identities = new IdentityRegistry(join(home, "identities.json"));
   const router = new Router({
     file: join(home, "router.json"), now: () => new Date(),
@@ -4657,7 +5133,7 @@ export function createRuntime(): Runtime {
     resumes: new ResumeQueue(join(home, "resume.json")), nudges: new NudgeTracker(join(home, "nudges.json")),
     setup: () => { if (!setup) throw new Error("SLP: role setup not loaded yet"); return setup; },
     paseo: () => { if (!paseo) throw new Error("SLP: no Paseo client captured yet"); return paseo; },
-    run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() },
+    run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs,
   };
   const tools = buildTools(ctx);
   const mcp = startMcpServer({ port: config.mcp.port, resolve: (t) => identities.byToken(t), tools: () => tools, onCall: (c) => { if (c.agentId) ctx.toolCalls.set(c.agentId, Date.now()); } });
@@ -4665,24 +5141,26 @@ export function createRuntime(): Runtime {
   const timer = setInterval(() => { if (paseo) void tick(ctx).catch((e) => console.error("[slp] tick failed", e)); }, 30_000);
   timer.unref();
 
-  // Hooks time out after 30 s, so capture only waits for the role setup; runner check and reconcile run in the background.
+  // Never awaited by hooks: non-SLP agents must not wait for, or fail on, SLP's setup (review B4).
   async function capture(p: unknown): Promise<void> {
-    if (!paseo) {
-      paseo = p as PaseoLike;
-      setupPromise = paseo.config.get().then((r) => (setup = resolveRoleSetup(r.config, { crossVendorReview: config.flags.crossVendorReview })));
-      void checkRunner(config.sandbox.runner, home).then((problem) => { if (problem) console.error(`[slp] ${problem}. Verification will fail closed until this is fixed.`); });
-      void setupPromise.then(() => reconcile(ctx)).catch((e) => console.error("[slp] setup or reconcile failed", e));
-    }
-    await setupPromise;
+    if (paseo) return;
+    paseo = p as PaseoLike;
+    setupPromise = paseo.config.get().then((r) => (setup = resolveRoleSetup(r.config, { crossVendorReview: config.flags.crossVendorReview })));
+    setupPromise.catch((e) => console.error("[slp] role setup failed; SLP agents cannot be created until ~/.paseo/config.json is fixed", e));
+    void checkRunner(config.sandbox.runner, home).then((problem) => { if (problem) console.error(`[slp] ${problem}. Verification will fail closed until this is fixed.`); });
+    void setupPromise.then(() => reconcile(ctx)).catch((e) => console.error("[slp] reconcile failed", e));
   }
 
   return {
     ctx, capture,
     async transformCreate(req) {
+      if (!roleOfProvider(req.config.provider)) return req;
       if (!setup) await setupPromise;
       return transformCreate(req, {
         identities, config, setup: () => ctx.setup(), mcpUrl: () => `http://127.0.0.1:${config.mcp.port}/mcp`,
         promptFor: (ident) => promptFor(ident, { cron: config.heartbeat.supervisorCron, task: ident.feature && ident.task ? deriveFeature(ident.feature, ctx.stores.feature(ident.project, ident.feature).all()).tasks.get(ident.task) ?? null : null }),
+        toolNames: (role) => tools.filter((t) => t.roles.includes(role)).map((t) => t.name),
+        stateDirs,
       });
     },
     bindSession: (req) => bindSession(req, identities),
@@ -4703,8 +5181,8 @@ export default function contribute(server: PluginServerContext) {
   const offs = [
     server.before("agent.create", async ({ request }, { paseo }) => { await rt.capture(paseo); return (await rt.transformCreate(request as never)) as never; }),
     server.before("agent.session_open", async ({ request }, { paseo }) => { await rt.capture(paseo); rt.bindSession(request); return undefined; }),
-    server.on("agent.turn_started", async ({ agent }, { paseo }) => { await rt.capture(paseo); onTurnStarted(rt.ctx, agent.id); }),
-    // turn_ended may run verify for up to verifyTimeoutSeconds: return at once and let the pipeline run in the background.
+    server.on("agent.turn_started", async ({ agent }, { paseo }) => { await rt.capture(paseo); void guard("turn_started", () => onTurnStarted(rt.ctx, agent.id)); }),
+    // turn_ended may run verify for up to verifyTimeoutSeconds: return at once; onTurnEnded serializes per agent.
     server.on("agent.turn_ended", async (ev, { paseo }) => { await rt.capture(paseo); void guard("turn_ended", () => onTurnEnded(rt.ctx, ev)); }),
     server.on("agent.permission_requested", async ({ agent, request }, { paseo }) => { await rt.capture(paseo); await guard("permission", () => onPermissionRequested(rt.ctx, agent.id, request as never)); }),
     server.on("agent.archived", async ({ agent }, { paseo }) => { await rt.capture(paseo); onAgentArchived(rt.ctx, agent.id); }),
@@ -4714,17 +5192,43 @@ export default function contribute(server: PluginServerContext) {
 }
 ```
 
-Lưu ý: event handler của Paseo có timeout 30 giây (spike, `plugins/reference.md`), còn `onTurnEnded` có thể chạy verify tới `verifyTimeoutSeconds`. Vì vậy handler `turn_ended` gọi `void guard(...)` để trả về ngay. Hai lần `turn_ended` chồng nhau cho cùng một report vẫn an toàn nhờ chống chạy hai lần ở T11, và router có khoá `flush`. Test đơn vị gọi `onTurnEnded` trực tiếp.
+Lưu ý: event handler của Paseo có timeout 30 giây (`plugins/runtime.ts:42`), còn `onTurnEnded` có thể chạy verify tới `verifyTimeoutSeconds`. Vì vậy handler `turn_ended` gọi `void guard(...)` để trả về ngay. Hai lần `turn_ended` chồng nhau cho cùng một agent được xếp hàng bằng chuỗi promise theo agent (test "handles one agent's turn ends one at a time…"); router có khoá `flush` riêng. Test đơn vị gọi `onTurnEnded` trực tiếp.
+
+`plugin/test/runtime.test.ts`:
+```ts
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { createRuntime } from "../server/runtime";
+import { FAKE_RUNNER, FakePaseo, initRepo, tmpDir } from "./helpers";
+
+describe("runtime", () => {
+  const saved = process.env.SLP_HOME;
+  afterEach(() => { process.env.SLP_HOME = saved; });
+  it("never blocks or breaks non-SLP agents when the SLP role setup is unusable", async () => {
+    const home = tmpDir(); process.env.SLP_HOME = home;
+    writeFileSync(join(home, "config.json"), JSON.stringify({ projects: { demo: { repo: initRepo(), verify: ["true"] } }, sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 } }));
+    const rt = createRuntime();
+    const paseo = new FakePaseo();
+    paseo.daemonConfig = { agents: { providers: {} } }; // file-shaped config: no top-level providers, so setup fails
+    await rt.capture(paseo);
+    const plain = { config: { provider: "claude/claude-haiku-4-5", cwd: "/x" } };
+    expect(await rt.transformCreate(plain)).toBe(plain);
+    await expect(rt.transformCreate({ config: { provider: "slp-supervisor", cwd: "/x" } })).rejects.toThrow(/slp-supervisor must exist/);
+    await rt.close();
+  });
+});
+```
 
 - [ ] **Step 4: Chạy test, phải pass; chạy toàn bộ suite và typecheck**
 
-Run: `cd plugin && npx vitest run test/hooks.test.ts && npm test && npm run typecheck`
+Run: `cd plugin && npx vitest run test/hooks.test.ts test/runtime.test.ts && npm test && npm run typecheck`
 Expected: PASS toàn bộ; typecheck sạch.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add plugin/server/hooks.ts plugin/server/runtime.ts plugin/index.server.ts plugin/test/hooks.test.ts
+git add plugin/server/hooks.ts plugin/server/runtime.ts plugin/server/context.ts plugin/index.server.ts plugin/test/helpers.ts plugin/test/hooks.test.ts plugin/test/runtime.test.ts
 git commit -m "feat(plugin): lifecycle hooks, runtime wiring, timers and reconcile"
 ```
 
@@ -4790,13 +5294,19 @@ Nhờ anh tạo agent bằng provider `SLP Supervisor` trong workspace `/tmp/slp
 | 4 | Tạo `slp-lead` bằng tay trong app thì bị từ chối | Lỗi "only be created through slp_spawn" |
 | 5 | Peer-impl không gọi được `paseo ls`, không ghi được ra ngoài worktree, không vào được localhost | Nhờ anh nhắn thẳng Peer yêu cầu làm ba việc này; ghi kết quả |
 | 6 | Tin anh nhắn thẳng Peer xuất hiện thành `human_message` và Lead được báo | Event và tin `[SLP plugin]` gửi tới Lead |
-| 7 | Plugin commit thay Peer, kèm trailer; verify chạy trong sandbox | `git -C ~/.slp/smoke/worktrees/*/T1-1 log -1 --format=%B`; event `evidence` |
-| 8 | Reviewer chạy Codex trên worktree detached tại đúng commit | `paseo ls --json`; `git -C <review worktree> rev-parse HEAD` |
-| 9 | `slp_accept` merge vào `feat/<slug>`, archive Peer | `git log feat/<slug>`; app |
+| 7 | Plugin commit thay Peer, kèm trailer; verify chạy trong sandbox | `git -C <worktree trong event assign của T1> log -1 --format=%B`; event `evidence` |
+| 8 | Reviewer chạy Codex trong worktree riêng tại đúng commit | `paseo ls --json`; `git -C <review worktree> rev-parse HEAD` |
+| 9 | `slp_accept` merge vào `feat/<slug>`, archive workspace của Peer và reviewer | `git log feat/<slug>`; app |
 | 10 | Gói ship chỉ được lập khi nghiệm thu đủ điều kiện; push sang `/tmp/slp-smoke-origin.git` chỉ diễn ra sau khi anh duyệt | `git -C /tmp/slp-smoke-origin.git log feat/<slug>` |
 | 11 | Timer dùng client `paseo` lấy từ hook mà vẫn chạy ổn (heartbeat, flush) | Log không có "no Paseo client captured" |
 | 12 | Restart plugin (`paseo plugin reload slp`) giữa chừng không làm mất hàng đợi và không ghi nhầm tin của plugin thành tin của anh | So `router.json` trước và sau; event `reconcile` |
 | 13 | Ghi nguyên văn lần đầu một vai dính limit, nếu có; nếu không có, ghi "không xảy ra" | Event `limit_hit` hoặc ghi chú |
+| 14 | Lead và mỗi Peer chạy trong worktree Paseo tạo (`~/.paseo/worktrees/…`), không trong repo gốc hay worktree của cha (B1) | `cwd` của từng agent trong `paseo ls --json` so với event `assign` |
+| 15 | Paseo nhận `base` là tên branch local (`feat/<slug>`, branch của task) khi tạo worktree, và không đòi remote cho branch đó | Event `assign`; log khi spawn Peer và reviewer |
+| 16 | Peer-impl không ghi được `<worktree>/.git` (sandbox `denyWrite` và permission) | Nhờ anh bảo Peer chạy `echo x > .git` và dùng Write vào `.git`; cả hai phải fail |
+| 17 | Tool `slp_*` không sinh permission prompt nào (toolPolicy) | App không hiện prompt cho `slp_*`; `paseo plugin logs slp` |
+| 18 | Ghi giá trị thật của `providerId`/`displayName` trong `providers.listUsage()` | `paseo provider usage --json` hoặc log |
+| 19 | Reviewer Codex có đọc được `~/.paseo` (token của agent khác) không — ghi kết quả cho §13 | Nhờ anh bảo reviewer chạy `ls ~/.paseo` |
 
 - [ ] **Step 4: Dọn dẹp và khôi phục**
 
@@ -4896,7 +5406,7 @@ git commit -m "docs: pressure scenarios for the Peer-impl prompt"
 | §6.5 Challenge, `slp_ask`/`slp_answer` | T17, T11 (bằng chứng challenge), T19 |
 | §6.6 Không ngồi chờ, nhắc challenge | T19 (`tick`) |
 | §6.7 Ship | T18, T4 |
-| §7.1 Router, định danh, tự duyệt tool, watchdog, nhắc báo cáo, commit thay Peer, kiểm bằng chứng, merge, reviewer không sửa, chặn quyền, canh touch set, cổng ship, đối soát | T7, T8, T12, T13, T14, T11, T18, T19 |
+| §7.1 Router, định danh, tự duyệt tool (`toolPolicy`), watchdog, nhắc báo cáo, commit thay Peer, kiểm bằng chứng, merge, reviewer không sửa, chặn quyền, canh touch set, cổng ship, đối soát | T7, T8, T12, T13, T14, T16, T11, T18, T19 |
 | §7.4–7.5 Vòng đời và xoay vòng | T18 (`slp_checkpoint`), T19 (hỏi checkpoint theo % context) |
 | §7.6 Kiểm câu duyệt | T4, T17, T18 |
 | §8 Cấu hình | T1, T20 |

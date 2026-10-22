@@ -10,14 +10,14 @@
 
 **Spec:** [`docs/superpowers/specs/2026-10-21-slp-paseo-design.md`](../specs/2026-10-21-slp-paseo-design.md) (rev 4). Bằng chứng nền: [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md).
 
-**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 269 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 74 lần gỡ thử từng phần sửa mới (round 2 của review thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
+**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 267 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 80 lần gỡ thử từng phần sửa mới (round 3 thay chặn theo đường dẫn bằng worktree do plugin tạo, và thêm: tick một lượt một lúc, resume theo đúng job, câu duyệt mọi mệnh đề đều là đồng ý, evidence A→B→A; round 2 thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
 
-**Core mechanism:** mỗi ý tưởng một Supervisor (brief đầu tiên gắn nó với feature) → `slp_spawn` → Paseo tạo worktree và agent → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng, `toolPolicy`) và ghi worktree thật vào identity → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `turn_started`/`turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer (hook tắt, git dir tin cậy), chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh → mỗi `watch.intervalMinutes` plugin dựng gói kiểm (trạng thái, tool call gần nhất, lặp lại, file đang đổi) gửi Supervisor của feature; Supervisor steer Lead khi cần.
+**Core mechanism:** mỗi ý tưởng một Supervisor (brief đầu tiên gắn nó với feature) → `slp_spawn` → plugin tạo worktree (hook tắt) và một workspace `directory` cho nó, Paseo tạo agent trong đó → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng, `toolPolicy`) và ghi worktree thật vào identity → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `turn_started`/`turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer (hook tắt, git dir tin cậy), chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh → mỗi `watch.intervalMinutes` plugin dựng gói kiểm (trạng thái, tool call gần nhất, lặp lại, file đang đổi) gửi Supervisor của feature; Supervisor steer Lead khi cần.
 
 **Decisions:**
 - Mỗi feature dùng một file JSONL chỉ ghi thêm; trạng thái luôn được suy lại từ event, không lưu field status. Vì vậy restart hay compact không làm mất trạng thái.
 - MCP được tự viết bằng JSON-RPC qua HTTP (khoảng 80 dòng, đã chạy được ở spike), không dùng SDK MCP. Đổi lại: không hỗ trợ SSE/streaming. Spike cho thấy cả Claude lẫn Codex chỉ cần JSON.
-- Worktree do Paseo tạo (`agents.create({ worktree: { mode: "branch-off" } })`). Plugin đọc đường dẫn và branch thật trong `before agent.create`. Lý do: khi có `parent` mà không có workspace, Paseo ghi đè `cwd` của agent con bằng `cwd` của cha, nên worktree tự tạo bị bỏ qua (review 2026-10-22, B1).
+- Worktree do **plugin** tạo (rev 5.2, review Codex 2026-10-22): `git worktree add` với hook tắt dưới `~/.slp-worktrees/<project>/<branch>`, rồi `workspaces.create({ source: { kind: "directory", path } })` và `workspace.agents.create({ parent, … })`. Workspace có `workspaceId` rõ thì Paseo đặt `cwd` theo workspace chứ không theo cha (`create-agent/intent.ts` `resolvePlacement`, review B1), còn `parent` vẫn gắn agent vào cây. Workspace `directory` không chạy `worktree.setup`, và archive chỉ chạy `teardown` với worktree dưới `~/.paseo/worktrees` (source 0.12), nên không lệnh nào của repo chạy ngoài sandbox cho agent SLP. Plugin tự gỡ worktree khi task xong, giữ branch.
 - Plugin không tin file `<worktree>/.git`. Mọi lệnh git của plugin tắt hook và fsmonitor, và dùng `--git-dir` lấy từ common dir của repo đã đăng ký. Plugin không bao giờ commit thay đổi ở thư mục hook hay `paseo.json`, vì Paseo tự chạy chúng ngoài sandbox khi tạo worktree (B2).
 - Plan của Lead gửi lên dưới dạng dữ liệu có cấu trúc (danh sách task) kèm markdown, để plugin không phải parse markdown.
 - Mỗi feature một Supervisor (spec rev 4): mọi cạnh router nằm trong một feature; Supervisor chỉ đọc được feature khác. Phần xuyên feature do plugin làm bằng luật: hàng chờ contract trong `project.jsonl` (duyệt plan trước giữ contract), báo touch set chạm nhau, báo khi một feature ship.
@@ -46,7 +46,7 @@
 - Provider ID: `slp-supervisor`, `slp-lead`, `slp-peer-impl`, `slp-peer-review`. Vendor mặc định: Supervisor, Lead, Peer-impl = `claude`; Peer-review = `codex`. Reviewer phải khác vendor với Peer-impl khi `flags.crossVendorReview` bật. [Spec §2, §4, §8]
 - State nằm ở `~/.slp/<project>/` (đổi được qua biến môi trường `SLP_HOME`, chỉ để test). Mỗi feature có `events.jsonl` chỉ ghi thêm; plugin là writer duy nhất. Repo của project không chứa file SLP nào. [Spec §5]
 - Plugin không bao giờ chạy code của repo ngoài sandbox. Mọi lệnh git của plugin dùng `-c core.hooksPath=/dev/null -c core.fsmonitor=false` và `--git-dir`/`--work-tree` cố định từ common dir tin cậy; commit/merge/push thêm `--no-verify`. Verify và hook chạy qua `sandbox.runner` (mặc định `["codex","sandbox","-P",":workspace","-C","{worktree}","--"]`). Runner hỏng thì fail closed và báo Supervisor. [Spec §7 luật chung, §9]
-- Vai Claude chạy mode `default`, kèm `providerOptions.sandbox = { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite, denyRead: ["~/.slp", mọi mục trong "~/.paseo" trừ "worktrees/"] }, network: { allowLocalBinding: false, allowedDomains } }`. Chỉ Peer-impl có `allowedDomains = sandbox.claudeAllowedDomains` (mặc định `["registry.npmjs.org","pypi.org","files.pythonhosted.org"]`) và `denyWrite: [<worktree>/.git]`; các vai Claude khác dùng `[]` và `denyWrite: [cwd]`. Codex reviewer dùng `sandbox_mode: "workspace-write"`, `approval_policy: "on-request"`, `sandbox_workspace_write.network_access: false`. Tool `slp_*` được duyệt sẵn qua `toolPolicy.preapproved`. [Spec §4]
+- Vai Claude chạy mode `default`, kèm `providerOptions.sandbox = { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite, denyRead: ["~/.slp", "~/.paseo"] }, network: { allowLocalBinding: false, allowedDomains } }`. Chỉ Peer-impl có `allowedDomains = sandbox.claudeAllowedDomains` (mặc định `["registry.npmjs.org","pypi.org","files.pythonhosted.org"]`) và `denyWrite: [<worktree>/.git]`; các vai Claude khác dùng `[]` và `denyWrite: [cwd]`. Codex reviewer dùng `sandbox_mode: "workspace-write"`, `approval_policy: "on-request"`, `sandbox_workspace_write.network_access: false`. Tool `slp_*` được duyệt sẵn qua `toolPolicy.preapproved`. [Spec §4]
 - MCP server `slp` dạng `http` tại `http://127.0.0.1:<mcp.port>/mcp` (mặc định port `47320`), header `Authorization: Bearer <token riêng của agent>`. [Spec §7.1]
 - Tin do plugin gửi mang `messageId` có tiền tố `slp-`. Tin tới một agent đang chạy phải chờ tới khi agent `idle` (Paseo mặc định *ngắt* turn đang chạy). Ngoại lệ duy nhất: `slp_send` với `mode: "steer" | "interrupt"` từ Supervisor tới Lead của feature mình, hoặc từ Lead tới Peer của mình. [Spec §7.1 Router, §7.3]
 - Mỗi Supervisor đúng một feature; mọi cạnh router nằm trong một feature; Supervisor không ghi được feature khác. [Spec §2, §7.3]
@@ -767,6 +767,10 @@ describe("deriveFeature", () => {
     expect(deriveFeature("f", base).tasks.get("T1")!.evidenceOk).toBe(true);
     const changed = [...base, ev("plan", { version: 2, sha256: "p2", path: "p", tasks: [{ ...task("T1"), verify: "npm run strict" }] })];
     expect(deriveFeature("f", changed).tasks.get("T1")!.evidenceOk).toBe(false);
+    const defB = { ...def, verify: "npm run strict" };
+    const back = [...changed, ev("evidence", { scope: "task", task: "T1", commit: "c1", exitCode: 1, timedOut: false, dirty: [], def: defB }, { by_role: "plugin" }),
+      ev("plan", { version: 3, sha256: "p3", path: "p", tasks: [task("T1")] })];
+    expect(deriveFeature("f", back).tasks.get("T1")!.evidenceOk).toBe(true); // A → B → A: A's green evidence counts again
     const taken = [...base, ev("assign", { task: "T1", agentId: "p2", takeover: true }), ev("report", { task: "T1", status: "done", message: "m" }, { by_role: "peer-impl" })];
     expect(deriveFeature("f", taken).tasks.get("T1")).toMatchObject({ agentId: "p2", lastCommit: "c1", evidenceOk: true, status: "reported" });
     const two = [ev("plan", { version: 1, sha256: "p1", path: "p", tasks: [task("T1"), task("T2", ["T1"])] }),
@@ -947,7 +951,8 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
       } else if (e.kind === "commit") {
         if (e.data.scope !== "challenge") { ts.lastCommit = str(e.data.hash); ts.evidenceOk = false; ts.reviewOk = false; reviews.clear(); }
       } else if (e.kind === "evidence") {
-        if (e.data.scope === "task" && e.data.commit === ts.lastCommit) ts.evidenceOk = evidencePassed(e.data, taskDef(pt));
+        // Latest evidence for this commit under this definition, the same rule as evidenceOkFor: evidence from another definition is skipped, not counted as red.
+        if (e.data.scope === "task" && e.data.commit === ts.lastCommit && (e.data.def === undefined || JSON.stringify(e.data.def) === JSON.stringify(taskDef(pt)))) ts.evidenceOk = evidencePassed(e.data);
       } else if (e.kind === "review") {
         if (e.data.commit === ts.lastCommit) { reviews.set(String(e.by_agent), { commit: String(e.data.commit), ok: e.data.verdict === "pass" && Number(e.data.blocking ?? 1) === 0 }); ts.reviewOk = false; }
       } else if (e.kind === "ops") {
@@ -1022,7 +1027,7 @@ git commit -m "feat(plugin): derive premise, task and challenge state from event
 Quy tắc kiểm quote (report human attention và review Codex 2026-10-22):
 - Chỉ **tin mới nhất** của anh gửi agent đó, sau item cần duyệt, được xét. Câu "duyệt" rồi "khoan, chưa duyệt" hay "wait, stop" thì không duyệt gì.
 - Quote nằm trọn từ trong tin đó, ở một mệnh đề không có từ phủ định (`không`, `ko`, `chưa`, `đừng`, `no`, `not`…) và không phải câu hỏi.
-- Với cổng duyệt (brief, spec, ship), mệnh đề đó phải là một câu "đồng ý" thuần: có ít nhất một từ duyệt (`duyệt`, `ok`, `ship`, `đồng ý`, `lgtm`…) và chỉ gồm từ duyệt, từ đệm (`đi`, `nhé`, `luôn`, `brief`, `spec`…), số version và tên feature. "Please explain the risks" hay "ok để mình nghĩ thêm" không duyệt gì. Thêm nữa, cả tin không được có từ phủ định hay từ dừng (`stop`, `dừng`, `hủy`, `wait`…) ở bất kỳ đâu: "OK, wait, stop." và "OK. Do not ship." không duyệt. Đổi lại, "Không vấn đề gì. Duyệt" cũng bị từ chối và Supervisor phải hỏi lại; chấp nhận cái giá đó.
+- Với cổng duyệt (brief, spec, ship), mệnh đề đó phải là một câu "đồng ý" thuần: có ít nhất một từ duyệt (`duyệt`, `ok`, `ship`, `đồng ý`, `lgtm`…) và chỉ gồm từ duyệt, từ đệm (`đi`, `nhé`, `luôn`, `brief`, `spec`…), số version và tên feature. "Please explain the risks" hay "ok để mình nghĩ thêm" không duyệt gì. Và **mọi** mệnh đề trong tin đều phải là câu đồng ý thuần (danh sách trắng): "OK, wait, stop.", "If CI passes, ship.", "OK, but first explain the risks." hay "đồng ý, nhưng thêm test X sau" đều không duyệt (review Codex vòng 3: danh sách đen từ dừng không bắt được câu có điều kiện). Ghi chú gửi ở tin riêng. Supervisor xin anh một câu duyệt thuần cho từng mục.
 - Mỗi tin của anh chỉ đứng sau một quyết định (`messageId` ghi trong `human_decision`); ghi lại đúng quyết định đó cho đúng target (ship thử lại) thì được.
 Sai thì từ chối, Supervisor hỏi lại anh một câu rõ; plugin không bao giờ đoán là duyệt. Plugin vẫn không hiểu ngữ nghĩa: các luật trên chỉ chặn những cách trích sai dễ gặp.
 
@@ -1105,7 +1110,11 @@ describe("findHumanQuote", () => {
     expect(yes("please explain the risks", "explain the risks")).toBe(false);
     expect(yes("ok để mình nghĩ thêm", "ok")).toBe(false);
     expect(yes("Duyệt spec cache layer v2 nhé", "duyệt spec cache layer v2")).toBe(true);
-    expect(yes("đồng ý, nhưng thêm test X sau", "đồng ý")).toBe(true);
+    expect(yes("đồng ý, nhưng thêm test X sau", "đồng ý")).toBe(false);
+    expect(yes("If CI passes, ship.", "ship")).toBe(false);
+    expect(yes("OK, but first explain the risks.", "ok")).toBe(false);
+    expect(yes("Nếu CI xanh thì: ship.", "ship")).toBe(false);
+    expect(yes("Ok. Ship đi!", "ship đi")).toBe(true);
     expect(yes("OK, wait, stop.", "ok")).toBe(false);
     expect(yes("OK. Do not ship.", "ok")).toBe(false);
     expect(yes("Không vấn đề gì. Duyệt", "duyệt")).toBe(false);
@@ -1205,8 +1214,6 @@ const NEGATIONS = new Set(["không", "khong", "ko", "k", "hông", "chưa", "chua
 const APPROVE = new Set(["duyệt", "ok", "oke", "okay", "okie", "ổn", "đồng", "ý", "được", "chốt", "ship", "push", "approve", "approved", "yes", "lgtm", "go"]);
 const FILLER = new Set(["đi", "nhé", "nha", "luôn", "rồi", "này", "đó", "đấy", "cái", "cho", "mình", "em", "anh", "bạn", "thôi", "vậy", "ạ", "á", "à", "ừ", "vâng", "dạ", "brief", "spec", "plan", "it", "this", "the", "please"]);
 const words = (s: string) => s.split(/[^\p{L}\p{M}\p{N}']+/u).filter(Boolean);
-/** For approvals, any of these anywhere in the message blocks it: "OK, wait, stop." or "OK. Do not ship." approve nothing (review Codex 2026-10-22, round 2). */
-const RETRACT = new Set([...NEGATIONS, "stop", "dừng", "hủy", "huỷ", "cancel", "hold", "revert"]);
 
 /** The clause around each whole-word occurrence of `q` that is neither negated nor a question. */
 function clausesWith(text: string, q: string): string[] {
@@ -1247,7 +1254,10 @@ export function findHumanQuote(messages: readonly SlpEvent[], opts: { agentId: s
   if (!text.includes(q)) return { ok: false, reason: "the human's latest message does not contain that quote; quote their latest answer, or ask them to confirm plainly" };
   const clauses = clausesWith(text, q);
   const extra = new Set((opts.extraWords ?? []).flatMap((w) => words(norm(w))));
-  if (!clauses.length || (opts.affirm && (!clauses.some((c) => saysYes(c, extra)) || words(text).some((w) => RETRACT.has(w))))) {
+  // Approvals: every clause of the message must be a plain yes. A blacklist of stop words cannot catch "If CI passes, ship." or
+  // "OK, but first explain the risks."; a whitelist can (review Codex 2026-10-22, round 3). Notes go in a separate message.
+  const allClauses = text.split(CLAUSE_BREAK).filter((c) => words(c).length > 0);
+  if (!clauses.length || (opts.affirm && !allClauses.every((c) => saysYes(c, extra)))) {
     return { ok: false, reason: "in the human's latest message that quote is part of a word, negated, a question, or more than a plain yes; ask them to confirm plainly, e.g. \"duyệt\"" };
   }
   return { ok: true, seq: latest.seq, messageId: String(latest.data.messageId ?? latest.seq) };
@@ -1621,7 +1631,7 @@ git commit -m "feat(plugin): bounded per-feature digest"
 - Consumes: `Role` (T1)
 - Produces: `Identity { tokenHash; role; project; feature: string|null; task: string|null; worktree: string|null; workspaceId: string|null; branch: string|null; reviewCommit: string|null; agentId: string|null; parentAgentId: string|null; createdAt; retiredAt: string|null }`, `IdentityMeta`, `hashToken(token): string`, `class IdentityRegistry { mint(meta, now?): Identity & { token: string }; bind(token, agentId); byToken(token); byAgent(agentId); place(tokenHash, { worktree, workspaceId, branch }); setFeature(tokenHash, feature); current(role, project, feature, task?); last(role, project, feature): Identity | null; active(project); retire(tokenHash, now?) }`
 
-Registry chỉ lưu `sha256(token)`. Token thô chỉ có trong giá trị trả về của `mint()`, rồi nằm trong `env`/header MCP của chính agent đó. Đọc được `identities.json` cũng không lấy được token để mạo danh (review M1). `worktree`/`workspaceId`/`branch` được điền lúc `before agent.create`, vì worktree do Paseo tạo và chỉ biết đường dẫn ở bước đó (review B1). Supervisor được tạo khi chưa có feature; `setFeature` gắn feature cho nó ở brief đầu tiên (spec §7.4), và không đổi được sau đó.
+Registry chỉ lưu `sha256(token)`. Token thô chỉ có trong giá trị trả về của `mint()`, rồi nằm trong `env`/header MCP của chính agent đó. Đọc được `identities.json` cũng không lấy được token để mạo danh (review M1). `worktree`/`workspaceId`/`branch` được điền lúc `before agent.create` từ `cwd` của agent (worktree do plugin tạo, rev 5.2). Supervisor được tạo khi chưa có feature; `setFeature` gắn feature cho nó ở brief đầu tiên (spec §7.4), và không đổi được sau đó.
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -1991,14 +2001,13 @@ git commit -m "feat(plugin): role-filtered MCP server over HTTP"
 - Test: `plugin/test/git.test.ts`
 
 **Interfaces:**
-- Produces: `trustRepo(repo): void`, `class UntrustedGitDirError`, `git(cwd, args, allowFail?): { code; stdout; stderr }`, `headOf(cwd)`, `currentBranch(cwd)`, `gitCommonDir(cwd)`, `isAncestor(cwd, a, b)`, `deleteBranch(repo, branch)`, `changedFiles(worktree): string[]`, `trackedChanges(worktree): string[]`, `isSensitivePath(p): boolean`, `hooksDir(cwd): string | null`, `isProtectedPath(p, hookDir): boolean`, `worktreeCreateRisks(cwd, ref): string[]`, `scrubProtected(worktree): void` (throws when it cannot restore), `class NoChangesError`, `commitAll(worktree, { message; trailers; exclude }): string`, `commitTrailer(cwd, rev, key): string | null`, `mergeNoHooks(worktree, ref, message): { ok: true; hash } | { ok: false; conflicts: string[] }`, `startMerge(worktree, ref): string[]`, `pushNoHooks(worktree, remote, branch)`, `filesOutside(files, touchSet): string[]`, `hookFile(worktree, name): string | null`, `diffStat(cwd, from, to): string`
+- Produces: `trustRepo(repo): void`, `class UntrustedGitDirError`, `git(cwd, args, allowFail?): { code; stdout; stderr }`, `headOf(cwd)`, `currentBranch(cwd)`, `gitCommonDir(cwd)`, `isAncestor(cwd, a, b)`, `deleteBranch(repo, branch)`, `changedFiles(worktree): string[]`, `trackedChanges(worktree): string[]`, `isSensitivePath(p): boolean`, `hooksDir(cwd): string | null`, `isProtectedPath(p, hookDir): boolean`, `addWorktree(repo, path, branch, base): void`, `removeWorktree(repo, path): void`, `class NoChangesError`, `commitAll(worktree, { message; trailers; exclude }): string`, `commitTrailer(cwd, rev, key): string | null`, `mergeNoHooks(worktree, ref, message): { ok: true; hash } | { ok: false; conflicts: string[] }`, `startMerge(worktree, ref): string[]`, `pushNoHooks(worktree, remote, branch)`, `filesOutside(files, touchSet): string[]`, `hookFile(worktree, name): string | null`, `diffStat(cwd, from, to): string`
 
 Ba lớp chặn code của repo chạy ngoài sandbox qua git (review B2):
 - Mọi lệnh git của plugin có `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, không riêng commit/merge/push.
 - Plugin không tin file `<worktree>/.git`, vì file này nằm trong cwd của Peer và Peer ghi được. `git()` tự tìm admin dir bằng cách đọc ngược `<common dir>/worktrees/*/gitdir` của repo đã đăng ký qua `trustRepo`; common dir nằm ngoài sandbox của mọi vai. Sau đó chạy với `--git-dir` và `--work-tree` cố định. Thư mục không thuộc repo nào đã đăng ký thì `git()` ném `UntrustedGitDirError`, tức là fail closed.
 - Paseo tự chạy `git worktree add` (có hook `post-checkout`) và lệnh `worktree.setup` trong `paseo.json` khi tạo worktree mới, ngoài sandbox. Vì vậy plugin không bao giờ commit thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath` của repo) hay ở `paseo.json`. Các file này bị loại khỏi commit như file nhạy cảm và được báo cho Lead.
-- Chừng đó chưa đủ (review Codex 2026-10-22, CRITICAL): lệnh setup gọi file khác của repo (`node scripts/setup.js`, `npm ci` chạy script `postinstall` của `package.json`), và Peer sửa được các file đó. Vì vậy `worktreeCreateRisks(cwd, ref)` tìm mọi thứ Paseo sẽ chạy: `worktree.setup`, `worktree.teardown`, `worktree.terminals` trong `paseo.json` (ở `ref` và ở thư mục nguồn), file `post-checkout` có version ở thư mục hook, và hook `post-checkout` cục bộ trong `.git/hooks`. Có bất kỳ cái nào thì plugin **không tạo worktree** cho agent SLP (fail closed, báo rõ lý do). Cài dependency là việc của Peer trong sandbox, hoặc nằm trong lệnh verify. Shim của husky 9 (`.husky/_/`) chỉ gọi `.husky/post-checkout`, nên chỉ file đó được tính.
-- Trước khi archive workspace của agent, `scrubProtected(worktree)` xoá `paseo.json` và mọi thư mục hook rồi checkout lại từ HEAD (kể cả file bị `.gitignore`), sau đó so với HEAD; không chứng minh được thì ném lỗi và workspace **không** bị archive. Lý do: Paseo 0.12 đọc `teardown` từ chính worktree đang bị archive (`utils/worktree.ts:767`, đã đọc source), và agent ghi được vào đó. Plugin cũng từ chối `Write`/`Edit` vào `paseo.json` và thư mục hook (T14), nhưng lệnh shell của Peer vẫn ghi được, nên bước dọn này là chốt chặn.
+- Rev 5.2 (review Codex 2026-10-22, ba vòng): vá từng đường dẫn không đủ, vì lệnh setup gọi file khác của repo (`npm ci` chạy `postinstall`), hook có thể nằm sau symlink, và `teardown` được đọc từ chính worktree lúc archive. Vì vậy **plugin tự tạo worktree** (`addWorktree`, hook tắt) dưới `ctx.worktreeRoot` (mặc định `~/.slp-worktrees/<project>/`), rồi gắn agent vào một workspace kiểu `directory`. Theo source Paseo 0.12, workspace `directory` không chạy setup, và archive chỉ chạy `teardown` với worktree nằm dưới `~/.paseo/worktrees`. Plugin tự gỡ worktree (`removeWorktree`) khi task xong, giữ branch.
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -2007,7 +2016,7 @@ Ba lớp chặn code của repo chạy ngoài sandbox qua git (review B2):
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, NoChangesError, scrubProtected, startMerge, trackedChanges, trustRepo, UntrustedGitDirError, worktreeCreateRisks } from "../server/git";
+import { addWorktree, changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, NoChangesError, removeWorktree, startMerge, trackedChanges, trustRepo, UntrustedGitDirError } from "../server/git";
 import { initRepo, sh, tmpDir } from "./helpers";
 
 function withHusky(repo: string, marker: string): void {
@@ -2094,38 +2103,17 @@ describe("git helpers", () => {
     expect(hookFile(repo(), "pre-commit")).toBeNull();
     expect(git(r, ["config", "--get", "core.fsmonitor"], true).code).toBe(0);
   });
-  it("finds repo code Paseo would run outside the sandbox when it creates or archives a worktree", () => {
-    const r = repo();
-    expect(worktreeCreateRisks(r, "main")).toEqual([]);
-    writeFileSync(join(r, "paseo.json"), JSON.stringify({ worktree: { setup: ["npm ci"], teardown: "rm -rf x", terminals: [] } }));
-    mkdirSync(join(r, ".husky")); writeFileSync(join(r, ".husky", "post-checkout"), "#!/bin/sh\n");
-    sh(r, "git", ["add", "."]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "setup"]);
-    expect(worktreeCreateRisks(r, "main")).toEqual(["paseo.json worktree.setup", "paseo.json worktree.teardown", ".husky/post-checkout"]);
-    const plain = repo();
-    writeFileSync(join(plain, ".git", "hooks", "post-checkout"), "#!/bin/sh\n");
-    expect(worktreeCreateRisks(plain, "main")).toEqual([".git/hooks/post-checkout"]);
-    const husky = repo();
-    mkdirSync(join(husky, ".husky", "_"), { recursive: true }); writeFileSync(join(husky, ".husky", "_", "post-checkout"), "#!/bin/sh\nnode scripts/x.js\n");
-    sh(husky, "git", ["add", "-f", ".husky"]); sh(husky, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "shim"]); sh(husky, "git", ["config", "core.hooksPath", ".husky/_"]);
-    expect(worktreeCreateRisks(husky, "main")).toEqual([".husky/_/post-checkout"]);
-  });
-  it("resets paseo.json and hook dirs in a worktree before it is archived", () => {
-    const r = repo(); writeFileSync(join(r, "paseo.json"), "{}\n"); sh(r, "git", ["add", "."]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "cfg"]);
-    const wt = worktree(r, "slp/f/T3-1");
-    writeFileSync(join(wt, "paseo.json"), JSON.stringify({ worktree: { teardown: "curl evil" } }));
-    mkdirSync(join(wt, ".githooks")); writeFileSync(join(wt, ".githooks", "post-checkout"), "x");
-    writeFileSync(join(wt, "src.ts"), "keep me");
-    scrubProtected(wt);
-    expect(sh(wt, "cat", ["paseo.json"])).toBe("{}");
-    expect(existsSync(join(wt, ".githooks", "post-checkout"))).toBe(false);
-    expect(existsSync(join(wt, "src.ts"))).toBe(true);
-    // ignored by .gitignore and absent from HEAD: still removed
-    const r2 = repo(); writeFileSync(join(r2, ".gitignore"), "paseo.json\n"); sh(r2, "git", ["add", "."]); sh(r2, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "ignore"]);
-    const wt2 = worktree(r2, "slp/f/T4-1");
-    writeFileSync(join(wt2, "paseo.json"), JSON.stringify({ worktree: { teardown: "curl evil" } }));
-    expect(changedFiles(wt2)).toEqual([]);
-    scrubProtected(wt2);
-    expect(existsSync(join(wt2, "paseo.json"))).toBe(false);
+  it("creates and removes SLP worktrees with hooks off, keeping the branch", () => {
+    const r = repo(); const marker = join(tmpDir(), "pc.log"); withHusky(r, marker);
+    writeFileSync(join(r, "paseo.json"), JSON.stringify({ worktree: { setup: "touch SETUP_RAN" } })); sh(r, "git", ["add", "."]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "cfg"]);
+    const path = join(tmpDir(), "wts", "demo", "slp-f-T1-1");
+    addWorktree(r, path, "slp/f/T1-1", "main");
+    expect(currentBranch(path)).toBe("slp/f/T1-1");
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(join(path, "SETUP_RAN"))).toBe(false);
+    removeWorktree(r, path);
+    expect(existsSync(path)).toBe(false);
+    expect(sh(r, "git", ["branch", "--list", "slp/f/T1-1"])).toContain("slp/f/T1-1");
   });
 });
 ```
@@ -2140,7 +2128,7 @@ Expected: FAIL, "Cannot find module".
 `plugin/server/git.ts`:
 ```ts
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { matchTouch } from "./touch";
 
@@ -2226,59 +2214,22 @@ export function isProtectedPath(p: string, hookDir: string | null): boolean {
   return [".husky", ".githooks", ...(hookDir ? [hookDir] : [])].some((d) => p.startsWith(`${d}/`));
 }
 
-/** Repo code Paseo would run outside every sandbox when it creates or archives a worktree off `ref` from `cwd`. Non-empty: SLP refuses. */
-export function worktreeCreateRisks(cwd: string, ref: string): string[] {
-  const out: string[] = [];
-  const local = join(cwd, "paseo.json");
-  for (const text of [git(cwd, ["show", `${ref}:paseo.json`], true).stdout, existsSync(local) ? readFileSync(local, "utf8") : ""]) {
-    if (!text.trim()) continue;
-    let wt: Record<string, unknown> = {};
-    try { wt = (JSON.parse(text) as { worktree?: Record<string, unknown> }).worktree ?? {}; } catch { out.push("paseo.json is not valid JSON"); continue; }
-    for (const key of ["setup", "teardown", "terminals"]) {
-      const v = wt[key];
-      if (v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0)) out.push(`paseo.json worktree.${key}`);
-    }
-  }
-  // A relative core.hooksPath resolves inside the new worktree, so only versioned hook files matter there; no directory name is trusted (review Codex 2026-10-22, round 2).
-  const hookDir = hooksDir(cwd);
-  for (const f of new Set([".husky/post-checkout", ".githooks/post-checkout", ...(hookDir ? [`${hookDir}/post-checkout`] : [])])) {
-    if (git(cwd, ["cat-file", "-e", `${ref}:${f}`], true).code === 0) out.push(f);
-  }
-  const raw = run(cwd, ["config", "--get", "core.hooksPath"], true, ["-c", "core.fsmonitor=false"]).stdout.trim();
-  const localHook = raw ? (isAbsolute(raw) ? join(raw, "post-checkout") : null) : join(gitCommonDir(cwd), "hooks", "post-checkout");
-  if (localHook && existsSync(localHook)) out.push(raw ? localHook : ".git/hooks/post-checkout");
-  return [...new Set(out)];
+/**
+ * SLP's own worktree, made with hooks off (HARDEN). Paseo never creates or archives it: the agent gets a "directory" workspace,
+ * and Paseo runs worktree.setup only when it creates a worktree and worktree.teardown only for worktrees under ~/.paseo/worktrees
+ * (paseo 0.12 session.ts handleWorkspaceCreateLocal, workspace-archive-service.ts maybeRemoveDirectory). So no repo hook, setup,
+ * teardown or terminal command runs outside the sandbox for an SLP agent (review Codex 2026-10-22, round 3).
+ */
+export function addWorktree(repo: string, path: string, branch: string, base: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  git(repo, ["worktree", "add", "-q", "-b", branch, path, base]);
 }
 
-const filesUnder = (root: string, rel: string): string[] => {
-  const abs = join(root, rel);
-  if (!existsSync(abs) && !isSymlink(abs)) return [];
-  if (isSymlink(abs) || !lstatSync(abs).isDirectory()) return [rel];
-  return readdirSync(abs).flatMap((n) => filesUnder(root, `${rel}/${n}`));
-};
-const isSymlink = (p: string): boolean => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
-
-/**
- * Before Paseo archives a worktree it runs worktree.teardown from that worktree's own paseo.json (paseo 0.12 utils/worktree.ts:767).
- * So paseo.json and every hook dir are removed and checked out again from HEAD, whatever git status says (ignored files included),
- * and the result is compared with HEAD. Throws when it cannot prove that; the caller then does not archive (review Codex 2026-10-22, round 2).
- */
-export function scrubProtected(worktree: string): void {
-  const hookDir = hooksDir(worktree);
-  const paths = [...new Set(["paseo.json", ".husky", ".githooks", ...(hookDir ? [hookDir] : [])])];
-  const inHead = (rel: string) => git(worktree, ["ls-tree", "-r", "--name-only", "HEAD", "--", rel]).stdout.split("\n").filter(Boolean);
-  for (const rel of paths) {
-    const wanted = inHead(rel);
-    rmSync(join(worktree, rel), { recursive: true, force: true });
-    if (wanted.length) git(worktree, ["checkout", "HEAD", "--", rel]);
-  }
-  for (const rel of paths) {
-    const wanted = inHead(rel).sort();
-    const found = filesUnder(worktree, rel).sort();
-    if (JSON.stringify(found) !== JSON.stringify(wanted) || git(worktree, ["diff", "--quiet", "HEAD", "--", rel], true).code !== 0) {
-      throw new Error(`could not restore ${rel} in ${worktree} to HEAD`);
-    }
-  }
+/** Removes an SLP worktree (hooks off) and keeps its branch. */
+export function removeWorktree(repo: string, path: string): void {
+  git(repo, ["worktree", "remove", "--force", path], true);
+  rmSync(path, { recursive: true, force: true });
+  git(repo, ["worktree", "prune"], true);
 }
 
 export class NoChangesError extends Error {}
@@ -3185,7 +3136,7 @@ git commit -m "feat(plugin): persisted router with grouped idle delivery, scoped
 
 **Interfaces:**
 - Consumes: `Vendor` (T1), `readJson`/`writeJson` (T12)
-- Produces: `isLimitTurn(outcome: { kind: string; error?: { message: string } }, lastAssistantText: string | null): boolean`, `UsageWindow { vendor; resetsAt: string | null; usedPct: number | null }`, `usageWindowsFrom(result: unknown): UsageWindow[]`, `resumeAt(windows, vendor, now, attempt): Date`, `ResumeJob { agentId; vendor; at; attempt }`, `class ResumeQueue { schedule(job); due(now): ResumeJob[]; done(agentId); clear(agentId); attemptOf(agentId): number; jobs() }`, `class NudgeTracker { shouldNudge(agentId, max): boolean; reset(agentId) }`
+- Produces: `isLimitTurn(outcome: { kind: string; error?: { message: string } }, lastAssistantText: string | null): boolean`, `UsageWindow { vendor; resetsAt: string | null; usedPct: number | null }`, `usageWindowsFrom(result: unknown): UsageWindow[]`, `resumeAt(windows, vendor, now, attempt): Date`, `ResumeJob { agentId; vendor; at; attempt }`, `class ResumeQueue { schedule(job); due(now): ResumeJob[]; done(agentId, job?); postpone(job, at); clear(agentId); attemptOf(agentId): number; jobs() }`, `class NudgeTracker { shouldNudge(agentId, max): boolean; reset(agentId) }`
 
 `usageWindowsFrom` đọc payload của `paseo.providers.listUsage()`: `{ requestId, fetchedAt, providers: [{ providerId, displayName, status, windows: [{ id, label, usedPct?, resetsAt? }] }] }` (`ProviderUsageListResponseMessageSchema`, protocol `messages.ts:6237-6294`). Vendor suy từ `providerId`/`displayName`; giá trị `providerId` thật được ghi lại ở T21.
 
@@ -3258,8 +3209,12 @@ describe("persisted queues", () => {
     expect(q.attemptOf("b")).toBe(2);
     expect(q.due(new Date("2026-10-22T18:30:00Z")).map((j) => j.agentId)).toEqual(["a"]);
     expect(new ResumeQueue(file).jobs().map((j) => j.agentId)).toEqual(["a", "b"]);
-    q.done("a");
+    q.done("a", { attempt: 9, at: "2026-10-22T18:00:00Z" });
+    expect(new ResumeQueue(file).jobs().map((j) => j.agentId)).toEqual(["a", "b"]);
+    q.done("a", { attempt: 1, at: "2026-10-22T18:00:00Z" });
     expect(new ResumeQueue(file).jobs().map((j) => j.agentId)).toEqual(["b"]);
+    q.postpone({ agentId: "b", vendor: "codex", at: "2026-10-22T18:59:00Z", attempt: 2 }, "2026-10-22T20:00:00Z");
+    expect(new ResumeQueue(file).jobs()[0]!.at).toBe("2026-10-22T19:00:00Z");
     expect(new ResumeQueue(file).attemptOf("a")).toBe(1);
     q.clear("a"); q.clear("b");
     expect(new ResumeQueue(file).jobs()).toEqual([]);
@@ -3343,11 +3298,17 @@ export class ResumeQueue {
   due(now: Date): ResumeJob[] {
     return this.state.jobs.filter((j) => Date.parse(j.at) <= now.getTime());
   }
-  /** The resume was delivered: drop the job, keep the attempt count. */
-  done(agentId: string): void {
-    if (!this.state.jobs.some((j) => j.agentId === agentId)) return;
-    this.state.jobs = this.state.jobs.filter((j) => j.agentId !== agentId);
+  /** The resume was delivered: drop that job (only if it is still the same one, by attempt and time), keep the attempt count. */
+  done(agentId: string, job?: Pick<ResumeJob, "attempt" | "at">): void {
+    const match = (j: ResumeJob) => j.agentId === agentId && (!job || (j.attempt === job.attempt && j.at === job.at));
+    if (!this.state.jobs.some(match)) return;
+    this.state.jobs = this.state.jobs.filter((j) => !match(j));
     this.save();
+  }
+  /** Moves a job later only if it is still the one that was tried. */
+  postpone(job: ResumeJob, at: string): void {
+    if (!this.state.jobs.some((j) => j.agentId === job.agentId && j.attempt === job.attempt && j.at === job.at)) return;
+    this.schedule({ ...job, at });
   }
   clear(agentId: string): void {
     if (!this.state.jobs.some((j) => j.agentId === agentId) && !(agentId in this.state.attempts)) return;
@@ -3396,13 +3357,13 @@ git commit -m "feat(plugin): limit detection, usage-based resume times, persiste
 
 **Interfaces:**
 - Consumes: `Identity` (T7)
-- Produces: `PermissionLike { id: string; name?: string; kind?: string; title?: string; description?: string; input?: Record<string, unknown>; detail?: { type?: string; command?: string } }`, `PermissionDecision = { action: "allow" } | { action: "deny"; message: string } | { action: "defer"; reason: string } | { action: "ignore" }`, `PermissionOptions { deniedRoots: string[]; realpath?: (p: string) => string }`, `decidePermission(req, ident: Identity | null, opts?: PermissionOptions): PermissionDecision`, `paseoStatePaths(paseoHome: string): string[]`
+- Produces: `PermissionLike { id: string; name?: string; kind?: string; title?: string; description?: string; input?: Record<string, unknown>; detail?: { type?: string; command?: string } }`, `PermissionDecision = { action: "allow" } | { action: "deny"; message: string } | { action: "defer"; reason: string } | { action: "ignore" }`, `PermissionOptions { deniedRoots: string[]; realpath?: (p: string) => string }`, `decidePermission(req, ident: Identity | null, opts?: PermissionOptions): PermissionDecision`
 
 Tool `slp_*` không đi qua đây: `toolPolicy.preapproved` ở T16 cho phép sẵn (Claude: `allowedTools`; Codex: `approval_mode: "approve"`). `defer` nghĩa là plugin không quyết: request vẫn chờ trong app cho anh, như Paseo vốn làm (không còn `slp_permit`).
 
 Hai chặn mới so với spike:
 - `Write`/`Edit` vào `<worktree>/.git` bị từ chối, vì file này trỏ git tới admin dir. Paseo tự chạy git trong mọi workspace, ngoài sandbox (review B2).
-- Mọi tool có đường dẫn trong `deniedRoots` bị từ chối. `deniedRoots` là `~/.slp` và **từng mục** trong `~/.paseo` trừ `worktrees/` (`paseoStatePaths`), không phải cả `~/.paseo`: worktree của chính agent nằm dưới `~/.paseo/worktrees/`, nên chặn cả thư mục cha thì Peer không ghi được vào worktree của mình (review Codex 2026-10-22). Paseo lưu header MCP, tức token của mọi agent, trong agent storage dưới `~/.paseo` (`agent-storage.ts:30`). Danh sách lấy lúc plugin khởi động, cộng thêm các tên đã biết (`agents`, `agent-requests`, `local-credential`, `daemon-keypair.json`, `config.json`, …) để vẫn bị chặn nếu Paseo tạo sau. `WebFetch` tới localhost cũng bị từ chối (review M1).
+- Mọi tool có đường dẫn trong `deniedRoots` (`~/.slp`, `~/.paseo`) bị từ chối. Paseo lưu header MCP, tức token của mọi agent, trong agent storage dưới `~/.paseo` (`agent-storage.ts:30`). Worktree của SLP nằm ở `~/.slp-worktrees`, ngoài cả hai (rev 5.2), nên chặn cả `~/.paseo` không chặn agent ghi vào worktree của mình. `WebFetch` tới localhost cũng bị từ chối (review M1).
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -3413,7 +3374,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Identity } from "../server/identity";
-import { decidePermission, paseoStatePaths } from "../server/permissions";
+import { decidePermission } from "../server/permissions";
 import { tmpDir } from "./helpers";
 
 const ident = (role: Identity["role"], worktree: string | null): Identity =>
@@ -3426,16 +3387,6 @@ describe("decidePermission", () => {
   });
   it("leaves other MCP servers to the human (slp_* tools are preapproved by toolPolicy)", () => {
     expect(decidePermission({ id: "r", name: "CodexMcpElicitation", title: 'Allow the github MCP server to run tool "x"?' }, ident("peer-review", "/w")).action).toBe("defer");
-  });
-  it("denies Paseo state but not the worktrees Paseo keeps under ~/.paseo", () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "paseo-home-")));
-    mkdirSync(join(home, "worktrees", "abc"), { recursive: true }); mkdirSync(join(home, "agents")); mkdirSync(join(home, "something-new"));
-    const roots = paseoStatePaths(home);
-    expect(roots).toEqual(expect.arrayContaining([join(home, "agents"), join(home, "local-credential"), join(home, "something-new")]));
-    expect(roots).not.toContain(join(home, "worktrees"));
-    const wt = join(home, "worktrees", "abc");
-    expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, "src.ts") } }, ident("peer-impl", wt), { deniedRoots: roots }).action).not.toBe("deny");
-    expect(decidePermission({ id: "r", name: "Read", input: { file_path: join(home, "agents", "a.json") } }, ident("peer-impl", wt), { deniedRoots: roots }).action).toBe("deny");
   });
   it("denies any tool that touches the SLP or Paseo state dirs, and WebFetch to loopback", () => {
     const opts = { deniedRoots: ["/home/u/.slp", "/home/u/.paseo"], realpath: (p: string) => p };
@@ -3493,22 +3444,13 @@ Expected: FAIL, "Cannot find module".
 
 `plugin/server/permissions.ts`:
 ```ts
-import { existsSync, readdirSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { Identity } from "./identity";
 
 export interface PermissionLike { id: string; name?: string; kind?: string; title?: string; description?: string; input?: Record<string, unknown>; detail?: { type?: string; command?: string } }
 export type PermissionDecision = { action: "allow" } | { action: "deny"; message: string } | { action: "defer"; reason: string } | { action: "ignore" };
 export interface PermissionOptions { deniedRoots: string[]; realpath?: (p: string) => string }
-
-/** Names Paseo keeps state under, denied even if they appear after the plugin starts. */
-const PASEO_STATE = ["agents", "agent-requests", "local-credential", "daemon-keypair.json", "config.json", "creations", "runtime", "projects", "schedules", "models", "server-id", "cli-client-id", "desktop-attachments", "paseo.pid"];
-
-/** Everything under ~/.paseo except worktrees/: agents work inside ~/.paseo/worktrees, so denying the parent would block their own worktree. */
-export function paseoStatePaths(paseoHome: string): string[] {
-  const present = existsSync(paseoHome) ? readdirSync(paseoHome) : [];
-  return [...new Set([...PASEO_STATE, ...present])].filter((n) => n !== "worktrees").map((n) => join(paseoHome, n));
-}
 const LOOPBACK = /^(localhost|127(\.\d+){3}|\[?::1\]?|0\.0\.0\.0)$/i;
 
 const SHELL = new Set(["Bash", "CodexBash", "shell", "exec_command"]);
@@ -3877,7 +3819,7 @@ git commit -m "feat(plugin): role prompts and task/review briefs"
 - Consumes: `IdentityRegistry`, `Identity` (T7); `SlpConfig`, `projectForCwd` (T1); `RoleSetup`, `roleOfProvider`, `ROLE_PROVIDER`, `Role` (T1); `currentBranch`, `headOf`, `gitCommonDir` (T9)
 - Produces: `CreateRequest { config: { provider: string; cwd: string; modeId?: string; systemPrompt?: string; providerOptions?: unknown; toolPolicy?: { preapproved: McpToolRef[] }; mcpServers?: Record<string, unknown>; [k: string]: unknown }; env?: Record<string, string> }`, `AgentConfigDeps { identities; config; setup(): RoleSetup; mcpUrl(): string; promptFor(ident: Identity): string; toolNames(role: Role): string[]; stateDirs: string[] }`, `transformCreate(req, deps): CreateRequest`, `bindSession(req: { agentId: string; env: Record<string, string> }, identities): void`, `claudeSandbox(ident, config, cwd, stateDirs): Record<string, unknown>`
 
-Worktree của Lead và Peer do Paseo tạo (`agents.create({ worktree: { mode: "branch-off", … } })`, T18). Đây là cách duy nhất để agent con chạy đúng worktree: khi có `parent` mà không có workspace, Paseo ghi đè `cwd` bằng `cwd` của cha (`create-agent/intent.ts` `resolvePlacement`, review B1). Hook `before agent.create` chạy sau khi Paseo đã tạo worktree (`agent-manager.ts:1285`), nên `transformCreate`:
+Worktree của Lead và Peer do plugin tạo (T9 `addWorktree`, T18), mỗi cái có một workspace `directory`; agent được tạo trong workspace đó nên `cwd` là worktree, không phải `cwd` của cha (`create-agent/intent.ts` `resolvePlacement`, review B1). Hook `before agent.create` chạy khi worktree đã có, nên `transformCreate`:
 - ghi `worktree = config.cwd` và `branch` thật vào identity (Paseo có thể đổi tên branch để tránh trùng);
 - từ chối nếu `cwd` của Lead hoặc Peer là checkout chính của repo, tức Paseo không tạo worktree;
 - với reviewer, từ chối nếu HEAD của worktree khác `reviewCommit`.
@@ -4202,10 +4144,12 @@ export interface CreateOptions { config: Record<string, unknown>; parent?: strin
 export interface PaseoLike {
   agents: {
     ref(id: string): AgentRefLike;
-    create(o: CreateOptions & { cwd: string; worktree?: { mode: "branch-off"; newBranch: string; base: string } }): Promise<{ id: string; workspaceId?: string | null }>;
+    create(o: CreateOptions & { cwd: string }): Promise<{ id: string; workspaceId?: string | null }>;
   };
   workspaces: {
     ref(id: string): { agents: { create(o: CreateOptions): Promise<{ id: string; workspaceId?: string | null }> }; archive(): Promise<unknown> };
+    /** SDK workspaces.create with source "directory": Paseo runs no setup for it (T18). */
+    create(o: { source: { kind: "directory"; path: string }; title?: string }): Promise<{ id: string; agents: { create(o: CreateOptions): Promise<{ id: string; workspaceId?: string | null }> } }>;
   };
   providers: { listUsage(): Promise<unknown> };
   config: { get(): Promise<{ config: unknown }> };
@@ -4228,6 +4172,8 @@ export interface Ctx {
   flags: { checkpointAsked: Set<string>; challengeNudged: Set<string> };
   /** ~/.slp and ~/.paseo: no agent tool may touch them (T14). */
   stateDirs: string[];
+  /** Where SLP creates its own worktrees: outside ~/.paseo/worktrees, so Paseo treats them as plain directories (T9). */
+  worktreeRoot: string;
   /** Permission requests left to the human, by agent (T20 records them; the watch pack, T19, shows them). */
   pendingPermissions: Map<string, { name: string; since: number }>;
   log(message: string, error?: unknown): void;
@@ -4373,7 +4319,7 @@ import { NudgeTracker, ResumeQueue } from "../server/watchdog";
 
 /**
  * Mimics the parts of Paseo 0.12 the plugin relies on:
- * - `worktree: { mode: "branch-off" }` creates a real git worktree and the agent runs there;
+ * - `workspaces.create({ source: { kind: "directory" } })` makes a workspace for an existing directory, and its agents run there;
  * - a child with `parent` and no workspace runs in the parent's cwd (create-agent/intent.ts resolvePlacement);
  * - `beforeCreate` plays the `before agent.create` hook, `onSessionOpen` plays `before agent.session_open`.
  */
@@ -4386,6 +4332,7 @@ export class FakePaseo implements PaseoLike {
   responses: Array<{ agentId: string; requestId: string; behavior: string; message?: string }> = [];
   archived: string[] = [];
   archivedWorkspaces: string[] = [];
+  createdWorkspaces: Array<{ id: string; source: { kind: string; path: string }; title?: string }> = [];
   beforeCreate: ((req: CreateRequest) => CreateRequest) | null = null;
   onSessionOpen: ((agentId: string, env: Record<string, string>) => void) | null = null;
   private cwdOfAgent = new Map<string, string>();
@@ -4408,20 +4355,19 @@ export class FakePaseo implements PaseoLike {
         archive: async () => { self.archived.push(id); return {}; },
       };
     },
-    create: async (o: CreateOptions & { cwd: string; worktree?: { mode: "branch-off"; newBranch: string; base: string } }) => {
-      if (o.worktree) {
-        const path = pjoin(tmpDir("slp-wt-"), "wt");
-        sh(o.cwd, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "-b", o.worktree.newBranch, path, o.worktree.base]);
-        return this.register(o, path, null);
-      }
-      return this.register(o, o.parent ? this.cwdOfAgent.get(o.parent) ?? o.cwd : o.cwd, null);
-    },
+    create: async (o: CreateOptions & { cwd: string }) => this.register(o, o.parent ? this.cwdOfAgent.get(o.parent) ?? o.cwd : o.cwd, null),
   };
   workspaces = {
     ref: (wsId: string) => ({
       agents: { create: async (o: CreateOptions) => this.register(o, this.cwdOfWorkspace.get(wsId)!, wsId) },
       archive: async () => { this.archivedWorkspaces.push(wsId); return {}; },
     }),
+    create: async (o: { source: { kind: "directory"; path: string }; title?: string }) => {
+      const id = `ws-dir-${this.createdWorkspaces.length + 1}`;
+      this.createdWorkspaces.push({ id, ...o });
+      this.cwdOfWorkspace.set(id, o.source.path);
+      return { id, agents: { create: async (a: CreateOptions) => this.register(a, o.source.path, id) } };
+    },
   };
   providers = { listUsage: async () => this.usage };
   config = { get: async () => ({ config: this.daemonConfig }) };
@@ -4450,7 +4396,7 @@ export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: 
   const ctx: Ctx = {
     config, setup: () => TEST_SETUP, identities, stores: new StoreRegistry(home), router,
     seen: new SeenIds(pjoin(home, "seen.json")), resumes: new ResumeQueue(pjoin(home, "resume.json")), nudges: new NudgeTracker(pjoin(home, "nudges.json")),
-    paseo: () => paseo, run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs: [home],
+    paseo: () => paseo, run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs: [home], worktreeRoot: tmpDir("slp-wts-"),
     pendingPermissions: new Map(), log: () => undefined,
   };
   paseo.beforeCreate = (req) => transformCreate(req, { identities, config, setup: () => TEST_SETUP, mcpUrl: () => "http://127.0.0.1:1/mcp", promptFor: (i) => `PROMPT ${i.role}`, toolNames: () => [], stateDirs: [] });
@@ -5052,7 +4998,7 @@ git commit -m "feat(plugin): decision tools, one Supervisor per feature, shared 
 - Consumes: T7, T9, T10, T11, T15, T16 (qua hook), T17
 - Produces: `workTools(ctx): ToolDef[]` (gồm: `slp_spawn`, `slp_report`, `slp_review`, `slp_accept`, `slp_release`, `slp_merge_main`, `slp_ship_package`, `slp_ship`, `slp_checkpoint`), `buildTools(ctx): ToolDef[]`, `pipelineDeps(ctx, project, feature): PipelineDeps`, `processReportFor(ctx, peer: Identity): Promise<ReportOutcome | null>`, `retireAgent(ctx, ident, repo): Promise<void>`
 
-**Worktree do Paseo tạo** (review B1; đơn giản hoá 1). Plugin gọi `agents.create({ cwd, parent, worktree: { mode: "branch-off", newBranch, base } })`. Paseo tạo worktree dưới `~/.paseo/worktrees/…`, tạo workspace, và chạy agent ở đó. Hook `before agent.create` (T16) ghi đường dẫn và branch thật vào identity; `agents.create` trả về `workspaceId`.
+**Worktree do plugin tạo** (rev 5.2; thay cho "Paseo tạo" của review B1). `createAgent` với placement `worktree` chạy `addWorktree(repo, ~/.slp-worktrees/<project>/<branch>, branch, base)` (hook tắt), gọi `workspaces.create({ source: { kind: "directory", path } })`, rồi `workspace.agents.create({ parent, … })`. Reviewer được tạo từ đúng `lastCommit`, không từ đầu branch của task. Hook `before agent.create` (T16) ghi đường dẫn và branch thật vào identity. `retireAgent` archive agent, archive workspace (Paseo chỉ bỏ bản ghi), rồi `removeWorktree` cho Peer và reviewer (giữ branch). Lý do: Paseo chạy `worktree.setup` khi chính nó tạo worktree và `teardown` khi archive worktree của nó, ngoài sandbox, và ba vòng review cho thấy chặn theo đường dẫn không kín (lệnh setup gọi script của repo, hook sau symlink, teardown đọc từ worktree lúc archive).
 - Lead: từ checkout chính, `newBranch: feat/<feature>`, `base: <baseBranch>`.
 - Peer-impl: từ worktree của Lead, `newBranch: slp/<feature>/<task>-<n>`, `base: feat/<feature>`.
 - Reviewer: `newBranch: slp/<feature>/review-<task>-<sha7>-<rand>`, `base: <branch của task>`, tức đúng commit cần review, và T16 kiểm lại HEAD. Mỗi reviewer có branch riêng, nên reviewer mới cho cùng commit luôn tạo được (review M4).
@@ -5073,7 +5019,7 @@ git commit -m "feat(plugin): decision tools, one Supervisor per feature, shared 
 
 `plugin/test/tools.work.test.ts`:
 ```ts
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { releaseContracts } from "../server/context";
@@ -5117,7 +5063,7 @@ async function withLeadAndPlan(tasks: Array<Record<string, unknown>> = TASKS, be
 }
 
 describe("slp_spawn", () => {
-  it("refuses a Lead before the brief is approved and starts one in a Paseo worktree on feat/<feature> after", async () => {
+  it("refuses a Lead before the brief is approved and starts one in an SLP worktree on feat/<feature> after", async () => {
     const w = makeCtx();
     const sup = bound(w.ctx, { role: "supervisor", project: "demo", feature: null, task: null, reviewCommit: null, parentAgentId: null }, "sup-1");
     const t = buildTools(w.ctx).find((x) => x.name === "slp_spawn")!;
@@ -5126,7 +5072,9 @@ describe("slp_spawn", () => {
     await expect(t.handler(sup, { role: "lead", prompt: "go" })).rejects.toThrow(/brief is not approved/);
     const r = await withLeadAndPlan();
     const created = r.paseo.created[0]!;
-    expect(created).toMatchObject({ parent: "sup-1", title: "[Lead] cache", worktree: { mode: "branch-off", newBranch: "feat/cache", base: "main" } });
+    expect(created).toMatchObject({ parent: "sup-1", title: "[Lead] cache" });
+    expect(r.paseo.createdWorkspaces[0]).toMatchObject({ source: { kind: "directory", path: created.cwd }, title: "[Lead] cache" });
+    expect(created.cwd.startsWith(r.ctx.worktreeRoot)).toBe(true);
     expect((created.config as { provider: string }).provider).toBe("slp-lead");
     expect(r.lead).toMatchObject({ worktree: created.cwd, branch: "feat/cache", workspaceId: created.workspaceId });
     expect(r.lead.worktree).not.toBe(r.repo);
@@ -5146,7 +5094,8 @@ describe("slp_spawn", () => {
     const res = await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "Keep it tiny." });
     expect(res.isError).toBeFalsy();
     const peerCreate = r.paseo.created[1]!;
-    expect(peerCreate).toMatchObject({ parent: r.lead.agentId, worktree: { mode: "branch-off", newBranch: "slp/cache/T1-1", base: "feat/cache" } });
+    expect(peerCreate).toMatchObject({ parent: r.lead.agentId });
+    expect(r.paseo.createdWorkspaces.at(-1)).toMatchObject({ source: { kind: "directory", path: peerCreate.cwd } });
     expect((peerCreate.config as { provider: string }).provider).toBe("slp-peer-impl/claude-sonnet-5");
     expect(String(peerCreate.prompt)).toContain("[SLP] Task T1: add src");
     expect(String(peerCreate.prompt)).toContain("Keep it tiny.");
@@ -5183,16 +5132,6 @@ describe("slp_spawn", () => {
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/halted/);
     expect((await r.call(r.lead, "slp_merge_main", {})).text).toMatch(/halted/);
   });
-  it("does not archive a workspace it could not clean, and tells the Supervisor", async () => {
-    const r = await withLeadAndPlan();
-    await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" });
-    const peer = r.ctx.identities.byAgent(r.paseo.created[1]!.id)!;
-    rmSync(peer.worktree!, { recursive: true, force: true });
-    await retireAgent(r.ctx, peer, r.repo);
-    await r.ctx.router.flush();
-    expect(r.paseo.archivedWorkspaces).not.toContain(peer.workspaceId);
-    expect(r.paseo.sent.some((s) => s.agentId === r.sup.agentId && s.text.includes("did not archive the workspace"))).toBe(true);
-  });
   it("enforces models.allowed and the project writer cap", async () => {
     const r = await withLeadAndPlan();
     r.ctx.config.models.allowed = ["claude-opus-5-5"];
@@ -5220,14 +5159,20 @@ describe("slp_spawn", () => {
     expect(sh(peerCreate.cwd, "git", ["rev-parse", "-q", "--verify", "MERGE_HEAD"])).toBe(headOf(r.repo));
     expect(r.paseo.sent.find((s) => s.agentId === peerCreate.id)!.text).toContain("README.md");
   });
-  it("refuses to create a worktree off a branch whose paseo.json runs setup commands outside the sandbox", async () => {
+  it("never lets Paseo run the repo's setup or hooks for an SLP worktree", async () => {
     const r = await withLeadAndPlan();
-    writeFileSync(join(r.lead.worktree!, "paseo.json"), JSON.stringify({ worktree: { setup: "node scripts/setup.js" } }));
-    sh(r.lead.worktree!, "git", ["add", "paseo.json"]); sh(r.lead.worktree!, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "setup"]);
-    const out = await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" });
-    expect(out.isError).toBe(true);
-    expect(out.text).toMatch(/paseo\.json worktree\.setup/);
-    expect(r.paseo.created).toHaveLength(1);
+    const marker = join(r.home, "hook-ran");
+    writeFileSync(join(r.lead.worktree!, "paseo.json"), JSON.stringify({ worktree: { setup: `touch ${marker}`, teardown: `touch ${marker}` } }));
+    mkdirSync(join(r.lead.worktree!, ".husky"), { recursive: true }); writeFileSync(join(r.lead.worktree!, ".husky", "post-checkout"), `#!/bin/sh\ntouch ${marker}\n`); chmodSync(join(r.lead.worktree!, ".husky", "post-checkout"), 0o755);
+    sh(r.lead.worktree!, "git", ["add", "."]); sh(r.lead.worktree!, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "setup"]);
+    sh(r.repo, "git", ["config", "core.hooksPath", ".husky"]);
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).isError).toBeFalsy();
+    const peer = r.ctx.identities.byAgent(r.paseo.created[1]!.id)!;
+    expect(existsSync(marker)).toBe(false);
+    await retireAgent(r.ctx, peer, r.repo);
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(peer.worktree!)).toBe(false);
+    expect(sh(r.repo, "git", ["branch", "--list", peer.branch!])).toContain(peer.branch!);
   });
 });
 
@@ -5252,6 +5197,7 @@ describe("report → review → accept", () => {
     const r = await reported();
     await processReportFor(r.ctx, r.peer);
     const commit = deriveFeature("cache", r.events()).tasks.get("T1")!.lastCommit!;
+    sh(r.peer.worktree!, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", "on top of the verified commit"]);
     expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/review/);
     await r.call(r.lead, "slp_spawn", { role: "peer-review", task: "T1", prompt: "review" });
     const revCreate = r.paseo.created[2]!;
@@ -5363,7 +5309,7 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 import { appendAs, appendPlugin, claimContracts, humanMessagesFor, leadAddress, notify, refreshDigest, releaseContracts, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, type CreateOptions, type Ctx } from "../context";
 import { processReport, verifyFeature, type PipelineDeps, type ReportOutcome } from "../evidence";
-import { changedFiles, deleteBranch, diffStat, git, headOf, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, pushNoHooks, scrubProtected, startMerge, worktreeCreateRisks } from "../git";
+import { addWorktree, changedFiles, deleteBranch, diffStat, git, headOf, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, pushNoHooks, removeWorktree, startMerge } from "../git";
 import type { Identity } from "../identity";
 import type { ToolDef } from "../mcp/server";
 import { contractQueues, contractsOf, holderOf, isContract } from "../planCheck";
@@ -5381,15 +5327,14 @@ export function pipelineDeps(ctx: Ctx, project: string, feature: string): Pipeli
 const stateOf = (ctx: Ctx, project: string, feature: string): FeatureState => deriveFeature(feature, ctx.stores.feature(project, feature).all());
 
 type Placement =
-  | { kind: "worktree"; from: string; branch: string; base: string } // Paseo creates a worktree off `base`
-  | { kind: "workspace"; workspaceId: string }                     // reuse a workspace (rotation)
-  | { kind: "dir"; cwd: string };                                   // the Supervisor's project directory
+  | { kind: "worktree"; branch: string; base: string } // SLP creates the worktree off `base` (hooks off) and a directory workspace for it
+  | { kind: "workspace"; workspaceId: string }          // reuse a workspace (rotation, takeover)
+  | { kind: "dir"; cwd: string };                        // the Supervisor's project directory
+
+/** Where an SLP worktree for `branch` lives: outside ~/.paseo/worktrees, so Paseo never runs setup or teardown for it (T9). */
+const worktreePath = (ctx: Ctx, project: string, branch: string): string => join(ctx.worktreeRoot, project, branch.replaceAll("/", "-"));
 
 async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: string | null; task: string | null; placement: Placement; reviewCommit?: string | null; parent: string | null; title: string; prompt: string; model?: string; deferPrompt?: boolean }): Promise<{ agentId: string; ident: Identity }> {
-  if (o.placement.kind === "worktree") {
-    const risks = worktreeCreateRisks(o.placement.from, o.placement.base);
-    if (risks.length) throw new ToolError(`SLP will not create a worktree off ${o.placement.base}: Paseo would run repo code outside the sandbox (${risks.join(", ")}). Remove these from the repo (install dependencies inside the sandbox or in the verify command), then retry.`);
-  }
   const minted = ctx.identities.mint({ role, project: o.project, feature: o.feature, task: o.task, reviewCommit: o.reviewCommit ?? null, parentAgentId: o.parent });
   const profile = ctx.setup().profile[role] ?? {};
   const opts: CreateOptions = {
@@ -5398,13 +5343,23 @@ async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: 
     ...(o.deferPrompt ? {} : { prompt: o.prompt, clientMessageId: ctx.router.issue() }),
   };
   const p = o.placement;
+  const repo = ctx.config.projects[o.project]!.repo;
+  let made: string | null = null;
   let agent: { id: string; workspaceId?: string | null };
   try {
-    agent = p.kind === "workspace" ? await ctx.paseo().workspaces.ref(p.workspaceId).agents.create(opts)
-      : p.kind === "worktree" ? await ctx.paseo().agents.create({ ...opts, cwd: p.from, worktree: { mode: "branch-off", newBranch: p.branch, base: p.base } })
-      : await ctx.paseo().agents.create({ ...opts, cwd: p.cwd });
+    if (p.kind === "worktree") {
+      // An explicit workspace wins over `parent` for placement (create-agent/intent.ts resolvePlacement), and `parent` still nests the agent.
+      made = worktreePath(ctx, o.project, p.branch);
+      addWorktree(repo, made, p.branch, p.base);
+      const ws = await ctx.paseo().workspaces.create({ source: { kind: "directory", path: made }, title: o.title });
+      const a = await ws.agents.create(opts);
+      agent = { id: a.id, workspaceId: a.workspaceId ?? ws.id };
+    } else {
+      agent = p.kind === "workspace" ? await ctx.paseo().workspaces.ref(p.workspaceId).agents.create(opts) : await ctx.paseo().agents.create({ ...opts, cwd: p.cwd });
+    }
   } catch (error) {
     ctx.identities.retire(minted.tokenHash);
+    if (made) { try { removeWorktree(repo, made); } catch (e) { ctx.log(`could not remove ${made} after a failed create`, e); } }
     throw error;
   }
   const placed = ctx.identities.byToken(minted.token)!; // the before-create hook (T16) recorded worktree and branch
@@ -5418,20 +5373,16 @@ function activeWriters(ctx: Ctx, project: string): Identity[] {
 }
 
 /** Retires the identity and archives the agent's workspace (Paseo removes the worktree, keeps the branch). */
+/** Retires the identity, archives the agent and its directory workspace, and removes a Peer's or reviewer's SLP worktree (the branch stays). */
 export async function retireAgent(ctx: Ctx, i: Identity, repo: string): Promise<void> {
   ctx.identities.retire(i.tokenHash);
   if (i.agentId) ctx.resumes.clear(i.agentId);
-  if (i.workspaceId) {
-    // Stop the agent first so it cannot write while the worktree is cleaned; archive the workspace only when paseo.json and the hook dirs are back to HEAD.
-    if (i.agentId) await ctx.paseo().agents.ref(i.agentId).archive().catch(() => undefined);
-    try { if (i.worktree) scrubProtected(i.worktree); }
-    catch (error) {
-      ctx.log(`not archiving workspace ${i.workspaceId}`, error);
-      if (i.feature) notify(ctx, supervisorAddress(i.project, i.feature), `SLP did not archive the workspace of ${i.role} ${i.task ?? ""} (${i.worktree}): it could not put paseo.json and the git hook dirs back to HEAD, and Paseo would run that worktree's teardown outside the sandbox. A human should check and archive it.`);
-      return;
-    }
-    await ctx.paseo().workspaces.ref(i.workspaceId).archive().catch(() => undefined);
-  } else if (i.agentId) await ctx.paseo().agents.ref(i.agentId).archive().catch(() => undefined);
+  const stopped = i.agentId ? await ctx.paseo().agents.ref(i.agentId).archive().then(() => true, () => false) : true;
+  if (i.workspaceId) await ctx.paseo().workspaces.ref(i.workspaceId).archive().catch(() => undefined); // a directory workspace: Paseo only drops the record
+  if (i.worktree && (i.role === "peer-impl" || i.role === "peer-review")) {
+    if (stopped) removeWorktree(repo, i.worktree);
+    else ctx.log(`kept ${i.worktree}: could not stop agent ${i.agentId}`);
+  }
   if (i.role === "peer-review" && i.branch) deleteBranch(repo, i.branch);
 }
 
@@ -5494,7 +5445,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
           if (ctx.identities.current("lead", who.project, feature)) throw new ToolError(`feature ${feature} already has a Lead`);
           const previous = ctx.identities.last("lead", who.project, feature);
           const checkpoint = join(ctx.stores.featureDir(who.project, feature), "checkpoint-lead.md");
-          const placement: Placement = previous?.workspaceId ? { kind: "workspace", workspaceId: previous.workspaceId } : { kind: "worktree", from: project.repo, branch: `feat/${feature}`, base: project.baseBranch };
+          const placement: Placement = previous?.workspaceId ? { kind: "workspace", workspaceId: previous.workspaceId } : { kind: "worktree", branch: `feat/${feature}`, base: project.baseBranch };
           const prompt = previous
             ? `[SLP] You take over as Lead for feature ${feature}; the previous Lead stopped. Call slp_state first.\n\n${existsSync(checkpoint) ? `${readFileSync(checkpoint, "utf8")}\n\n` : ""}## Current state\n${refreshDigest(ctx, who.project, feature)}\n\n## Note from the Supervisor\n${a.prompt}`
             : leadKickoff(feature, ctx.stores.readDoc(st.brief.path), a.prompt);
@@ -5530,7 +5481,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
           }
           const attempt = task.attempt + 1;
           const prompt = taskBrief(feature, task, st.premises, a.prompt);
-          const { agentId, ident } = await createAgent(ctx, "peer-impl", { project: who.project, feature, task: task.id, placement: { kind: "worktree", from: who.worktree!, branch: `slp/${feature}/${task.id}-${attempt}`, base: who.branch ?? `feat/${feature}` }, parent: who.agentId, title: `[Peer ${task.id}] ${feature}`, prompt, model, deferPrompt: a.merge_base === true });
+          const { agentId, ident } = await createAgent(ctx, "peer-impl", { project: who.project, feature, task: task.id, placement: { kind: "worktree", branch: `slp/${feature}/${task.id}-${attempt}`, base: who.branch ?? `feat/${feature}` }, parent: who.agentId, title: `[Peer ${task.id}] ${feature}`, prompt, model, deferPrompt: a.merge_base === true });
           const base = headOf(ident.worktree!);
           appendAs(ctx, who, feature, { kind: "assign", data: { task: task.id, agentId, worktree: ident.worktree, branch: ident.branch, base, attempt, model: model ?? null, mergeBase: a.merge_base === true } });
           if (a.merge_base) {
@@ -5544,7 +5495,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
         if (!task.lastCommit || !task.branch) throw new ToolError(`${task.id} has no commit to review`);
         if (ctx.config.flags.evidenceCheck && !task.evidenceOk) throw new ToolError(`${task.id} has no green evidence on ${task.lastCommit.slice(0, 7)}`);
         const branch = `slp/${feature}/review-${task.id}-${task.lastCommit.slice(0, 7)}-${randomUUID().slice(0, 8)}`;
-        const { agentId } = await createAgent(ctx, "peer-review", { project: who.project, feature, task: task.id, placement: { kind: "worktree", from: who.worktree!, branch, base: task.branch }, reviewCommit: task.lastCommit, parent: who.agentId, title: `[Review ${task.id}] ${feature}`, prompt: reviewBrief(feature, task, task.lastCommit, a.prompt) });
+        const { agentId } = await createAgent(ctx, "peer-review", { project: who.project, feature, task: task.id, placement: { kind: "worktree", branch, base: task.lastCommit }, reviewCommit: task.lastCommit, parent: who.agentId, title: `[Review ${task.id}] ${feature}`, prompt: reviewBrief(feature, task, task.lastCommit, a.prompt) });
         return `Reviewer ${agentId} started on ${task.lastCommit.slice(0, 7)}.`;
       }),
     }),
@@ -6394,6 +6345,12 @@ describe("permissions, archive, tick", () => {
     expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("usage limit has reset"))).toBe(true);
     expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && s.text.includes("C1 has waited"))).toBe(true);
   });
+  it("runs one tick at a time, so a resume is sent once even when ticks overlap", async () => {
+    const w = world();
+    w.ctx.resumes.schedule({ agentId: "peer-1", vendor: "claude", at: new Date(Date.now() - 1000).toISOString(), attempt: 1 });
+    await Promise.all([tick(w.ctx), tick(w.ctx)]);
+    expect(w.paseo.sent.filter((s) => s.agentId === "peer-1" && s.text.includes("usage limit has reset"))).toHaveLength(1);
+  });
   it("does not let one failing resume hold back the others", async () => {
     const w = world();
     const past = new Date(Date.now() - 1000).toISOString();
@@ -6627,15 +6584,24 @@ export function onAgentClosed(ctx: Ctx, agentId: string): void {
   if (ident) retireLost(ctx, ident);
 }
 
+const ticking = new WeakSet<Ctx>();
+
+/** Single-flight: an SDK call can outlast the 30 s timer, and two ticks at once would send the same resume twice (review Codex 2026-10-22, round 3). */
 export async function tick(ctx: Ctx): Promise<void> {
+  if (ticking.has(ctx)) return;
+  ticking.add(ctx);
+  try { await tickOnce(ctx); } finally { ticking.delete(ctx); }
+}
+
+async function tickOnce(ctx: Ctx): Promise<void> {
   const resume = (agentId: string) => ctx.paseo().agents.ref(agentId).send("[SLP plugin] The usage limit has reset. Continue the work you were doing.", { messageId: ctx.router.issue() });
   // One resume per 30 s tick, oldest first: that is the stagger, and nothing lives only in a timer. A failed send moves to the back
   // of the line for a minute instead of blocking the others (review Codex 2026-10-22, round 2).
   const [job] = [...ctx.resumes.due(ctx.now())].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   if (job) {
-    try { await resume(job.agentId); ctx.resumes.done(job.agentId); }
+    try { await resume(job.agentId); ctx.resumes.done(job.agentId, job); } // a newer job scheduled meanwhile survives
     catch (error) {
-      ctx.resumes.schedule({ ...job, at: new Date(ctx.now().getTime() + 60_000).toISOString() });
+      ctx.resumes.postpone(job, new Date(ctx.now().getTime() + 60_000).toISOString());
       ctx.log(`resume of ${job.agentId} failed; retrying in a minute`, error);
     }
   }
@@ -6682,9 +6648,8 @@ import { join } from "node:path";
 import { bindSession, transformCreate, type CreateRequest } from "./agentConfig";
 import { loadSlpConfig, slpHome, type SlpConfig } from "./config";
 import type { Ctx, PaseoLike } from "./context";
-import { trustRepo, worktreeCreateRisks } from "./git";
+import { trustRepo } from "./git";
 import { reconcile, tick } from "./hooks";
-import { paseoStatePaths } from "./permissions";
 import { SeenIds } from "./human";
 import { IdentityRegistry } from "./identity";
 import { startMcpServer } from "./mcp/server";
@@ -6706,13 +6671,9 @@ export function createRuntime(): Runtime {
   let setup: RoleSetup | null = null;
   let setupPromise: Promise<RoleSetup> | null = null;
   for (const [name, project] of Object.entries(config.projects)) {
-    try {
-      trustRepo(project.repo);
-      const risks = worktreeCreateRisks(project.repo, project.baseBranch);
-      if (risks.length) console.error(`[slp] project ${name}: Paseo would run repo code outside the sandbox when SLP creates worktrees (${risks.join(", ")}); SLP will refuse to spawn agents until these are removed.`);
-    } catch (e) { console.error(`[slp] project ${name}: ${String(e)}`); }
+    try { trustRepo(project.repo); } catch (e) { console.error(`[slp] project ${name}: ${String(e)}`); }
   }
-  const stateDirs = [home, ...paseoStatePaths(process.env.PASEO_HOME ?? join(homedir(), ".paseo"))]; // not worktrees/ (review Codex 2026-10-22)
+  const stateDirs = [home, process.env.PASEO_HOME ?? join(homedir(), ".paseo")]; // SLP worktrees live in ~/.slp-worktrees, outside both
   const identities = new IdentityRegistry(join(home, "identities.json"));
   const router = new Router({
     file: join(home, "router.json"), now: () => new Date(),
@@ -6727,14 +6688,14 @@ export function createRuntime(): Runtime {
     resumes: new ResumeQueue(join(home, "resume.json")), nudges: new NudgeTracker(join(home, "nudges.json")),
     setup: () => { if (!setup) throw new Error("SLP: role setup not loaded yet"); return setup; },
     paseo: () => { if (!paseo) throw new Error("SLP: no Paseo client captured yet"); return paseo; },
-    run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs,
+    run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs, worktreeRoot: process.env.SLP_WORKTREES ?? join(homedir(), ".slp-worktrees"),
     pendingPermissions: new Map(), log: (message, error) => console.error(`[slp] ${message}`, error ?? ""),
   };
   const tools = buildTools(ctx);
   // No onCall: only the report tools mark ctx.toolCalls themselves (review m1).
   const mcp = startMcpServer({ port: config.mcp.port, resolve: (t) => identities.byToken(t), tools: () => tools });
   mcp.catch((e) => console.error(`[slp] MCP server failed to listen on ${config.mcp.port}`, e));
-  const timer = setInterval(() => { if (paseo) void tick(ctx).catch((e) => console.error("[slp] tick failed", e)); }, 30_000);
+  const timer = setInterval(() => { if (paseo) void tick(ctx).catch((e) => console.error("[slp] tick failed", e)); }, 30_000); // tick is single-flight
   timer.unref();
 
   // Never awaited by hooks: non-SLP agents must not wait for, or fail on, SLP's setup (review B4).
@@ -6898,8 +6859,8 @@ Nhờ anh tạo agent bằng provider `SLP Supervisor` trong workspace thư mụ
 | 11 | Timer dùng client `paseo` lấy từ hook mà vẫn chạy ổn (resume, nhịp kiểm, flush) | Log không có "no Paseo client captured" |
 | 12 | Restart plugin (`paseo plugin reload slp`) giữa chừng không làm mất hàng đợi và không ghi nhầm tin của plugin thành tin của anh | So `router.json` trước và sau; event `reconcile` |
 | 13 | Ghi nguyên văn lần đầu một vai dính limit, nếu có; nếu không có, ghi "không xảy ra" | Event `limit_hit` hoặc ghi chú |
-| 14 | Lead và mỗi Peer chạy trong worktree Paseo tạo (`~/.paseo/worktrees/…`), không trong repo gốc hay worktree của cha (B1) | `cwd` của từng agent trong `paseo ls --json` so với event `assign` |
-| 15 | Paseo nhận `base` là tên branch local (`feat/<slug>`, branch của task) khi tạo worktree, và không đòi remote cho branch đó | Event `assign`; log khi spawn Peer và reviewer |
+| 14 | Lead và mỗi Peer chạy trong worktree do plugin tạo (`~/.slp-worktrees/<project>/…`), mỗi cái một workspace `directory` hiện trong sidebar, nằm dưới agent cha (Subagents); không chạy trong repo gốc hay worktree của cha (B1). Repo smoke có `paseo.json` với `worktree.setup`/`teardown` ghi marker: marker không bao giờ xuất hiện khi spawn hay khi task xong | `cwd` của từng agent trong `paseo ls --json` so với event `assign`; file marker |
+| 15 | Archive workspace `directory` của Peer (khi accept) không xoá thư mục và không chạy gì; plugin gỡ worktree, branch còn | `paseo workspace ls --json`; `git worktree list`; `git branch` |
 | 16 | Peer-impl không ghi được `<worktree>/.git` (sandbox `denyWrite` và permission) | Nhờ anh bảo Peer chạy `echo x > .git` và dùng Write vào `.git`; cả hai phải fail |
 | 17 | Tool `slp_*` không sinh permission prompt nào (toolPolicy) | App không hiện prompt cho `slp_*`; `paseo plugin logs slp` |
 | 18 | Ghi giá trị thật của `providerId`/`displayName` trong `providers.listUsage()` | `paseo provider usage --json` hoặc log |
@@ -6909,7 +6870,7 @@ Nhờ anh tạo agent bằng provider `SLP Supervisor` trong workspace thư mụ
 | 22 | `slp_send {to: "lead", mode: "steer"}` tới Lead đang chạy: tin chen vào turn đó với Claude, không phải chờ hết turn; ghi kết quả thật. Nếu không chen được, ghi lại và đổi hướng dẫn sang `interrupt` | Timeline của Lead |
 | 23 | Supervisor thứ hai cho một ý tưởng khác trong cùng project: brief cho slug đã có bị từ chối; nó đọc được digest feature đầu (`slp_state {all: true}`) nhưng `slp_send` tới Lead của feature đầu bị từ chối | Timeline của Supervisor thứ hai |
 | 24 | Reload plugin khi mọi agent SLP đang idle và có một job resume đã đến hạn: có hook nào chạy mà không cần anh làm gì không (review Codex 2026-10-22, F14). Không có thì ghi lại: timer chỉ chạy khi có hook đầu tiên (anh mở tab, agent đổi trạng thái); job vẫn còn trong `resume.json`, chỉ đến muộn | `paseo plugin logs slp`; `resume.json` |
-| 25 | Đã trả lời bằng source Paseo 0.12: `runWorktreeTeardownCommands` đọc `teardown` từ chính worktree bị archive (`utils/worktree.ts:767`), nên `scrubProtected` là bắt buộc. Trên Paseo thật chỉ kiểm: khi plugin archive workspace của Peer, log có bước dọn trước lệnh archive, và archive agent trước không xoá worktree | `paseo plugin logs slp`; `paseo workspace ls --json` |
+| 25 | `workspaces.create({ source: { kind: "directory" } })` rồi `workspace.agents.create({ parent })`: agent có `cwd` là worktree và hiện dưới cha trong sidebar (source 0.12 nói vậy; xác nhận trên app thật) | Sidebar; `paseo ls --json` |
 
 - [ ] **Step 4: Dọn dẹp và khôi phục**
 

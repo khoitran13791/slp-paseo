@@ -190,12 +190,12 @@ Mỗi dòng JSONL:
 |---|---|---|
 | `brief` (version + sha256) | Supervisor | goal, success criteria kiểm được, hard constraints, D#/H#, phạm vi được chất vấn, ngân sách, non-goals. Brief v1 tạo feature (slug do Supervisor đặt, chưa tồn tại) và gắn Supervisor với nó; Supervisor đã có feature không tạo được feature thứ hai |
 | `premise` (D#/H# mới) | Supervisor (từ brief), Lead (từ spec, chỉ hiệu lực sau khi anh duyệt spec) | H# phải có `verify_by` là phép đo có thể fail |
-| `human_decision` | Supervisor (hoặc Lead nếu anh nói thẳng với Lead) | `quote`: nguyên văn lời anh; `decides`: approve brief/spec/ship (kèm sha256 hoặc commit), supersede ID, keep ID, change goal. Plugin kiểm `quote` là chuỗi con của một prompt do anh gửi (§7.6) |
+| `human_decision` | Supervisor (hoặc Lead nếu anh nói thẳng với Lead) | `quote`: nguyên văn lời anh; `decides`: approve brief/spec/ship (kèm sha256 hoặc commit), supersede ID, keep ID, change goal. Plugin kiểm `quote` trong tin anh gửi (§7.6) |
 | `supersede` D#/H# | Chỉ đi kèm `human_decision` | ID bị thay phải đang hiệu lực |
 | `spec`, `plan` (version + sha256 + touch set) | Lead | plan: mỗi task có `Depends on`, task kiểm chứng có `Verifies` |
 | `plan_approved` | Supervisor | sha256 của plan |
 | `assign` / `release` | Lead (qua `slp_spawn` / `slp_accept`) | task, agent, worktree, BASE commit, model |
-| `report` | Peer-impl | status (`done` / `done_with_concerns` / `blocked`), commit message đề xuất, nội dung báo cáo |
+| `report` | Peer-impl | status (`done` / `done_with_concerns` / `blocked`), commit message đề xuất, nội dung báo cáo. Plugin chuyển status và nội dung báo cáo cho Lead cùng thông báo commit; `blocked` mà không đổi file thì chỉ báo Lead, không trả lại Peer |
 | `commit` | Plugin | hash, BASE, danh sách file, cờ: file ngoài touch set / file nhạy cảm bị loại |
 | `merge` | Plugin (khi Lead `slp_accept`, hoặc Lead yêu cầu merge main) | nguồn, đích, hash kết quả, conflict? |
 | `evidence` | Plugin | commit, lệnh (lấy từ plan hoặc config, không lấy từ Peer), chạy trong sandbox, exit code, thời gian |
@@ -414,7 +414,7 @@ Mọi cạnh khác chiều (Lead → Supervisor, Peer → Lead): chỉ queue
 
 ### 7.6 Kiểm quyết định của anh
 
-`human_decision` chỉ được ghi khi `quote` là chuỗi con của một `human_message` tới agent đang ghi, và `human_message` đó đến sau event cần duyệt (brief/spec version, câu hỏi gom, `ship_package`). Plugin đọc timeline ngay trước khi kiểm, và ngay trước khi ghi một brief hay gói ship mới. Vì vậy câu "duyệt" gõ trong turn hiện tại được tính, còn câu gõ trước một version mới thì không. Với duyệt ship: commit hash trong `human_decision` phải trùng với `ship_package` mới nhất, và HEAD của `feat/<slug>` lúc `slp_ship` vẫn là commit đó (có commit mới → phải trình gói ship mới). Mục đích: Supervisor không tự bịa được chữ "duyệt", và anh không duyệt nhầm một commit khác.
+`human_decision` chỉ được ghi khi `quote` nằm trọn từ trong `human_message` mới nhất có chứa nó, gửi tới agent đang ghi; mệnh đề chứa quote không có từ phủ định (không, ko, chưa, đừng, no, not…) và không phải câu hỏi ("chưa duyệt", "duyệt không?" không được tính; "duyệt" rồi "khoan, chưa duyệt" cũng không). `human_message` đó phải đến sau event cần duyệt (brief/spec version, câu hỏi gom, `ship_package`). Plugin đọc timeline ngay trước khi kiểm, và ngay trước khi ghi một brief hay gói ship mới. Vì vậy câu "duyệt" gõ trong turn hiện tại được tính, còn câu gõ trước một version mới thì không. Với duyệt ship: commit hash trong `human_decision` phải trùng với `ship_package` mới nhất, và HEAD của `feat/<slug>` lúc `slp_ship` vẫn là commit đó (có commit mới → phải trình gói ship mới). Mục đích: Supervisor không tự bịa được chữ "duyệt", và anh không duyệt nhầm một commit khác.
 
 Mỗi Supervisor chỉ có một feature, nên câu duyệt gõ ở tab của feature này không khớp được cổng của feature khác. Trong một feature, các cổng thường nối tiếp nhau; khi có hai mục cùng chờ anh (ví dụ spec mới và một câu hỏi gom về tiền đề), prompt vai bắt Supervisor hỏi anh riêng từng mục trước khi ghi `human_decision`.
 

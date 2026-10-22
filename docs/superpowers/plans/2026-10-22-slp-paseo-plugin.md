@@ -10,7 +10,7 @@
 
 **Spec:** [`docs/superpowers/specs/2026-10-21-slp-paseo-design.md`](../specs/2026-10-21-slp-paseo-design.md) (rev 4). Bằng chứng nền: [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md).
 
-**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 235 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 20 lần gỡ thử từng phần sửa mới (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
+**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention: Lead thấy status/nội dung report của Peer, quote check theo trọn từ và mệnh đề):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 240 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 33 lần gỡ thử từng phần sửa mới (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
 
 **Core mechanism:** mỗi ý tưởng một Supervisor (brief đầu tiên gắn nó với feature) → `slp_spawn` → Paseo tạo worktree và agent → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng, `toolPolicy`) và ghi worktree thật vào identity → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `turn_started`/`turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer (hook tắt, git dir tin cậy), chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh → mỗi `watch.intervalMinutes` plugin dựng gói kiểm (trạng thái, tool call gần nhất, lặp lại, file đang đổi) gửi Supervisor của feature; Supervisor steer Lead khi cần.
 
@@ -629,7 +629,7 @@ Quy ước dữ liệu event, các task sau phải ghi đúng như vậy:
 - `confirms`: `refs[0]` = H#.
 - `plan_approved`: `data { sha256 }`.
 - `assign`: `data { task, agentId, worktree, branch, base, attempt }`.
-- `report`: `data { task, status, message, reportPath }`.
+- `report`: `data { task, status, message, reportPath }`. `status` của report mới nhất từ lần assign gần nhất nằm ở `TaskState.reportStatus`.
 - `commit`: `data { task, hash, base, files, flags, reportSeq, scope? }`; nếu `scope = "challenge"` thì không tính là bàn giao.
 - `evidence`: `data { scope: "task"|"feature"|"challenge", task?, commit, command, exitCode, timedOut }`.
 - `review`: `data { task, commit, blocking, findings, verdict }`.
@@ -786,6 +786,8 @@ export type TaskStatus = "pending" | "assigned" | "reported" | "accepted" | "par
 export interface TaskState extends PlanTask {
   status: TaskStatus; closure: string[]; agentId: string | null; worktree: string | null; branch: string | null; base: string | null;
   attempt: number; lastCommit: string | null; evidenceOk: boolean; reviewOk: boolean; reopened: boolean; acceptedAtSeq: number | null;
+  /** Status of the latest report; a new assign makes the task "assigned", and the next report overwrites this. */
+  reportStatus?: "done" | "done_with_concerns" | "blocked";
 }
 export interface ChallengeState { id: string; target: string; level: "plan" | "spec"; byRole: string; byAgent: string | null; open: boolean; seq: number; ts: string; outcome: "accepted" | "rejected" | null }
 export interface DocState { version: number; sha256: string; path: string; seq: number; ts: string; approved: boolean }
@@ -872,7 +874,7 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
         if (wasAccepted) ts.reopened = true;
         Object.assign(ts, { status: "assigned", agentId: str(e.data.agentId), worktree: str(e.data.worktree), branch: str(e.data.branch), base: str(e.data.base), attempt: Number(e.data.attempt ?? ts.attempt + 1), lastCommit: null, evidenceOk: false, reviewOk: false, acceptedAtSeq: null });
       } else if (e.kind === "report") {
-        if (ts.status === "assigned" || ts.status === "reported") ts.status = "reported";
+        if (ts.status === "assigned" || ts.status === "reported") { ts.status = "reported"; ts.reportStatus = e.data.status as TaskState["reportStatus"]; }
       } else if (e.kind === "commit") {
         if (e.data.scope !== "challenge") { ts.lastCommit = str(e.data.hash); ts.evidenceOk = false; ts.reviewOk = false; }
       } else if (e.kind === "evidence") {
@@ -939,6 +941,8 @@ git commit -m "feat(plugin): derive premise, task and challenge state from event
 - Produces: `canWrite(actor, kind): boolean`, `assertCanWrite(actor, kind): void`, `class AuthorityError`
 - Produces: `findHumanQuote(messages: readonly SlpEvent[], opts: { agentId: string; quote: string; after: string }): QuoteResult`, `verifyShipApproval(featureEvents, messages, opts: { agentId; quote; commit }): QuoteResult`, `type QuoteResult = { ok: true; seq: number } | { ok: false; reason: string }`
 
+Quote chỉ được tính khi nằm trọn từ trong tin mới nhất của anh có chứa nó, mệnh đề chứa quote không có từ phủ định (`không`, `ko`, `chưa`, `đừng`, `no`, `not`…) và không phải câu hỏi. Lý do: kiểm chuỗi con trần để Supervisor trích "duyệt" từ "chưa duyệt" (report human attention 2026-10-22). Sai thì từ chối, Supervisor hỏi lại anh; không bao giờ đoán là duyệt.
+
 `human_message` có dạng `data { agentId, text, messageId }`. Với tin anh gửi Supervisor, event nằm trong store của project; với tin gửi Lead/Peer, event nằm trong store của feature. Vì đối chiếu xuyên hai store, thứ tự được so bằng `ts` (ISO), không bằng `seq`.
 
 - [ ] **Step 1: Viết test thất bại**
@@ -993,6 +997,20 @@ describe("findHumanQuote", () => {
     expect(findHumanQuote(messages, { agentId: "sup", quote: "sửa lại", after: "2026-10-22T02:00:00.000Z" }).ok).toBe(false);
     expect(findHumanQuote(messages, { agentId: "lead", quote: "duyệt", after: "2026-10-22T00:00:00.000Z" }).ok).toBe(false);
     expect(findHumanQuote(messages, { agentId: "sup", quote: " ", after: "2026-10-22T00:00:00.000Z" })).toEqual({ ok: false, reason: "quote too short" });
+  });
+  it("refuses a quote that is part of a word, in a negated clause, or in a question", () => {
+    const at = (text: string) => [msg(3, "2026-10-22T04:00:00.000Z", "sup", text)];
+    const cases: Array<[string, string]> = [["chưa duyệt", "duyệt"], ["Ko duyệt nhé", "duyệt"], ["duyệt không?", "duyệt"], ["ship được chưa", "ship"], ["don’t ship yet", "ship"], ["relationship ổn", "ship"], ["ok?", "ok"]];
+    for (const [text, quote] of cases) {
+      expect(findHumanQuote(at(text), { agentId: "sup", quote, after: "2026-10-22T02:00:00.000Z" })).toEqual({ ok: false, reason: expect.stringMatching(/ask the human to confirm plainly/) });
+    }
+  });
+  it("accepts the quote from its own clause, and lets a later retraction win", () => {
+    const one = [msg(3, "2026-10-22T04:00:00.000Z", "sup", "Không vấn đề gì. Duyệt, ship đi")];
+    expect(findHumanQuote(one, { agentId: "sup", quote: "duyệt", after: "2026-10-22T02:00:00.000Z" })).toEqual({ ok: true, seq: 3 });
+    expect(findHumanQuote(one, { agentId: "sup", quote: "duyệt, ship đi", after: "2026-10-22T02:00:00.000Z" })).toEqual({ ok: true, seq: 3 });
+    const retracted = [msg(3, "2026-10-22T04:00:00.000Z", "sup", "duyệt"), msg(4, "2026-10-22T04:05:00.000Z", "sup", "khoan, chưa duyệt")];
+    expect(findHumanQuote(retracted, { agentId: "sup", quote: "duyệt", after: "2026-10-22T02:00:00.000Z" }).ok).toBe(false);
   });
 });
 
@@ -1070,8 +1088,30 @@ import type { SlpEvent } from "./store/events";
 
 export type QuoteResult = { ok: true; seq: number } | { ok: false; reason: string };
 
-const norm = (s: string) => s.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+const norm = (s: string) => s.normalize("NFC").replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim().toLowerCase();
+const WORD = /[\p{L}\p{M}\p{N}']/u;
+const CLAUSE_BREAK = /[.!?;,:…]/;
+/** A clause holding one of these is not an approval: "chưa duyệt", "duyệt không", "don't ship". */
+const NEGATIONS = new Set(["không", "khong", "ko", "k", "hông", "chưa", "chua", "đừng", "chẳng", "chả", "khoan", "đợi", "chờ", "no", "not", "don't", "dont", "never", "wait"]);
 
+/** True when some occurrence of `q` is whole words, in a clause with no negation, and not in a question. */
+function approves(text: string, q: string): boolean {
+  if (q.includes("?")) return false;
+  for (let i = text.indexOf(q); i !== -1; i = text.indexOf(q, i + 1)) {
+    const end = i + q.length;
+    if (WORD.test(text[i - 1] ?? "") || WORD.test(text[end] ?? "")) continue;
+    let start = i;
+    while (start > 0 && !CLAUSE_BREAK.test(text[start - 1]!)) start -= 1;
+    let stop = end;
+    while (stop < text.length && !CLAUSE_BREAK.test(text[stop]!)) stop += 1;
+    if (text[stop] === "?") continue;
+    if (text.slice(start, stop).split(/[^\p{L}\p{M}\p{N}']+/u).some((w) => NEGATIONS.has(w))) continue;
+    return true;
+  }
+  return false;
+}
+
+/** The human's newest message that contains the quote decides, so "duyệt" followed by "khoan, chưa duyệt" approves nothing. */
 export function findHumanQuote(messages: readonly SlpEvent[], opts: { agentId: string; quote: string; after: string }): QuoteResult {
   const q = norm(opts.quote);
   if (q.length < 2) return { ok: false, reason: "quote too short" };
@@ -1080,7 +1120,10 @@ export function findHumanQuote(messages: readonly SlpEvent[], opts: { agentId: s
     const e = messages[i]!;
     if (e.kind !== "human_message" || e.data.agentId !== opts.agentId) continue;
     if (Date.parse(e.ts) <= after) continue;
-    if (norm(String(e.data.text ?? "")).includes(q)) return { ok: true, seq: e.seq };
+    const text = norm(String(e.data.text ?? ""));
+    if (!text.includes(q)) continue;
+    if (approves(text, q)) return { ok: true, seq: e.seq };
+    return { ok: false, reason: "in the human's latest message with that quote, it is part of a word, negated, or a question; ask the human to confirm plainly" };
   }
   return { ok: false, reason: "no message from the human after the item under approval contains that quote" };
 }
@@ -1344,6 +1387,14 @@ describe("renderDigest", () => {
     expect(text).toContain("Watch: #3 10:00 — lead ok; T1 watch");
     expect(text).not.toContain("watch_sent");
   });
+  it("shows a reported task's status when it is not plain done, so a restarted Lead sees blockers", () => {
+    const events = [ev("plan", { version: 1, sha256: "p", path: "p", tasks: [task("T1"), task("T2")] }),
+      ev("assign", { task: "T1", agentId: "a1" }), ev("report", { task: "T1", status: "blocked", message: "x" }, { by_role: "peer-impl" }),
+      ev("assign", { task: "T2", agentId: "a2" }), ev("report", { task: "T2", status: "done", message: "y" }, { by_role: "peer-impl" })];
+    const text = renderDigest(deriveFeature("f", events), [], new Date("2026-10-22T10:00:00.000Z"));
+    expect(text).toContain("- T1 reported (blocked) — title T1");
+    expect(text).toContain("- T2 reported — title T2");
+  });
 });
 ```
 
@@ -1391,7 +1442,7 @@ export function renderDigest(st: FeatureState, ops: readonly SlpEvent[], now: Da
   const recent = ops.filter((o) => !String(o.data.type).startsWith("watch_")).slice(-5).map((o) => `- ${o.ts.slice(11, 16)} ${String(o.data.type)} ${String(o.data.summary ?? "")}`.trimEnd());
   if (recent.length) lines.push("Recent ops:", ...recent);
   lines.push("Tasks:");
-  const rows = tasks.map((t) => `- ${t.id} ${t.status}${t.lastCommit ? ` @${t.lastCommit.slice(0, 7)}` : ""}${t.evidenceOk ? " ✓verify" : ""}${t.reviewOk ? " ✓review" : ""} — ${t.title}`);
+  const rows = tasks.map((t) => `- ${t.id} ${t.status}${t.status === "reported" && t.reportStatus && t.reportStatus !== "done" ? ` (${t.reportStatus})` : ""}${t.lastCommit ? ` @${t.lastCommit.slice(0, 7)}` : ""}${t.evidenceOk ? " ✓verify" : ""}${t.reviewOk ? " ✓review" : ""} — ${t.title}`);
   const room = 30 - lines.length;
   lines.push(...(rows.length > room ? [...rows.slice(0, room - 1), `- … +${rows.length - room + 1} more`] : rows));
   return lines.join("\n") + "\n";
@@ -2199,8 +2250,9 @@ git commit -m "feat(plugin): sandboxed command runner with timeout and fail-clos
 
 Các quyết định của pipeline:
 - Chỉ chạy khi turn của Peer đã kết thúc (hook ở T20 gọi, tuần tự theo agent), nên Peer không còn đang ghi file dở.
-- Chống chạy hai lần theo `report.seq`: nếu đã có `commit` hoặc `ops` loại `report_rejected` mang cùng `reportSeq`, trả lại kết quả cũ. Nếu commit đã có mà chưa có `evidence` cho commit đó (lần trước runner hỏng), chạy verify lại.
+- Chống chạy hai lần theo `report.seq`: nếu đã có `commit` hoặc `ops` loại `report_rejected`/`report_blocked` mang cùng `reportSeq`, trả lại kết quả cũ. Nếu commit đã có mà chưa có `evidence` cho commit đó (lần trước runner hỏng), chạy verify lại.
 - Hook `pre-commit` của repo, nếu có, chạy **trong sandbox** trước lệnh verify, trên cây file đã commit.
+- **Report `blocked` không đổi file không bị từ chối** (report human attention 2026-10-22): plugin ghi `ops report_blocked` và trả `{ outcome: "blocked" }`; hook ở T20 chuyển cho Lead. Trước đây nó thành "no changes in worktree" và chỉ Peer được bảo "fix it", nên Peer kẹt vòng và Lead không biết.
 - File nhạy cảm (`.env*`, khoá) và file được bảo vệ (hook, `paseo.json`, xem T9) không bao giờ vào commit; Lead được báo qua `flags`.
 - **Runner hỏng không phải lỗi của Peer** (review M6). Trước mỗi lần verify, plugin chạy `true` qua runner. Lệnh đó fail thì ghi `ops runner_failed`, không ghi `evidence`, và trả về `runnerError`. Hook ở T20 báo Supervisor, không nhắn Peer. Task không thể accepted vì thiếu evidence, tức là fail closed.
 - **Phục hồi sau crash giữa commit và ghi event** (review M5): worktree sạch, HEAD khác BASE, HEAD mang trailer `SLP-Task` của đúng task và chưa có event `commit` cho HEAD. Khi đó plugin ghi `commit` cho HEAD (`recovered: true`) rồi verify tiếp, thay vì từ chối "no changes".
@@ -2264,6 +2316,13 @@ describe("processReport", () => {
     expect(await processReport(s.deps, s.task, s.report)).toEqual({ outcome: "rejected", reason: "only sensitive or protected files changed: .env" });
     s = setup({ limits: { maxCommitFiles: 2 } }); for (const f of ["a", "b", "c"]) writeFileSync(join(s.repo, f), f);
     expect(await processReport(s.deps, s.task, s.report)).toMatchObject({ outcome: "rejected", reason: expect.stringMatching(/3 files changed \(limit 2\)/) });
+  });
+  it("records a blocked report with no changes for the Lead instead of rejecting it, once", async () => {
+    const { store, deps, task } = setup();
+    const blocked = store.append({ feature: "f", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "blocked", message: "which TTL?" } });
+    expect(await processReport(deps, task, blocked)).toEqual({ outcome: "blocked" });
+    expect(await processReport(deps, task, blocked)).toEqual({ outcome: "blocked" });
+    expect(store.all().filter((e) => e.kind === "ops").map((e) => e.data.type)).toEqual(["report_blocked"]);
   });
   it("never commits hook files or paseo.json, and flags them", async () => {
     const { repo, store, deps, task, report } = setup();
@@ -2350,7 +2409,8 @@ export interface PipelineDeps { store: EventStore; config: SlpConfig; project: P
 export interface CommitFlags { outsideTouchSet: string[]; excludedSensitive: string[]; excludedProtected: string[] }
 export type ReportOutcome =
   | { outcome: "committed"; commit: string; evidenceOk: boolean | null; flags: CommitFlags; runnerError?: string; recovered?: true }
-  | { outcome: "rejected"; reason: string };
+  | { outcome: "rejected"; reason: string }
+  | { outcome: "blocked" };
 
 const shQuote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
 
@@ -2392,7 +2452,7 @@ function orphanCommit(deps: PipelineDeps, task: TaskState, worktree: string): st
 
 export async function processReport(deps: PipelineDeps, task: TaskState, report: SlpEvent): Promise<ReportOutcome> {
   const worktree = task.worktree;
-  const prior = deps.store.all().find((e) => e.data.reportSeq === report.seq && (e.kind === "commit" || (e.kind === "ops" && e.data.type === "report_rejected")));
+  const prior = deps.store.all().find((e) => e.data.reportSeq === report.seq && (e.kind === "commit" || (e.kind === "ops" && (e.data.type === "report_rejected" || e.data.type === "report_blocked"))));
   if (prior?.kind === "commit") {
     const hash = String(prior.data.hash);
     const flags = prior.data.flags as CommitFlags;
@@ -2400,6 +2460,7 @@ export async function processReport(deps: PipelineDeps, task: TaskState, report:
     if (ok === null && deps.config.flags.evidenceCheck && worktree) return verifyTask(deps, report.feature, worktree, task, hash, flags, prior.data.recovered === true);
     return { outcome: "committed", commit: hash, evidenceOk: ok, flags, ...(prior.data.recovered === true ? { recovered: true as const } : {}) };
   }
+  if (prior?.data.type === "report_blocked") return { outcome: "blocked" };
   if (prior) return { outcome: "rejected", reason: String(prior.data.reason) };
 
   const reject = (reason: string): ReportOutcome => {
@@ -2419,6 +2480,10 @@ export async function processReport(deps: PipelineDeps, task: TaskState, report:
   if (kept.length === 0) {
     const orphan = orphanCommit(deps, task, worktree);
     if (!orphan) {
+      if (report.data.status === "blocked") {
+        deps.store.append({ feature: report.feature, kind: "ops", by_role: "plugin", by_agent: null, data: { type: "report_blocked", task: task.id, reportSeq: report.seq, summary: `${task.id}: blocked, no changes` } }, deps.now());
+        return { outcome: "blocked" };
+      }
       const excluded = [...excludedSensitive, ...excludedProtected];
       return reject(excluded.length ? `only sensitive or protected files changed: ${excluded.join(", ")}` : "no changes in worktree");
     }
@@ -3304,7 +3369,7 @@ You are the human's main point of contact for exactly one feature. Speak Vietnam
 
 ## You own
 - Turning the human's idea into a one-page brief (slp_brief). Interview the human one question at a time first. Your first slp_brief names the feature with a new slug; from then on you belong to that feature. The brief has: goal and why; checkable success criteria; hard constraints already verified (cite the source); hypotheses H#, each with a verify-by measurement that can fail; decisions D#; what the Lead may challenge (default: everything except the goal); budget (wall-clock and tokens); non-goals.
-- Showing each brief and spec version to the human and recording their answer with slp_human_decision, quoting their exact words. You never approve anything on the human's behalf; the plugin rejects quotes the human did not send. When two items wait on the human at once, ask about each one separately before you record a decision.
+- Showing each brief and spec version to the human and recording their answer with slp_human_decision, quoting their exact words. You never approve anything on the human's behalf; the plugin rejects quotes the human did not send. Quote the clause where the human approves; a quote inside a negated clause (không, chưa, no, not) or a question is rejected, so ask again plainly. When two items wait on the human at once, ask about each one separately before you record a decision.
 - Spawning the feature's Lead once the brief is approved (slp_spawn with role "lead").
 - Checking each spec against its brief before showing it to the human: every H# stays a hypothesis, no new constraint lacks a source, nothing goes beyond the non-goals.
 - Approving plans with slp_approve_plan after checking: tasks that verify a hypothesis come before tasks that depend on it; models are allowed; the budget fits. First read the other features' digests (slp_state with all: true) and ask the human when two features change the same module without a shared contract. Shared contracts are written "contract:<name>" in touch sets; the plugin refuses a plan that touches a contract another feature holds unless the task has waitsOn.
@@ -3345,6 +3410,7 @@ You own this feature's shared state, its spec and plan, scope assignment, integr
 ## Running tasks
 - One Peer-impl at a time per feature. Call slp_spawn with role "peer-impl", the task id, and a task brief: the task's goal, the contract excerpt it must honor, the hard constraints, and the current design choice marked as the current choice, not a requirement.
 - When the plugin reports a commit with green evidence, call slp_spawn with role "peer-review" for that task. Accept with slp_accept only when that review has no blocking findings. The plugin merges; you never run git.
+- Each commit notice carries the Peer's status and report. On done_with_concerns, check the concern before you accept, for example by passing it to the reviewer in its slp_spawn prompt. A blocked notice means the Peer stopped and is waiting for you: answer with slp_send {to: "<task id>"}, or slp_release the task.
 - Answer slp_ask questions from Peers with slp_answer. Decide plan-level challenges with slp_resolve, or with a ruling (slp_rule, including cost_if_wrong); look at the plugin's challenge evidence first, or ask a reviewer to reproduce it. Escalate challenges that touch the spec's contracts or a D#/H# to the Supervisor with slp_challenge (level "spec"); dependent tasks are parked automatically, so keep running independent tasks.
 - Check the premises yourself whenever a gate or eval fails, a task reaches fix round 3, or a task that verifies a hypothesis finishes (slp_confirm if it held, slp_challenge if it did not). Never add protective layers, trim prompts or add logging to keep a premise alive against evidence.
 - When the human messages you directly and it changes direction, record it (slp_rule or slp_challenge) before acting, then re-plan scopes.
@@ -5550,6 +5616,7 @@ Các quyết định của bước nối dây:
 - Permission `defer`: plugin không làm gì; request chờ trong app cho anh.
 - Lúc khởi động: `trustRepo` cho mọi project (T9). Project có repo hỏng chỉ bị log; agent của project đó sẽ không qua được `git()`, tức fail closed.
 - **Chỉ tool báo cáo mới tính là báo cáo** (review m1). Runtime không truyền `onCall` cho MCP server; `ctx.toolCalls` chỉ được ghi bởi `slp_report`, `slp_review`, `slp_challenge`, `slp_ask`. Turn kết thúc với `outcome.kind === "canceled"` (anh ngắt tay) không bị nhắc.
+- **Lead thấy Peer nói gì** (report human attention 2026-10-22). Thông báo commit gửi Lead kèm status và nội dung báo cáo, cắt ở 3000 ký tự. Report `blocked` không đổi file (`outcome: "blocked"`, T11) chỉ báo Lead kèm cách trả lời, không nhắn Peer "fix it".
 - **Agent đã mất được retire** (review m13). `reconcile` coi agent là mất khi `refresh()` trả `null` (SDK 0.12: `fetchAgent` không thấy agent) hoặc `status === "closed"`; lỗi khi gọi thì giữ nguyên. Agent mất bị retire, nên không còn chiếm trần writer; Peer mất thì báo Lead, Lead mất thì báo Supervisor của feature. `agent.closed` làm y như vậy.
 - **Commit chạm touch set của feature khác** (spec §7.1 Canh touch set): báo Supervisor của feature đó, kèm danh sách file.
 - **Permission để anh quyết** được ghi vào `ctx.pendingPermissions` và xoá khi `agent.permission_resolved` tới hoặc turn kết thúc; gói kiểm (T19) hiện nó.
@@ -5613,15 +5680,31 @@ describe("turn_ended", () => {
     expect(w.ctx.resumes.jobs()).toEqual([]);
     expect(w.paseo.sent.some((s) => s.agentId === "sup-1" && s.text.includes("still blocked"))).toBe(true);
   });
-  it("commits and verifies after a reported turn and tells the Lead", async () => {
+  it("commits and verifies after a reported turn and tells the Lead, with the Peer's status and report", async () => {
     const w = world();
     onTurnStarted(w.ctx, "peer-1");
     writeFileSync(join(w.wt, "a.ts"), "x");
-    w.store.append({ feature: "cache", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done", message: "add a" } });
+    const reportPath = join(w.home, "T1-1.md"); writeFileSync(reportPath, "Added a.ts. Concern: the TTL may be too short under load.");
+    w.store.append({ feature: "cache", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done_with_concerns", message: "add a", reportPath } });
     w.ctx.toolCalls.set("peer-1", Date.now() + 1);
     await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
     expect(deriveFeature("cache", w.store.all()).tasks.get("T1")).toMatchObject({ evidenceOk: true });
-    expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && /T1 committed [0-9a-f]{7}, verify exit 0/.test(s.text))).toBe(true);
+    const toLead = w.paseo.sent.find((s) => s.agentId === "lead-1" && /T1 committed [0-9a-f]{7}, verify exit 0/.test(s.text))!;
+    expect(toLead.text).toContain("Peer status: done_with_concerns — add a");
+    expect(toLead.text).toContain("the TTL may be too short under load");
+  });
+  it("sends a blocked report with no changes to the Lead, not back to the Peer", async () => {
+    const w = world();
+    onTurnStarted(w.ctx, "peer-1");
+    const reportPath = join(w.home, "T1-1.md"); writeFileSync(reportPath, "Spec says TTL 60s, the contract says 300s. Which one?");
+    w.store.append({ feature: "cache", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "blocked", message: "TTL conflict", reportPath } });
+    w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    const toLead = w.paseo.sent.find((s) => s.agentId === "lead-1")!;
+    expect(toLead.text).toContain("T1 is blocked; the Peer changed no files.");
+    expect(toLead.text).toContain("the contract says 300s");
+    expect(w.paseo.sent.filter((s) => s.agentId === "peer-1")).toEqual([]);
+    expect(w.store.all().some((e) => e.kind === "ops" && e.data.type === "report_rejected")).toBe(false);
   });
   it("handles one agent's turn ends one at a time, so overlapping runs commit and verify once", async () => {
     const w = world();
@@ -5765,6 +5848,7 @@ Expected: FAIL, "Cannot find module".
 
 `plugin/server/hooks.ts`:
 ```ts
+import { existsSync, readFileSync } from "node:fs";
 import { appendPlugin, featuresTouching, leadAddress, notify, supervisorAddress, syncHumanMessages, type Ctx } from "./context";
 import { processChallengeEvidence } from "./evidence";
 import { trackedChanges } from "./git";
@@ -5797,9 +5881,22 @@ async function scheduleResume(ctx: Ctx, ident: Identity): Promise<void> {
   appendPlugin(ctx, ident.project, ident.feature, { kind: "ops", data: { type: "limit_hit", agentId: ident.agentId, vendor, resumeAt: at.toISOString(), attempt, summary: `${vendor} limit; resume ${at.toISOString().slice(11, 16)} (${attempt}/${ctx.config.limits.resumeMaxAttempts})` } });
 }
 
+const REPORT_EXCERPT = 3000;
+
+/** What the Peer said in its latest report, so the Lead sees concerns and blockers, not only a commit hash. */
+function peerSaid(ctx: Ctx, ident: Identity): string {
+  const report = [...ctx.stores.feature(ident.project, ident.feature!).all()].reverse().find((e) => e.kind === "report" && e.by_agent === ident.agentId);
+  if (!report) return "";
+  const path = typeof report.data.reportPath === "string" ? report.data.reportPath : null;
+  const text = path && existsSync(path) ? readFileSync(path, "utf8").trim() : "";
+  const body = text.length > REPORT_EXCERPT ? `${text.slice(0, REPORT_EXCERPT)}\n… (truncated)` : text;
+  return `\nPeer status: ${String(report.data.status)} — ${String(report.data.message ?? "")}${body ? `\nReport:\n${body}` : ""}`;
+}
+
 async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean): Promise<void> {
   const out = await processReportFor(ctx, ident);
   const feature = ident.feature!;
+  const said = out ? peerSaid(ctx, ident) : "";
   const events = ctx.stores.feature(ident.project, feature).all();
   const challenge = [...events].reverse().find((e) => e.kind === "challenge" && e.by_agent === ident.agentId && !events.some((x) => x.data.challengeSeq === e.seq));
   if (challenge) {
@@ -5820,14 +5917,19 @@ async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean)
     }
     if (out.runnerError) {
       notify(ctx, supervisorAddress(ident.project, feature), `The sandbox runner is broken, so ${feature} ${ident.task} @${out.commit.slice(0, 7)} cannot be verified: ${out.runnerError}. Fix sandbox.runner in ~/.slp/config.json; the plugin re-verifies on the Peer's next turn or on restart.`);
-      notify(ctx, leadAddress(ident.project, feature), `${ident.task} committed ${out.commit.slice(0, 7)}; verification waits on the sandbox runner (the Supervisor has been told).${flags}${excluded}${protectedFiles}`);
+      notify(ctx, leadAddress(ident.project, feature), `${ident.task} committed ${out.commit.slice(0, 7)}; verification waits on the sandbox runner (the Supervisor has been told).${flags}${excluded}${protectedFiles}${said}`);
       return;
     }
-    notify(ctx, leadAddress(ident.project, feature), `${ident.task} committed ${out.commit.slice(0, 7)}, verify exit ${out.evidenceOk === null ? "skipped" : out.evidenceOk ? "0 ✓" : "non-zero ✗"}.${flags}${excluded}${protectedFiles}`);
+    notify(ctx, leadAddress(ident.project, feature), `${ident.task} committed ${out.commit.slice(0, 7)}, verify exit ${out.evidenceOk === null ? "skipped" : out.evidenceOk ? "0 ✓" : "non-zero ✗"}.${flags}${excluded}${protectedFiles}${said}`);
     if (out.evidenceOk === false) {
       const ev = [...ctx.stores.feature(ident.project, feature).all()].reverse().find((e) => e.kind === "evidence" && e.data.commit === out.commit);
       await ctx.paseo().agents.ref(ident.agentId!).send(`[SLP plugin] Verify failed on ${out.commit.slice(0, 7)} (exit ${String(ev?.data.exitCode)}):\n${String(ev?.data.stderrTail ?? "").slice(-1500)}\nFix it and slp_report again.`, { messageId: ctx.router.issue() });
     }
+    return;
+  }
+  if (out?.outcome === "blocked") {
+    ctx.nudges.reset(ident.agentId!);
+    notify(ctx, leadAddress(ident.project, feature), `${ident.task} is blocked; the Peer changed no files.${said}\nAnswer with slp_send {to: "${ident.task}"}, or slp_release the task.`);
     return;
   }
   if (out?.outcome === "rejected") {

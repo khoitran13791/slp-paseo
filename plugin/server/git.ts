@@ -91,9 +91,10 @@ export function hooksDir(cwd: string): string | null {
  * (.claude/, .codex/, .mcp.json: hooks and MCP servers) when an agent session opens in a checkout of the branch.
  */
 export function isProtectedPath(p: string, hookDir: string | null): boolean {
-  const q = p.toLowerCase().replace(/\/+$/, "");
+  const fold = (s: string) => s.toUpperCase().toLowerCase().replace(/\/+$/, "");
+  const q = fold(p);
   if (q === "paseo.json" || q === ".mcp.json") return true;
-  return [".husky", ".githooks", ".claude", ".codex", ...(hookDir ? [hookDir.toLowerCase().replace(/\/+$/, "")] : [])].some((d) => q === d || q.startsWith(`${d}/`));
+  return [".husky", ".githooks", ".claude", ".codex", ...(hookDir ? [fold(hookDir)] : [])].some((d) => q === d || q.startsWith(`${d}/`));
 }
 
 /**
@@ -157,6 +158,7 @@ export function commitTrailer(cwd: string, rev: string, key: string): string | n
 }
 
 export function mergeNoHooks(worktree: string, ref: string, message: string): { ok: true; hash: string } | { ok: false; conflicts: string[] } {
+  if (trackedChanges(worktree).length) throw new Error(`refusing to merge into ${worktree}: uncommitted tracked changes`);
   const r = git(worktree, ["merge", "--no-ff", "--no-verify", "-m", message, ref], true);
   if (r.code === 0) return { ok: true, hash: headOf(worktree) };
   const conflicts = git(worktree, ["diff", "--name-only", "--diff-filter=U", "--ignore-submodules=all"], true).stdout.split("\n").filter(Boolean);
@@ -166,6 +168,7 @@ export function mergeNoHooks(worktree: string, ref: string, message: string): { 
 
 /** Starts `git merge --no-commit` and leaves conflict markers in place for a Peer to resolve. Returns conflicted files. */
 export function startMerge(worktree: string, ref: string): string[] {
+  if (trackedChanges(worktree).length) throw new Error(`refusing to merge into ${worktree}: uncommitted tracked changes`);
   const r = git(worktree, ["merge", "--no-ff", "--no-commit", "--no-verify", ref], true);
   const merging = git(worktree, ["rev-parse", "-q", "--verify", "MERGE_HEAD"], true).code === 0;
   if (r.code !== 0 && !merging) throw new Error(`git merge ${ref} did not start: ${r.stderr.trim()}`);

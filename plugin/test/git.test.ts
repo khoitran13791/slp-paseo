@@ -19,6 +19,31 @@ function worktree(r: string, branch: string): string {
   return wt;
 }
 
+/** A nested repo committed as a tracked gitlink `vendor` on the current branch of r, hooks off. Returns its path. */
+function gitlinkVendor(r: string): string {
+  const vendor = join(r, "vendor"); mkdirSync(vendor);
+  sh(vendor, "git", ["init", "-q", "-b", "main"]); writeFileSync(join(vendor, "file.txt"), "one\n");
+  sh(vendor, "git", ["add", "."]); sh(vendor, "git", ["-c", "user.name=SLP Test", "-c", "user.email=slp@test.local", "commit", "-qm", "vendor"]);
+  sh(r, "git", ["update-index", "--add", "--cacheinfo", `160000,${sh(vendor, "git", ["rev-parse", "HEAD"])},vendor`]);
+  sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "gitlink"]);
+  return vendor;
+}
+/** The Peer's move: a clean filter in the nested config, a .gitattributes that selects it, and a stat-dirty file (same bytes). */
+function armNested(vendor: string, marker: string): void {
+  sh(vendor, "git", ["config", "filter.x.clean", `touch ${marker} && cat`]);
+  writeFileSync(join(vendor, ".gitattributes"), "* filter=x\n");
+  sh(vendor, "touch", ["file.txt"]);
+}
+/** A clean main checkout with a tracked gitlink `vendor`, and branch `other` that conflicts with main on README.md. */
+function conflictingGitlinkRepo(): { r: string; marker: string } {
+  const r = repo(); const marker = join(tmpDir(), "nested-clean.log");
+  const vendor = gitlinkVendor(r);
+  sh(r, "git", ["checkout", "-qb", "other"]); writeFileSync(join(r, "README.md"), "other\n"); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "other"]);
+  sh(r, "git", ["-c", "core.hooksPath=/dev/null", "checkout", "-q", "main"]); writeFileSync(join(r, "README.md"), "main\n"); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "main"]);
+  armNested(vendor, marker);
+  return { r, marker };
+}
+
 describe("git helpers", () => {
   it("lists changed files including untracked names with spaces", () => {
     const r = repo();
@@ -161,5 +186,27 @@ describe("git helpers", () => {
   it("startMerge throws when the merge does not start, instead of reporting no conflicts", () => {
     const r = repo(); const wt = worktree(r, "slp/f/T10-1");
     expect(() => startMerge(wt, "no-such-ref")).toThrow(/did not start/);
+  });
+  it("folds Unicode case aliases (long s) and hook-dir case for protected paths", () => {
+    expect(["paſeo.json", ".huſky/x", ".MCP.json"].map((p) => isProtectedPath(p, "hooks"))).toEqual([true, true, true]);
+    expect(isProtectedPath("hooks/pre-commit", "Hooks")).toBe(true);
+    expect(isProtectedPath("hooks/x", "hookſ")).toBe(true);
+  });
+  it("refuses to merge over uncommitted tracked changes, before git merge can run a nested filter", () => {
+    const { r, marker } = conflictingGitlinkRepo();
+    writeFileSync(join(r, "README.md"), "dirty\n");
+    expect(() => mergeNoHooks(r, "other", "Merge other")).toThrow(/uncommitted tracked changes/);
+    expect(() => startMerge(r, "other")).toThrow(/uncommitted tracked changes/);
+    expect(existsSync(marker)).toBe(false);
+  });
+  it("startMerge reports conflicts on a clean tree without running a nested filter", () => {
+    const { r, marker } = conflictingGitlinkRepo();
+    expect(startMerge(r, "other")).toEqual(["README.md"]);
+    expect(existsSync(marker)).toBe(false);
+  });
+  it("mergeNoHooks reports conflicts on a clean tree without running a nested filter", () => {
+    const { r, marker } = conflictingGitlinkRepo();
+    expect(mergeNoHooks(r, "other", "Merge other")).toEqual({ ok: false, conflicts: ["README.md"] });
+    expect(existsSync(marker)).toBe(false);
   });
 });

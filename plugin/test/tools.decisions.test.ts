@@ -1,0 +1,262 @@
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { releaseContracts, type Ctx } from "../server/context";
+import type { Identity } from "../server/identity";
+import { contractQueues, holderOf } from "../server/planCheck";
+import { deriveFeature } from "../server/store/derive";
+import { decisionTools } from "../server/tools/decisions";
+import { bound, humanSays, makeCtx } from "./helpers";
+
+function world() {
+  const w = makeCtx();
+  // The Supervisor of feature "cache" (its first brief bound it; see "one Supervisor per feature").
+  const sup = bound(w.ctx, { role: "supervisor", project: "demo", feature: "cache", task: null, worktree: null, reviewCommit: null, parentAgentId: null }, "sup-1");
+  const lead = bound(w.ctx, { role: "lead", project: "demo", feature: "cache", task: null, worktree: "/l", reviewCommit: null, parentAgentId: "sup-1" }, "lead-1");
+  const peer = bound(w.ctx, { role: "peer-impl", project: "demo", feature: "cache", task: "T1", worktree: "/p", reviewCommit: null, parentAgentId: "lead-1" }, "peer-1");
+  // Keep every agent "running" so routed messages stay in the queue and tests can inspect them deterministically.
+  for (const a of ["sup-1", "lead-1", "peer-1"]) w.paseo.statuses.set(a, "running");
+  const tools = decisionTools(w.ctx);
+  const call = async (who: Identity, name: string, args: unknown) => {
+    const t = tools.find((x) => x.name === name)!;
+    if (!t.roles.includes(who.role)) return { text: `not available to ${who.role}`, isError: true };
+    try { return await t.handler(who, args); } catch (e) { return { text: (e as Error).message, isError: true }; }
+  };
+  const human = (who: Identity, text: string) => humanSays(w.paseo, who.agentId!)(text);
+  const events = () => w.ctx.stores.feature("demo", "cache").all();
+  return { ...w, sup, lead, peer, call, human, events };
+}
+
+describe("brief and human decisions", () => {
+  it("stores a brief with premises and approves it only with a real human quote", async () => {
+    const w = world();
+    const r = await w.call(w.sup, "slp_brief", { feature: "cache", title: "Cache", markdown: "# Brief", premises: [{ kind: "decision", title: "Redis" }, { kind: "hypothesis", title: "p95<50ms", verify_by: "bench on staging corpus" }] });
+    expect(r.text).toMatch(/brief v1/);
+    expect(w.events().filter((e) => e.kind === "premise").map((e) => e.id)).toEqual(["D1", "H1"]);
+    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_brief", quote: "duyệt" })).isError).toBe(true);
+    await w.human(w.sup, "ok duyệt brief");
+    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_brief", quote: "duyệt brief" })).isError).toBeFalsy();
+    expect(deriveFeature("cache", w.events()).brief?.approved).toBe(true);
+    expect(w.ctx.stores.project("demo").all().filter((e) => e.kind === "human_message")).toHaveLength(1);
+  });
+  it("does not let an approval typed before a new brief version approve that version", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "v1" });
+    await w.human(w.sup, "duyệt");
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "v2" });
+    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_brief", quote: "duyệt" })).text).toMatch(/quote rejected/);
+  });
+  it("rejects a hypothesis without verify_by and a brief from a non-supervisor", async () => {
+    const w = world();
+    expect((await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "hypothesis", title: "h" }] })).isError).toBe(true);
+    expect((await w.call(w.lead, "slp_brief", { feature: "cache", title: "C", markdown: "x" })).isError).toBe(true);
+  });
+  it("supersedes a premise from a quoted human decision and resolves its open challenges", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "decision", title: "memory cache" }] });
+    await w.call(w.lead, "slp_challenge", { target: "D1", level: "spec", claim: "memory cache breaks retries", evidence: "test retry.spec fails: expected same body", impact: "T4,T6", smallest_correction: "Redis TTL" });
+    await w.call(w.sup, "slp_challenge", { feature: "cache", target: "D1", level: "spec", claim: "ask human", evidence: "see C1 evidence from lead", impact: "T4", smallest_correction: "Redis" });
+    await w.human(w.sup, "supersede D1, dùng Redis");
+    const r = await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "supersede", target: "D1", quote: "dùng Redis", replacement: { kind: "decision", title: "Redis with TTL" } });
+    expect(r.isError).toBeFalsy();
+    const st = deriveFeature("cache", w.events());
+    expect(st.premises.get("D1")).toMatchObject({ status: "superseded", supersededBy: "D2" });
+    expect([...st.challenges.values()].every((c) => !c.open)).toBe(true);
+    expect(w.ctx.router.pending().some((d) => d.to.role === "lead" && d.text.includes("D1 superseded by D2"))).toBe(true);
+  });
+});
+
+describe("spec and plan", () => {
+  async function approvedSpec(w: ReturnType<typeof world>) {
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "hypothesis", title: "h", verify_by: "bench" }] });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec" });
+    await w.human(w.sup, "spec ok");
+    await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "spec ok" });
+  }
+  it("refuses a plan before the spec is approved and a plan with structural errors", async () => {
+    const w = world();
+    const plan = { markdown: "# Plan", tasks: [{ id: "T1", title: "t", dependsOn: ["H1"], verifies: [], touchSet: ["src/"], verify: "npm test" }] };
+    expect((await w.call(w.lead, "slp_plan", plan)).text).toMatch(/spec is not approved/);
+    await approvedSpec(w);
+    const r = await w.call(w.lead, "slp_plan", plan);
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/unverified_hypothesis/);
+  });
+  it("stores a valid plan, routes it to the Supervisor, and approves by sha", async () => {
+    const w = world();
+    await approvedSpec(w);
+    const r = await w.call(w.lead, "slp_plan", { markdown: "# Plan", tasks: [{ id: "T1", title: "verify h", dependsOn: [], verifies: ["H1"], touchSet: ["bench/"], verify: "npm run bench" }] });
+    expect(r.isError).toBeFalsy();
+    const sha = deriveFeature("cache", w.events()).plan!.sha256;
+    expect(w.ctx.router.pending().some((d) => d.to.role === "supervisor" && d.text.includes("Plan v1"))).toBe(true);
+    expect((await w.call(w.sup, "slp_approve_plan", { feature: "cache", sha256: "wrong" })).isError).toBe(true);
+    expect((await w.call(w.sup, "slp_approve_plan", { feature: "cache", sha256: sha })).isError).toBeFalsy();
+    expect(deriveFeature("cache", w.events()).plan!.approved).toBe(true);
+  });
+  it("hashes the tasks with the prose, so the same markdown with another verify command is a different plan", async () => {
+    const w = world();
+    await approvedSpec(w);
+    const task = { id: "T1", title: "verify h", dependsOn: [], verifies: ["H1"], touchSet: ["bench/"], verify: "npm run bench" };
+    await w.call(w.lead, "slp_plan", { markdown: "# Plan", tasks: [task] });
+    const v1 = deriveFeature("cache", w.events()).plan!;
+    await w.call(w.lead, "slp_plan", { markdown: "# Plan", tasks: [{ ...task, verify: "true" }] });
+    const v2 = deriveFeature("cache", w.events()).plan!;
+    expect(v2.sha256).not.toBe(v1.sha256);
+    expect(readFileSync(v2.path, "utf8")).toContain('"verify": "true"');
+    expect((await w.call(w.sup, "slp_approve_plan", { feature: "cache", sha256: v1.sha256 })).isError).toBe(true);
+  });
+  it("activates on spec approval only the Lead premises that spec version lists or names", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x" });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec v1", premises: [{ kind: "decision", title: "memory cache" }, { kind: "decision", title: "TTL 60s" }] });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec v2 keeps D2 only" });
+    await w.human(w.sup, "spec ok");
+    await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "spec ok" });
+    const st = deriveFeature("cache", w.events());
+    expect(st.premises.get("D1")?.status).toBe("proposed");
+    expect(st.premises.get("D2")?.status).toBe("active");
+  });
+  it("lets one human message back only one decision", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "decision", title: "memory cache" }] });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec" });
+    await w.call(w.sup, "slp_challenge", { feature: "cache", target: "D1", level: "spec", claim: "c", evidence: "evidence text here", impact: "i", smallest_correction: "s" });
+    await w.human(w.sup, "ok");
+    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "ok" })).isError).toBeFalsy();
+    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "keep", target: "D1", quote: "ok", reason: "r" })).text).toMatch(/already backs another decision/);
+  });
+  it("auto-approves when supervisorPlanApproval is off", async () => {
+    const w = world();
+    w.ctx.config.flags.supervisorPlanApproval = false;
+    await approvedSpec(w);
+    await w.call(w.lead, "slp_plan", { markdown: "# P", tasks: [{ id: "T1", title: "v", dependsOn: [], verifies: ["H1"], touchSet: [], verify: "x" }] });
+    expect(deriveFeature("cache", w.events()).plan!.approved).toBe(true);
+  });
+});
+
+describe("challenges, questions, messages", () => {
+  it("routes a peer challenge to its lead and lets the lead resolve plan-level ones only", async () => {
+    const w = world();
+    await w.call(w.peer, "slp_challenge", { target: "T1", claim: "plan step wrong", evidence: "npm test -- retry exits 1: expected 200", impact: "T1", smallest_correction: "use redis", repro_command: "npm test -- retry" });
+    expect(w.ctx.router.pending().at(-1)!.to).toEqual({ role: "lead", project: "demo", feature: "cache" });
+    expect(w.ctx.toolCalls.has("peer-1")).toBe(true);
+    expect((await w.call(w.lead, "slp_resolve", { challenge: "C1", outcome: "accepted", reason: "reproduced" })).isError).toBeFalsy();
+    await w.call(w.lead, "slp_challenge", { target: "D9", level: "spec", claim: "c", evidence: "evidence text here", impact: "i", smallest_correction: "s" });
+    expect((await w.call(w.lead, "slp_resolve", { challenge: "C2", outcome: "rejected", reason: "r" })).text).toMatch(/spec-level/);
+  });
+  it("makes a Peer challenge on a premise or contract spec-level, whatever level it asked for, and parks tasks touching the contract", async () => {
+    const w = world();
+    await w.call(w.peer, "slp_challenge", { target: "D1", level: "plan", claim: "D1 is false", evidence: "npm test -- retry exits 1: expected 200", impact: "T1", smallest_correction: "Redis" });
+    expect((await w.call(w.lead, "slp_resolve", { challenge: "C1", outcome: "rejected", reason: "nah" })).text).toMatch(/spec-level/);
+    expect(w.ctx.router.pending().at(-1)!.text).toMatch(/Only the human decides this/);
+    await w.call(w.peer, "slp_challenge", { target: "contract: auth-api", claim: "contract breaks login", evidence: "npm test -- login exits 1: 401", impact: "T1", smallest_correction: "add a field" });
+    const c2 = deriveFeature("cache", w.events()).challenges.get("C2")!;
+    expect(c2).toMatchObject({ level: "spec", target: "contract:auth-api" });
+  });
+  it("halts the feature on a change of goal: Peers are told to stop and spawning is refused", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_challenge", { feature: "cache", target: "T1", level: "spec", claim: "goal is wrong", evidence: "evidence text here", impact: "all", smallest_correction: "rethink" });
+    await w.human(w.sup, "đổi goal, dừng feature này lại");
+    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "change_goal", quote: "đổi goal" })).isError).toBeFalsy();
+    expect(deriveFeature("cache", w.events()).halted).toBe(true);
+    await w.ctx.router.flush();
+    expect(w.paseo.sent.some((s) => s.agentId === w.peer.agentId && s.text.includes("feature is halted"))).toBe(true);
+  });
+  it("rejects a challenge without evidence", async () => {
+    const w = world();
+    expect((await w.call(w.peer, "slp_challenge", { target: "T1", claim: "feels wrong", evidence: "hmm", impact: "?", smallest_correction: "?" })).isError).toBe(true);
+  });
+  it("asks and answers through the router", async () => {
+    const w = world();
+    const q = await w.call(w.peer, "slp_ask", { question: "Does retry include other sessions?" });
+    expect(q.text).toMatch(/Q1/);
+    await w.call(w.lead, "slp_answer", { question: "Q1", answer: "No, same session only." });
+    expect(w.ctx.router.pending().at(-1)).toMatchObject({ to: { role: "peer-impl", feature: "cache", task: "T1" } });
+  });
+  it("hides slp_ask when the ask flag is off", () => {
+    const w = makeCtx({ flags: { ask: false } });
+    expect(decisionTools(w.ctx).find((t) => t.name === "slp_ask")!.roles).toEqual([]);
+  });
+  it("enforces router edges for slp_send, and steer only from a Supervisor to its Lead or a Lead to its Peers", async () => {
+    const w = world();
+    expect((await w.call(w.sup, "slp_send", { to: "lead", feature: "cache", text: "status?" })).isError).toBeFalsy();
+    expect((await w.call(w.lead, "slp_send", { to: "T1", text: "go" })).isError).toBeFalsy();
+    expect((await w.call(w.sup, "slp_send", { to: "T1", feature: "cache", text: "do it" })).isError).toBe(true);
+    expect((await w.call(w.lead, "slp_send", { to: "supervisor", text: "x", mode: "steer" })).text).toMatch(/cannot steer/);
+    expect((await w.call(w.sup, "slp_send", { to: "lead", text: "you are looping on the same test", mode: "steer" })).isError).toBeFalsy();
+    await w.ctx.router.flush();
+    expect(w.paseo.sent.at(-1)).toMatchObject({ agentId: "lead-1", behavior: "steer", text: expect.stringContaining("you are looping") });
+    expect((await w.call(w.lead, "slp_send", { to: "T1", text: "stop and report", mode: "interrupt" })).isError).toBeFalsy();
+    await w.ctx.router.flush();
+    expect(w.paseo.sent.at(-1)).toMatchObject({ agentId: "peer-1", behavior: "interrupt" });
+  });
+  it("records rulings and confirms only open hypotheses with evidence", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "hypothesis", title: "h", verify_by: "bench" }] });
+    expect((await w.call(w.lead, "slp_rule", { decision: "use LRU", reason: "simpler", cost_if_wrong: "rewrite cache module", drop: ["T9"] })).text).toMatch(/R1/);
+    expect((await w.call(w.lead, "slp_confirm", { hypothesis: "H1", evidence: "bench p95 41ms on commit abc" })).isError).toBeFalsy();
+    expect((await w.call(w.lead, "slp_confirm", { hypothesis: "H1", evidence: "again evidence" })).isError).toBe(true);
+  });
+  it("returns the digest and documents through slp_state", async () => {
+    const w = world();
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "# My brief", premises: [] });
+    expect((await w.call(w.sup, "slp_state", {})).text).toContain("# cache — phase: brief-review");
+    expect((await w.call(w.lead, "slp_state", { doc: "brief" })).text).toContain("# My brief");
+    expect((await w.call(w.peer, "slp_state", { feature: "other" })).isError).toBe(true);
+  });
+  it("does not count slp_state as a report", async () => {
+    const w = world();
+    await w.call(w.peer, "slp_state", {});
+    expect(w.ctx.toolCalls.has("peer-1")).toBe(false);
+  });
+  it("logs and drops an incomplete last line when a feature log opens", () => {
+    const w = makeCtx();
+    const dir = w.ctx.stores.featureDir("demo", "cache"); mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "events.jsonl"), "");
+    appendFileSync(join(dir, "events.jsonl"), '{"seq":1,"ts":"2026');
+    expect(w.ctx.stores.feature("demo", "cache").all().map((e) => e.data.type)).toEqual(["log_truncated"]);
+  });
+});
+
+describe("one Supervisor per feature", () => {
+  it("binds a new Supervisor to the feature its first brief creates, and keeps it there", async () => {
+    const w = world();
+    const fresh = bound(w.ctx, { role: "supervisor", project: "demo", feature: null, task: null, reviewCommit: null, parentAgentId: null }, "sup-2");
+    expect((await w.call(fresh, "slp_approve_plan", { sha256: "x" })).text).toMatch(/write the brief first/);
+    expect((await w.call(fresh, "slp_brief", { title: "L", markdown: "x" })).text).toMatch(/name the feature/);
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x" });
+    expect((await w.call(fresh, "slp_brief", { feature: "cache", title: "L", markdown: "x" })).text).toMatch(/already exists/);
+    expect((await w.call(fresh, "slp_brief", { feature: "login", title: "L", markdown: "x" })).isError).toBeFalsy();
+    expect(w.ctx.identities.current("supervisor", "demo", "login")?.agentId).toBe("sup-2");
+    expect((await w.call(fresh, "slp_brief", { feature: "other", title: "O", markdown: "x" })).text).toMatch(/own Supervisor/);
+    expect((await w.call(fresh, "slp_state", { all: true })).text).toContain("# cache");
+    expect((await w.call(fresh, "slp_state", { feature: "cache" })).text).toContain("# cache");
+    expect((await w.call(fresh, "slp_send", { to: "lead", feature: "cache", text: "hi" })).isError).toBe(true);
+  });
+});
+
+describe("shared contracts", () => {
+  it("lets the first approved plan hold a contract, makes the next feature wait, and hands it over on release", async () => {
+    const w = world();
+    const supL = bound(w.ctx, { role: "supervisor", project: "demo", feature: "login", task: null, reviewCommit: null, parentAgentId: null }, "sup-2");
+    const leadL = bound(w.ctx, { role: "lead", project: "demo", feature: "login", task: null, worktree: "/l2", reviewCommit: null, parentAgentId: "sup-2" }, "lead-2");
+    for (const a of ["sup-2", "lead-2"]) w.paseo.statuses.set(a, "running");
+    const plan = async (sup: Identity, lead: Identity, feature: string, task: Record<string, unknown>) => {
+      await w.call(sup, "slp_brief", { feature, title: feature, markdown: "x" });
+      await w.call(lead, "slp_spec", { markdown: "# Spec" });
+      await w.human(sup, `spec ok ${feature}`);
+      await w.call(sup, "slp_human_decision", { decides: "approve_spec", quote: `spec ok ${feature}` });
+      return w.call(lead, "slp_plan", { markdown: "# P", tasks: [{ id: "T1", title: "t", dependsOn: [], verifies: [], verify: "true", ...task }] });
+    };
+    const approve = (sup: Identity, feature: string) => w.call(sup, "slp_approve_plan", { sha256: deriveFeature(feature, w.ctx.stores.feature("demo", feature).all()).plan!.sha256 });
+    expect((await plan(w.sup, w.lead, "cache", { touchSet: ["contract:auth-api"] })).isError).toBeFalsy();
+    expect((await approve(w.sup, "cache")).isError).toBeFalsy();
+    expect((await plan(supL, leadL, "login", { touchSet: ["contract:auth-api"] })).text).toMatch(/contract_held/);
+    expect((await w.call(leadL, "slp_plan", { markdown: "# P", tasks: [{ id: "T1", title: "t", dependsOn: [], verifies: [], verify: "true", touchSet: ["contract:auth-api"], waitsOn: ["cache"] }] })).isError).toBeFalsy();
+    expect((await approve(supL, "login")).isError).toBeFalsy();
+    expect(contractQueues(w.ctx.stores.project("demo").all()).get("contract:auth-api")).toEqual(["cache", "login"]);
+    releaseContracts(w.ctx, "demo", "cache");
+    expect(holderOf(contractQueues(w.ctx.stores.project("demo").all()), "contract:auth-api")).toBe("login");
+    expect(w.ctx.router.pending().some((p) => p.to.role === "lead" && p.to.feature === "login" && p.text.includes("now held by your feature"))).toBe(true);
+  });
+});

@@ -10,7 +10,7 @@
 
 **Spec:** [`docs/superpowers/specs/2026-10-21-slp-paseo-design.md`](../specs/2026-10-21-slp-paseo-design.md) (rev 4). Bằng chứng nền: [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md).
 
-**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5); rev 5.7 (2026-10-23) cô lập runtime của vai và bảo vệ setting agent trong repo):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 279 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 95 lần gỡ thử từng phần sửa mới (round 6 thêm: git mạng chạy ở checkout chính, cổng ship cần brief/spec/plan đã duyệt, accept chờ plan mới, ship kiểm lại blocker, resume không cắt ngang turn đang chạy, rollback mọi lỗi sau khi worktree đã có; round 5 thêm: giá trị git-lfs khớp nguyên văn, kiểm config của chính worktree mới trước khi checkout; round 4 thêm: git filter/driver chạy file của repo, giữ git-lfs, rollback xoá branch của chính nó, `last()` bỏ identity tạo hỏng, câu duyệt có `?`, gỡ worktree chỉ qua git; round 3 thay chặn theo đường dẫn bằng worktree do plugin tạo, và thêm: tick một lượt một lúc, resume theo đúng job, câu duyệt mọi mệnh đề đều là đồng ý, evidence A→B→A; round 2 thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest; rev 5.7 thêm 14: `.claude`/`.codex`/`.mcp.json` không vào commit (git và pipeline), `Write`/`Edit` vào đó bị từ chối, `setting-sources` rỗng, `strict-mcp-config`, caller không đè được, env CLAUDE.md, `CODEX_HOME`, `config.toml` ghi lại mỗi lần, cần `auth.json`, sắp version Superpowers theo số) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
+**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5); rev 5.7 (2026-10-23) cô lập runtime của vai và bảo vệ setting agent trong repo; rev 5.8 luật giao tiếp: report chờ Lead, item mở, outcome, một chuỗi lệnh):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 281 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 95 lần gỡ thử từng phần sửa mới (round 6 thêm: git mạng chạy ở checkout chính, cổng ship cần brief/spec/plan đã duyệt, accept chờ plan mới, ship kiểm lại blocker, resume không cắt ngang turn đang chạy, rollback mọi lỗi sau khi worktree đã có; round 5 thêm: giá trị git-lfs khớp nguyên văn, kiểm config của chính worktree mới trước khi checkout; round 4 thêm: git filter/driver chạy file của repo, giữ git-lfs, rollback xoá branch của chính nó, `last()` bỏ identity tạo hỏng, câu duyệt có `?`, gỡ worktree chỉ qua git; round 3 thay chặn theo đường dẫn bằng worktree do plugin tạo, và thêm: tick một lượt một lúc, resume theo đúng job, câu duyệt mọi mệnh đề đều là đồng ý, evidence A→B→A; round 2 thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest; rev 5.7 thêm 14: `.claude`/`.codex`/`.mcp.json` không vào commit (git và pipeline), `Write`/`Edit` vào đó bị từ chối, `setting-sources` rỗng, `strict-mcp-config`, caller không đè được, env CLAUDE.md, `CODEX_HOME`, `config.toml` ghi lại mỗi lần, cần `auth.json`, sắp version Superpowers theo số; rev 5.8 thêm 9: đóng item cần note, ok đóng item, danh sách report chờ Lead chỉ gồm task `reported`, dòng "N of M" tool call, bỏ `Agent`/`Task`, giữ `disallowedTools` của caller, từ chối `ultracode`, outcome trong brief) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
 
 **Core mechanism:** mỗi ý tưởng một Supervisor (brief đầu tiên gắn nó với feature) → `slp_spawn` → plugin tạo worktree (hook tắt) và một workspace `directory` cho nó, Paseo tạo agent trong đó → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng, `toolPolicy`) và ghi worktree thật vào identity → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `turn_started`/`turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer (hook tắt, git dir tin cậy), chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh → mỗi `watch.intervalMinutes` plugin dựng gói kiểm (trạng thái, tool call gần nhất, lặp lại, file đang đổi) gửi Supervisor của feature; Supervisor steer Lead khi cần.
 
@@ -623,7 +623,7 @@ git commit -m "feat(plugin): append-only event store with per-prefix ids"
 
 **Interfaces:**
 - Consumes: `SlpEvent` (T2)
-- Produces: `PlanTask { id; title; dependsOn: string[]; verifies: string[]; touchSet: string[]; verify: string; model?: string; waitsOn?: string[] }`, `WatchResult { tick; ts; verdicts: Array<{ agent; verdict; note? }> }`, `PremiseState`, `TaskStatus`, `TaskState`, `ChallengeState`, `DocState`, `FeatureState`, `deriveFeature(slug, events): FeatureState`, `evidencePassed(data): boolean`, `taskDef(task)`, `acceptanceBlockers(state, events, head): string[]`
+- Produces: `PlanTask { id; title; outcome?: string; dependsOn: string[]; verifies: string[]; touchSet: string[]; verify: string; model?: string; waitsOn?: string[] }`, `WatchResult { tick; ts; verdicts: Array<{ agent; verdict; note? }> }`, `PremiseState`, `TaskStatus`, `TaskState`, `ChallengeState`, `DocState`, `FeatureState`, `deriveFeature(slug, events): FeatureState`, `evidencePassed(data): boolean`, `taskDef(task)`, `acceptanceBlockers(state, events, head): string[]`
 
 Quy ước dữ liệu event, các task sau phải ghi đúng như vậy:
 - `brief` / `spec` / `plan`: `data { version, sha256, path }`. Riêng `plan` có thêm `tasks: PlanTask[]`; file plan chứa cả markdown lẫn khối JSON của `tasks`, nên `sha256` phủ đúng thứ plugin sẽ chạy. Riêng `spec` có thêm `premises: string[]`: premise của Lead mà version đó dựa vào (mới đề xuất, hoặc premise cũ còn `proposed` được nhắc ID trong spec); duyệt spec chỉ kích hoạt các premise này.
@@ -842,7 +842,8 @@ Expected: FAIL, "Cannot find module".
 ```ts
 import type { SlpEvent } from "./events";
 
-export interface PlanTask { id: string; title: string; dependsOn: string[]; verifies: string[]; touchSet: string[]; verify: string; model?: string; waitsOn?: string[] }
+/** `outcome`: what the human or the next task can do once the task is done (descriptive; not part of taskDef). */
+export interface PlanTask { id: string; title: string; outcome?: string; dependsOn: string[]; verifies: string[]; touchSet: string[]; verify: string; model?: string; waitsOn?: string[] }
 export interface WatchResult { tick: number; ts: string; verdicts: Array<{ agent: string; verdict: string; note?: string }> }
 export type PremiseStatus = "active" | "open" | "confirmed" | "superseded" | "proposed";
 export interface PremiseState { id: string; kind: "decision" | "hypothesis"; title: string; status: PremiseStatus; supersededBy: string | null; supersededAtSeq: number | null; seq: number; byRole: string }
@@ -3659,6 +3660,12 @@ describe("role prompts", () => {
     expect(p).toContain("never approve anything on the human's behalf");
     expect(p).toContain("slp_checkpoint");
     expect(promptFor(ident("supervisor"), {})).toContain("feature cache");
+    expect(p).toContain("one open question");
+    expect(p).toContain("observation gap, not a violation");
+    expect(p).toContain("An acknowledgment does not close an item");
+    expect(p).toContain("smallest working path");
+    expect(p).toContain("an inference is a question, not an instruction");
+    expect(p).toContain("verify command exercises that outcome");
   });
   it("lead prompt locks contracts, not implementation, and acts on the Supervisor's watch notes", () => {
     const p = promptFor(ident("lead"), {});
@@ -3667,6 +3674,10 @@ describe("role prompts", () => {
     expect(p).toContain("Never add protective layers");
     expect(p).toContain('"contract:<name>"');
     expect(p).toContain('mode: "interrupt"');
+    expect(p).toContain("Silence, DONE or green tests are not a decision");
+    expect(p).toContain("not a stopping point");
+    expect(p).toContain("Do not ask again for permission already given");
+    expect(p).toContain("outcome (what the human or the next task can do");
   });
   it("peer-impl prompt names its worktree and verify command and forbids commits", () => {
     const p = promptFor(ident("peer-impl"), { task });
@@ -3674,6 +3685,9 @@ describe("role prompts", () => {
     expect(p).toContain("npm test -- cache");
     expect(p).toContain("Do not commit, push or merge");
     expect(p).toContain("Doubt without evidence is not a challenge");
+    expect(p).toContain("verified, not verified, failed, unknown");
+    expect(p).toContain("a missing prerequisite that nobody owns");
+    expect(p).toContain("evidence, the consequence and the decision");
   });
   it("peer-review prompt names the commit and treats reports as testimony", () => {
     const p = promptFor(ident("peer-review"), { task });
@@ -3686,6 +3700,8 @@ describe("role prompts", () => {
     expect(b).toContain("- D2 — Redis is available");
     expect(b).toContain("- H1 — p95 under 50ms (hypothesis, not yet verified)");
     expect(b).toContain("src/cache/");
+    expect(b).not.toContain("## Outcome");
+    expect(taskBrief("cache", { ...task, outcome: "A repeated lookup returns the cached value" }, premises, "x")).toContain("## Outcome\nA repeated lookup returns the cached value");
     expect(reviewBrief("cache", task, "abc1234", "Keep retries consistent.")).toContain("Review commit abc1234");
     expect(leadKickoff("cache", "# Brief", "start")).toContain("# Brief");
   });
@@ -3724,8 +3740,12 @@ You are the human's main point of contact for exactly one feature. Speak Vietnam
 - Showing each brief and spec version to the human and recording their answer with slp_human_decision, quoting their exact words. You never approve anything on the human's behalf; the plugin rejects quotes the human did not send. Quote the clause where the human approves, from their latest message. The plugin accepts an approval only when that clause is a plain yes ("duyệt", "ok ship", "đồng ý"), with no negation and no question, and one message backs only one decision; so when you ask, ask for a plain yes on one item. When two items wait on the human at once, ask about each one separately before you record a decision.
 - Spawning the feature's Lead once the brief is approved (slp_spawn with role "lead").
 - Checking each spec against its brief before showing it to the human: every H# stays a hypothesis, no new constraint lacks a source, nothing goes beyond the non-goals.
-- Approving plans with slp_approve_plan after checking: tasks that verify a hypothesis come before tasks that depend on it; models are allowed; the budget fits. First read the other features' digests (slp_state with all: true) and ask the human when two features change the same module without a shared contract. Shared contracts are written "contract:<name>" in touch sets; the plugin refuses a plan that touches a contract another feature holds unless the task has waitsOn.
-- Watching your feature. Every few minutes the plugin sends "[SLP watch #n]", a pack about your Lead and Peers. Judge each agent: ok, watch (look again next time) or intervene (stuck, looping, overthinking, or drifting from the brief, spec or task). Record it with slp_watch_result, then end your turn; if everything is ok, tell the human one line. Use slp_activity to look closer. To intervene, steer the Lead with slp_send {to: "lead", mode: "steer"}: say what you saw and what you suggest. You never message Peers: tell the Lead about the Peer and let the Lead decide. When an agent waits for the human's permission, tell the human.
+- Approving plans with slp_approve_plan after checking: tasks that verify a hypothesis come before tasks that depend on it; every task names its outcome and its verify command exercises that outcome (passing unit tests alone do not prove a usable UI or a save/reopen path); models are allowed; the budget fits. First read the other features' digests (slp_state with all: true) and ask the human when two features change the same module without a shared contract. Shared contracts are written "contract:<name>" in touch sets; the plugin refuses a plan that touches a contract another feature holds unless the task has waitsOn.
+- Watching your feature. Every few minutes the plugin sends "[SLP watch #n]", a pack about your Lead and Peers. Judge each agent: ok, watch (look again next time) or intervene (stuck, looping, overthinking, or drifting from the brief, spec or task). Record it with slp_watch_result, then end your turn; if everything is ok, tell the human one line. Use slp_activity to look closer. To intervene, steer the Lead with slp_send {to: "lead", mode: "steer"}: one short observation with its evidence and one open question, and let the Lead choose the fix. Do not prescribe a solution dressed as a question. You never message Peers: tell the Lead about the Peer and let the Lead decide. When an agent waits for the human's permission, tell the human.
+- Before you intervene, read the source with slp_activity. A cut-off pack, a missing line or a tool you cannot read is an observation gap, not a violation: say that instead of inventing one.
+- Every watch or intervene verdict stays an open item in later packs until you close it with verdict ok and a note saying what resolved it. An acknowledgment does not close an item: the repaired report and the Lead's decision do. Do not repeat a concern without new evidence, a missed checkpoint or a bigger consequence. Give a running Lead turn time to handle a fresh report; step in before a dependent spawn or an acceptance.
+- Judge usable progress, not only coordination. When tasks and layers keep growing while the brief's capability is still not wired end to end, or ready work sits idle after a decision, ask the Lead: what usable outcome does the next step enable, and what still blocks the smallest working path?
+- In anything you tell the Lead, keep what the human decided (cite the D# or the decision) apart from what you infer; an inference is a question, not an instruction.
 - Acting on open challenges, budget overruns and anything waiting on the human. When every task is stuck on the human, ask one bundled question and create a Paseo heartbeat with expiresIn to remind them.
 - Escalating to the human only: goal, cost or premise changes (one bundled question with options: supersede, keep with a reason, change the goal), outward or irreversible actions, and the three gates (brief, spec, ship).
 - Shipping: call slp_ship_package when the Lead reports acceptance, show the package to the human, and after they approve call slp_ship with their exact words.
@@ -3755,7 +3775,8 @@ You own this feature's shared state, its spec and plan, scope assignment, integr
 
 ## Plan (slp_plan)
 - Use superpowers:writing-plans for the markdown, but record decisions, not code: signatures, test assertions, values taken from the spec.
-- Submit tasks as structured data: id (T1, T2, …), title, dependsOn (D#/H#/T#), verifies (H#), touchSet (files or dir/ prefixes), verify (a shell command that proves the task), and optionally model (only from the allowed list).
+- Submit tasks as structured data: id (T1, T2, …), title, outcome (what the human or the next task can do once it is done), dependsOn (D#/H#/T#), verifies (H#), touchSet (files or dir/ prefixes), verify (a shell command that proves the outcome, not just that code compiles), and optionally model (only from the allowed list).
+- Keep the brief's required outcome apart from your chosen implementation: a design choice or a later requirement is not a condition of the current task. Choose the smallest increment that works end to end; reopen a route that adds work without moving the outcome.
 - In touchSet, write a shared contract (an API, schema or format another feature also uses) as "contract:<name>". If the plugin says another feature holds that contract, add waitsOn: ["<that feature>"] to the task; it can start once that feature ships.
 - A task that depends on an open H# comes after a task that verifies it.
 
@@ -3763,6 +3784,8 @@ You own this feature's shared state, its spec and plan, scope assignment, integr
 - One Peer-impl at a time per feature. Call slp_spawn with role "peer-impl", the task id, and a task brief: the task's goal, the contract excerpt it must honor, the hard constraints, and the current design choice marked as the current choice, not a requirement.
 - When the plugin reports a commit with green evidence, call slp_spawn with role "peer-review" for that task. Accept with slp_accept only when that review has no blocking findings. The plugin merges; you never run git.
 - Each commit notice carries the Peer's status and report. On done_with_concerns, check the concern before you accept, for example by passing it to the reviewer in its slp_spawn prompt. A blocked notice means the Peer stopped and is waiting for you: answer with slp_send {to: "<task id>"}, or slp_release the task.
+- Close every Peer report with a decision: accept (slp_accept), ask for a specific repair (slp_send to the task, naming what is missing), release it with a reason (slp_release), or defer it naming who owns the next step and when you come back to it. Silence, DONE or green tests are not a decision. The Supervisor's watch pack lists every report still waiting for you.
+- When a decision or a dependency is resolved, act on it and continue with the next ready task; an acknowledgment or a document update is not a stopping point. If nothing is ready, say exactly which input or permission is missing, who holds it, and which event lets you continue. Do not ask again for permission already given, and do not add approval steps of your own.
 - Answer slp_ask questions from Peers with slp_answer. Decide plan-level challenges with slp_resolve, or with a ruling (slp_rule, including cost_if_wrong); look at the plugin's challenge evidence first, or ask a reviewer to reproduce it. Escalate challenges that touch the spec's contracts or a D#/H# to the Supervisor with slp_challenge (level "spec"); dependent tasks are parked automatically, so keep running independent tasks.
 - Check the premises yourself whenever a gate or eval fails, a task reaches fix round 3, or a task that verifies a hypothesis finishes (slp_confirm if it held, slp_challenge if it did not). Never add protective layers, trim prompts or add logging to keep a premise alive against evidence.
 - When the human messages you directly and it changes direction, record it (slp_rule or slp_challenge) before acting, then re-plan scopes.
@@ -3795,7 +3818,7 @@ You own exactly one task inside your worktree ${worktree}. Technical judgment in
 - Do not edit git hooks (.husky/, .githooks/), paseo.json or agent settings (.claude/, .codex/, .mcp.json): they run outside the sandbox and the plugin never commits them. If the task needs that, say so in your report.
 
 ## End every turn with exactly one of these
-- slp_report {status: "done" | "done_with_concerns" | "blocked", message: a one-line commit message, report: what you did, a summary of the test output, concerns}. Then end your turn.
+- slp_report {status: "done" | "done_with_concerns" | "blocked", message: a one-line commit message, report}. Then end your turn. The report says what you did, then four short lists: verified, not verified, failed, unknown (each verified item names the command and its result), then the residual risk. Match proof to the outcome: passing tests alone do not prove a usable UI or a save/reopen path. A blocked report states the evidence, the consequence and the decision or dependency you need, and which case it is: a missing prerequisite that nobody owns, or no safe progress left inside the task. A false premise is a challenge, not a block.
 - slp_challenge when you find evidence that a listed premise, the plan step or a contract is false. Stop at the point of discovery; do not build a workaround that keeps the premise alive. Write a test that reproduces the problem and pass its command as repro_command. Fields: target (an ID, "contract: …", or the task id), claim, evidence (a command with its output, or file:line), impact, smallest_correction.
 - slp_ask when you need information from the Lead to continue. You may keep working on parts that do not depend on the answer.
 
@@ -3818,7 +3841,7 @@ Feature: ${feature}
 
 ## Brief from the Lead
 ${leadBrief}
-
+${task.outcome ? `\n## Outcome\n${task.outcome}\n` : ""}
 ## Premises this task relies on
 ${lines.length ? lines.join("\n") : "- none listed"}
 
@@ -3916,6 +3939,8 @@ Worktree của Lead và Peer do plugin tạo (T9 `addWorktree`, T18), mỗi cái
 
 Sandbox của vai Claude có `filesystem.denyRead: stateDirs` (`~/.slp`, `~/.paseo`). Peer-impl có thêm `denyWrite: [<worktree>/.git]` (review M1, B2). Tool `slp_*` của vai được duyệt sẵn qua `toolPolicy.preapproved`, nên không sinh permission request (review m15).
 
+Một chuỗi lệnh (rev 5.7): vai Claude bị bỏ tool `Agent`/`Task` (subagent có sẵn của Claude Code) và tạo agent bị từ chối khi thinking là `ultracode` (Paseo đổi nó thành `xhigh` cộng cờ Claude Code tự chạy workflow nhiều agent). Mọi trợ giúp đi qua `slp_spawn`, nên trần writer, gói kiểm và quota vẫn đúng.
+
 Cô lập runtime (rev 5.7, học từ `codex-room-setup`; probe 2026-10-23 trên Claude Code 2.1.308 và Codex CLI 0.163.0):
 - Paseo nạp `settingSources: ["user", "project", "local"]` cho mọi agent Claude (`claude/agent.ts:153`). Hook trong `.claude/settings.json` của checkout chạy **ngoài** sandbox, `.mcp.json` của repo được khởi động không cần duyệt, và agent nhận MCP, plugin, connector claude.ai của anh. Schema `providerOptions` của Paseo là `.strict()`, không có `settingSources`/`strictMcpConfig`, nhưng có `extraArgs` (SDK nối thành cờ CLI sau cờ của chính nó, nên `--setting-sources=` rỗng đè `user,project,local`) và `additionalDirectories`.
 - Vì vậy vai Claude nhận `extraArgs: { "setting-sources": "", "strict-mcp-config": null, "plugin-dir": <Superpowers> }`, `additionalDirectories: [cwd]` và env `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`: không hook, chỉ MCP mà Paseo truyền (`slp`, `paseo`), CLAUDE.md của repo vẫn được đọc, Superpowers vẫn có. Không tìm thấy Superpowers thì agent vẫn chạy, plugin cảnh báo.
@@ -3938,7 +3963,7 @@ import { initRepo, sh, tmpDir } from "./helpers";
 const STATE = ["/home/u/.slp", "/home/u/.paseo"];
 const PLUGIN_DIR = "/home/u/.claude/plugins/cache/claude-plugins-official/superpowers/6.4.1";
 const CODEX_HOME = "/home/u/.slp/codex-home";
-const ISOLATION = { additionalDirectories: [] as string[], extraArgs: { "setting-sources": "", "strict-mcp-config": null, "plugin-dir": PLUGIN_DIR } };
+const ISOLATION = { additionalDirectories: [] as string[], extraArgs: { "setting-sources": "", "strict-mcp-config": null, "plugin-dir": PLUGIN_DIR }, disallowedTools: ["Agent", "Task"] };
 function deps() {
   const repo = initRepo(); trustRepo(repo);
   const config = parseSlpConfig({ projects: { demo: { repo, verify: ["npm test"] } } });
@@ -3977,6 +4002,13 @@ describe("transformCreate", () => {
     expect((out.config.providerOptions as { extraArgs: unknown }).extraArgs).toEqual({ verbose: null, "setting-sources": "", "strict-mcp-config": null, "plugin-dir": PLUGIN_DIR });
     const bare = transformCreate({ config: { provider: "slp-supervisor", cwd: repo } }, { ...d, claudePluginDir: null });
     expect((bare.config.providerOptions as { extraArgs: unknown }).extraArgs).toEqual({ "setting-sources": "", "strict-mcp-config": null });
+  });
+  it("keeps one command chain: no Claude subagents, no Ultra Code, the caller's other disallowed tools kept", () => {
+    const { d, repo } = deps();
+    const out = transformCreate({ config: { provider: "slp-supervisor", cwd: repo, providerOptions: { disallowedTools: ["WebSearch", "Task"] } } }, d);
+    expect((out.config.providerOptions as { disallowedTools: unknown }).disallowedTools).toEqual(["WebSearch", "Task", "Agent"]);
+    expect(() => transformCreate({ config: { provider: "slp-supervisor", cwd: repo, thinkingOptionId: "ultracode" } }, d)).toThrow(/ultracode/);
+    expect(transformCreate({ config: { provider: "claude", cwd: repo, thinkingOptionId: "ultracode" } }, d).config.thinkingOptionId).toBe("ultracode");
   });
   it("refuses a Supervisor outside any project and starts one Supervisor per idea, each without a feature yet", () => {
     const { d, repo, identities } = deps();
@@ -4115,6 +4147,8 @@ export function claudeIsolation(cwd: string, pluginDir: string | null, extraArgs
   };
 }
 export const CLAUDE_ISOLATION_ENV = { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" } as const;
+/** One command chain: SLP roles get help only through slp_spawn, never through Claude Code's own subagents. */
+export const CLAUDE_DISALLOWED_TOOLS = ["Agent", "Task"];
 
 const CODEX_CONFIG = "# Written by the SLP plugin before each Codex role starts. No MCP servers and no trusted projects:\n# the agent gets only what Paseo passes for its session.\n";
 
@@ -4169,11 +4203,15 @@ export function transformCreate(req: CreateRequest, deps: AgentConfigDeps): Crea
     ident = minted; token = minted.token;
   }
   if (ident.role !== role) throw new Error(`SLP: token role ${ident.role} does not match provider ${req.config.provider}`);
+  if (req.config.thinkingOptionId === "ultracode") throw new Error("SLP: thinking \"ultracode\" starts Claude Code's own multi-agent workflow, outside slp_spawn and the writer cap; pick xhigh in the role's agent profile.");
   recordPlacement(ident, req.config.cwd, deps.identities);
   const vendor = deps.setup().vendor[role];
   const base = asRecord(req.config.providerOptions);
   const providerOptions = vendor === "claude"
-    ? { ...base, sandbox: claudeSandbox(ident, deps.config, req.config.cwd, deps.stateDirs), ...claudeIsolation(req.config.cwd, deps.claudePluginDir, base.extraArgs) }
+    ? {
+        ...base, sandbox: claudeSandbox(ident, deps.config, req.config.cwd, deps.stateDirs), ...claudeIsolation(req.config.cwd, deps.claudePluginDir, base.extraArgs),
+        disallowedTools: [...new Set([...(Array.isArray(base.disallowedTools) ? (base.disallowedTools as string[]) : []), ...CLAUDE_DISALLOWED_TOOLS])],
+      }
     : { ...base, sandbox_mode: "workspace-write", approval_policy: "on-request", sandbox_workspace_write: { network_access: false } };
   const runtimeEnv: Record<string, string> = vendor === "claude" ? { ...CLAUDE_ISOLATION_ENV } : { CODEX_HOME: deps.codexHome() };
   const preapproved: McpToolRef[] = deps.toolNames(role).map((tool) => ({ kind: "mcp", server: "slp", tool }));
@@ -4899,7 +4937,7 @@ import { defineTool, ToolError } from "./define";
 
 const SLUG = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
 const Premise = z.object({ kind: z.enum(["decision", "hypothesis"]), title: z.string().min(1), verify_by: z.string().min(1).optional() });
-const Task = z.object({ id: z.string().regex(/^T\d+[a-z]?$/), title: z.string().min(1), dependsOn: z.array(z.string()).default([]), verifies: z.array(z.string()).default([]), touchSet: z.array(z.string()).default([]), verify: z.string(), model: z.string().optional(), waitsOn: z.array(SLUG).default([]) });
+const Task = z.object({ id: z.string().regex(/^T\d+[a-z]?$/), title: z.string().min(1), outcome: z.string().min(1).optional(), dependsOn: z.array(z.string()).default([]), verifies: z.array(z.string()).default([]), touchSet: z.array(z.string()).default([]), verify: z.string(), model: z.string().optional(), waitsOn: z.array(SLUG).default([]) });
 
 function addPremises(ctx: Ctx, who: Identity, feature: string, premises: z.infer<typeof Premise>[], spec?: string): string[] {
   for (const p of premises) if (p.kind === "hypothesis" && !p.verify_by) throw new ToolError(`hypothesis "${p.title}" needs verify_by: a measurement that can fail`);
@@ -5944,12 +5982,12 @@ git commit -m "feat(plugin): spawn into Paseo worktrees, contract-gated tasks, r
 
 **Interfaces:**
 - Consumes: `Ctx`, `appendAs`, `appendPlugin`, `refreshDigest`, `requireFeature`, `supervisorAddress` (T17); `changedFiles`, `git` (T9); `deriveFeature` (T3); `Router.enqueue(..., { key })` (T12); `readJson`/`writeJson` (T12); `defineTool`, `ToolError` (T8)
-- Produces: `summarizeItem(item: unknown): string | null`, `repeats(items: readonly unknown[]): string[]`, `buildPack(ctx, project, feature, tick): Promise<string>`, `watchTick(ctx): Promise<void>`, `watchKey(project, feature): string`, `watchTools(ctx): ToolDef[]` (gồm `slp_watch_result`, `slp_activity`)
+- Produces: `summarizeItem(item: unknown): string | null`, `repeats(items: readonly unknown[]): string[]`, `openItems(events): Map<string, string>`, `waitingForLead(events, feature, now): string[]`, `buildPack(ctx, project, feature, tick): Promise<string>`, `watchTick(ctx): Promise<void>`, `watchKey(project, feature): string`, `watchTools(ctx): ToolDef[]` (gồm `slp_watch_result`, `slp_activity`)
 
 Spec §7.7. Plugin dựng gói, Supervisor phán; plugin không tự dừng hay tự đánh giá agent nào.
 - **Hẹn giờ.** `watchTick` chạy trong `tick` (T20, mỗi 30 giây) và giữ trạng thái từng feature trong `~/.slp/<project>/watch.json`: số lần kiểm, giờ kiểm cuối, seq của event hoạt động cuối, mtime file mới nhất. Timer của một feature bắt đầu khi feature có cả Lead lẫn Supervisor; dừng khi feature `shipped` hoặc dừng (`change_goal`).
 - **Bỏ qua.** Tới hạn mà không agent nào của feature `running`, không có event mới (bỏ qua `watch_result` và `ops` loại `watch_*`), và không file nào trong worktree của Peer-impl mới hơn lần trước → ghi `ops: watch_skipped`, không gửi.
-- **Gói.** Digest của feature, rồi với mỗi agent sống (Lead, Peer-impl, Peer-review): trạng thái (kể cả đang chờ permission của anh hay chờ reset limit), turn đã chạy bao lâu; với Peer-impl thêm task, đã nhận bao lâu, số lần verify fail, file chưa commit và lần đổi cuối, `git diff --shortstat <BASE>`; `watch.packToolCalls` tool call gần nhất (từ `timeline.refetch`, item `tool_call` có `detail.type` `shell`/`read`/`edit`/`write`/`search`, theo protocol 0.12 `agent-types.d.ts`); lệnh chạy ≥ 3 lần và file đọc ≥ 4 lần trong 60 item gần nhất. Mặc định một agent tối đa 16 dòng.
+- **Gói.** Digest của feature, rồi với mỗi agent sống (Lead, Peer-impl, Peer-review): trạng thái (kể cả đang chờ permission của anh hay chờ reset limit), turn đã chạy bao lâu; với Peer-impl thêm task, đã nhận bao lâu, số lần verify fail, file chưa commit và lần đổi cuối, `git diff --shortstat <BASE>`; `watch.packToolCalls` tool call gần nhất (từ `timeline.refetch`, item `tool_call` có `detail.type` `shell`/`read`/`edit`/`write`/`search`, theo protocol 0.12 `agent-types.d.ts`); lệnh chạy ≥ 3 lần và file đọc ≥ 4 lần trong 60 item gần nhất. Mặc định một agent tối đa 16 dòng; dòng tool call ghi "N of M" để Supervisor biết gói đã cắt. Rev 5.7: thêm "Waiting for the Lead's decision" (task `reported` mà Lead chưa accept/release, kèm số phút) và "Your open items" (verdict `watch`/`intervene` mới nhất của mỗi agent, tới khi Supervisor đóng bằng `ok` kèm `note`; `slp_watch_result` từ chối đóng mà không có `note`).
 - **Giao.** `router.enqueue(supervisorAddress, pack, { key: watchKey })`: chỉ giao khi Supervisor `idle`, gói mới thay gói chưa giao. Ghi `ops: watch_sent`. Lúc gửi gói mới, nếu gói trước đã được giao mà không có `watch_result` → `ops: watch_unanswered`.
 - **Tool.** `slp_watch_result` (Supervisor) ghi `watch_result` cho một lần kiểm đã gửi. `slp_activity` trả các item timeline gần nhất đã rút gọn: Supervisor đọc được Lead và Peer của feature mình, Lead đọc được Peer của mình. Cả hai chỉ đọc.
 
@@ -6019,6 +6057,8 @@ describe("watchTick", () => {
     expect(pack).toContain("## T1 (peer-impl, peer-1)");
     expect(pack).toContain("- task T1: cache retries");
     expect(pack).toContain("ran 3× $ npm test -- retry");
+    expect(pack).toContain("- last 3 of 3 tool calls:");
+    expect(pack).not.toContain("Waiting for the Lead's decision"); // T1 is assigned, not reported
     expect(pack).toContain("slp_watch_result");
     expect(pack.split("\n## ").slice(1).every((block) => block.split("\n").length <= 16)).toBe(true);
     w.paseo.statuses.set("peer-1", "idle");
@@ -6072,6 +6112,28 @@ describe("watchTick", () => {
     w.store.append({ feature: "cache", kind: "shipped", by_role: "plugin", by_agent: null, data: { commit: "abc", pr: null } });
     w.advance(16); await watchTick(w.ctx);
     expect(w.packs()).toEqual([]);
+  });
+});
+
+describe("decisions and open items", () => {
+  it("lists reports waiting for the Lead and the Supervisor's open items, and closing an item needs a note", async () => {
+    const w = world();
+    await watchTick(w.ctx);
+    w.store.append({ feature: "cache", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done_with_concerns", message: "m", reportPath: "r" } }, w.ctx.now());
+    w.paseo.statuses.set("lead-1", "running");
+    w.paseo.timelines.set("peer-1", Array.from({ length: 12 }, (_, i) => shell(`step ${i}`, 0)));
+    w.advance(16); await watchTick(w.ctx);
+    const first = w.packs()[0]!.text;
+    expect(first).toContain("## Waiting for the Lead's decision\n- T1 (done_with_concerns): reported 16 min ago, no decision from the Lead yet");
+    expect(first).toContain("- last 10 of 12 tool calls (more: slp_activity):");
+    expect(first).not.toContain("Your open items");
+    expect((await w.call(w.sup, "slp_watch_result", { tick: 1, verdicts: [{ agent: "T1", verdict: "watch", note: "concern not checked" }] })).isError).toBeFalsy();
+    w.advance(16); await watchTick(w.ctx);
+    expect(w.packs()[0]!.text).toContain("- T1: watch at #1: concern not checked");
+    expect((await w.call(w.sup, "slp_watch_result", { tick: 2, verdicts: [{ agent: "T1", verdict: "ok" }] })).text).toMatch(/needs a note/);
+    expect((await w.call(w.sup, "slp_watch_result", { tick: 2, verdicts: [{ agent: "T1", verdict: "ok", note: "Lead released it with a reason" }] })).isError).toBeFalsy();
+    w.advance(16); await watchTick(w.ctx);
+    expect(w.packs()[0]!.text).not.toContain("Your open items");
   });
 });
 
@@ -6154,6 +6216,30 @@ async function timeline(ctx: Ctx, agentId: string, limit: number): Promise<unkno
   return (page.entries ?? []).map((e) => e.item ?? e);
 }
 
+/** Latest watch or intervene verdict per agent, until a later ok verdict closes it. */
+export function openItems(events: readonly SlpEvent[]): Map<string, string> {
+  const open = new Map<string, string>();
+  for (const e of events) {
+    if (e.kind !== "watch_result") continue;
+    for (const v of (e.data.verdicts as Array<{ agent: string; verdict: string; note?: string }> | undefined) ?? []) {
+      if (v.verdict === "ok") open.delete(v.agent);
+      else open.set(v.agent, `${v.verdict} at #${e.data.tick}${v.note ? `: ${v.note}` : ""}`);
+    }
+  }
+  return open;
+}
+
+/** Tasks a Peer reported on that the Lead has not decided yet (accept or release), with how long they have waited. */
+export function waitingForLead(events: readonly SlpEvent[], feature: string, now: Date): string[] {
+  const out: string[] = [];
+  for (const t of deriveFeature(feature, events).tasks.values()) {
+    if (t.status !== "reported") continue;
+    const report = [...events].reverse().find((e) => e.kind === "report" && e.data.task === t.id);
+    out.push(`- ${t.id} (${t.reportStatus ?? "reported"}): reported ${report ? minutes(Date.parse(report.ts), now) : "?"} min ago, no decision from the Lead yet`);
+  }
+  return out;
+}
+
 /** Newest mtime among the worktree's uncommitted files; 0 when nothing is uncommitted. */
 function lastFileChange(worktree: string): number {
   let newest = 0;
@@ -6201,8 +6287,10 @@ async function agentPack(ctx: Ctx, ident: Identity, now: Date): Promise<string[]
     lines.push(`- files: ${changed.length ? `${changed.length} uncommitted (${changed.slice(0, 5).join(", ")}${changed.length > 5 ? ", …" : ""}), last change ${last ? `${minutes(last, now)} min ago` : "unknown"}` : "no uncommitted changes"}${stat ? `; vs BASE: ${stat}` : ""}`);
   }
   const items = await timeline(ctx, agentId, 60);
-  const calls = items.filter((i) => (i as ItemLike).type === "tool_call").slice(-ctx.config.watch.packToolCalls).map(summarizeItem).filter((s): s is string => s !== null);
-  lines.push(`- last tool calls:${calls.length ? "" : " none"}`, ...calls.map((c) => `  - ${c}`));
+  const toolCalls = items.filter((i) => (i as ItemLike).type === "tool_call");
+  const calls = toolCalls.slice(-ctx.config.watch.packToolCalls).map(summarizeItem).filter((s): s is string => s !== null);
+  // "N of M" tells the Supervisor the pack is cut, so a missing call is an observation gap, not a violation.
+  lines.push(calls.length ? `- last ${calls.length} of ${toolCalls.length} tool calls${toolCalls.length > calls.length ? " (more: slp_activity)" : ""}:` : "- last tool calls: none", ...calls.map((c) => `  - ${c}`));
   const reps = repeats(items);
   if (reps.length) lines.push(`- repeated: ${reps.join("; ")}`);
   return lines;
@@ -6212,7 +6300,12 @@ export async function buildPack(ctx: Ctx, project: string, feature: string, tick
   const now = ctx.now();
   const parts = [`[SLP watch #${tick} · ${feature}]`, refreshDigest(ctx, project, feature).trimEnd()];
   for (const a of watchedAgents(ctx, project, feature)) parts.push((await agentPack(ctx, a, now)).join("\n"));
-  parts.push(`Judge each agent: ok, watch (look again next time) or intervene. Record it with slp_watch_result { tick: ${tick}, verdicts: [{ agent, verdict, note }] }, then end your turn. If every agent is ok, tell the human one line. To intervene, steer the Lead (slp_send { to: "lead", mode: "steer" }); never message a Peer.`);
+  const events = ctx.stores.feature(project, feature).all();
+  const waiting = waitingForLead(events, feature, now);
+  if (waiting.length) parts.push(["## Waiting for the Lead's decision", ...waiting].join("\n"));
+  const open = openItems(events);
+  if (open.size) parts.push(["## Your open items (close one with verdict ok and a note saying what resolved it)", ...[...open].map(([agent, s]) => `- ${agent}: ${s}`)].join("\n"));
+  parts.push(`Judge each agent: ok, watch (look again next time) or intervene. Record it with slp_watch_result { tick: ${tick}, verdicts: [{ agent, verdict, note }] }, then end your turn. If every agent is ok, tell the human one line. To intervene, steer the Lead (slp_send { to: "lead", mode: "steer" }) with one observation and one open question; never message a Peer. A cut-off pack is an observation gap, not a violation: read slp_activity first.`);
   return parts.join("\n\n");
 }
 
@@ -6258,7 +6351,7 @@ export async function watchTick(ctx: Ctx): Promise<void> {
 import { z } from "zod";
 import { appendAs, requireFeature, type Ctx } from "../context";
 import type { ToolDef } from "../mcp/server";
-import { summarizeItem } from "../watch";
+import { openItems, summarizeItem } from "../watch";
 import { defineTool, ToolError } from "./define";
 
 export function watchTools(ctx: Ctx): ToolDef[] {
@@ -6271,6 +6364,9 @@ export function watchTools(ctx: Ctx): ToolDef[] {
         const feature = requireFeature(who, undefined);
         const sent = ctx.stores.feature(who.project, feature).all().some((e) => e.kind === "ops" && e.data.type === "watch_sent" && Number(e.data.tick) === a.tick);
         if (!sent) throw new ToolError(`no watch pack #${a.tick} was sent for ${feature}`);
+        const open = openItems(ctx.stores.feature(who.project, feature).all());
+        const bare = a.verdicts.filter((v) => v.verdict === "ok" && open.has(v.agent) && !v.note?.trim()).map((v) => v.agent);
+        if (bare.length) throw new ToolError(`${bare.join(", ")} had an open item; closing it needs a note saying what resolved it (the repaired report and the Lead's decision, not an acknowledgment)`);
         appendAs(ctx, who, feature, { kind: "watch_result", data: { tick: a.tick, verdicts: a.verdicts } });
         const flagged = a.verdicts.filter((v) => v.verdict === "intervene").map((v) => v.agent);
         return flagged.length ? `Recorded #${a.tick}. You flagged ${flagged.join(", ")}: steer the Lead now (slp_send { to: "lead", mode: "steer" }).` : `Recorded #${a.tick}.`;
@@ -7133,7 +7229,7 @@ Nhờ anh tạo agent bằng provider `SLP Supervisor` trong workspace thư mụ
 | 18 | Ghi giá trị thật của `providerId`/`displayName` trong `providers.listUsage()` | `paseo provider usage --json` hoặc log |
 | 19 | **Cổng bắt buộc trước khi dùng reviewer khác vendor cho việc thật** (review Codex 2026-10-22, F17). Spike S3 đã thấy Codex do Paseo chạy gọi được loopback. Nhờ anh tạo file mồi `~/.paseo/agents/slp-canary.json` (nội dung giả, không phải token thật), rồi bảo reviewer chạy `cat ~/.paseo/agents/slp-canary.json` và `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<mcp.port>/mcp`. Đọc được **và** gọi được thì dừng: anh chọn (a) reviewer là Claude-sandbox (cùng vendor), (b) đặt password cho daemon / chặn đọc agent storage nếu Codex cho phép, hoặc (c) chấp nhận rủi ro cho pilot; ghi lựa chọn vào §13. Xoá file mồi sau đó | Output hai lệnh trong timeline reviewer |
 | 20 | Gói kiểm tới tab Supervisor mỗi 2 phút khi feature chạy; không ngắt lúc anh đang chat; gói mới thay gói chưa giao; Supervisor trả `slp_watch_result` và chỉ một dòng khi mọi thứ ổn | Timeline của Supervisor; event `ops` `watch_*`, `watch_result` |
-| 21 | `timeline.refetch` của Peer đang chạy trả cả tool call của turn hiện tại (gói kiểm có "last tool calls" khi Peer đang `running`) | Nội dung gói kiểm |
+| 21 | `timeline.refetch` của Peer đang chạy trả cả tool call của turn hiện tại (gói kiểm có dòng "tool calls" khi Peer đang `running`) | Nội dung gói kiểm |
 | 22 | `slp_send {to: "lead", mode: "steer"}` tới Lead đang chạy: tin chen vào turn đó với Claude, không phải chờ hết turn; ghi kết quả thật. Nếu không chen được, ghi lại và đổi hướng dẫn sang `interrupt` | Timeline của Lead |
 | 23 | Supervisor thứ hai cho một ý tưởng khác trong cùng project: brief cho slug đã có bị từ chối; nó đọc được digest feature đầu (`slp_state {all: true}`) nhưng `slp_send` tới Lead của feature đầu bị từ chối | Timeline của Supervisor thứ hai |
 | 24 | Reload plugin khi mọi agent SLP đang idle và có một job resume đã đến hạn: có hook nào chạy mà không cần anh làm gì không (review Codex 2026-10-22, F14). Không có thì ghi lại: timer chỉ chạy khi có hook đầu tiên (anh mở tab, agent đổi trạng thái); job vẫn còn trong `resume.json`, chỉ đến muộn | `paseo plugin logs slp`; `resume.json` |

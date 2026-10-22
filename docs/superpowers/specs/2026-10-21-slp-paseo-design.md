@@ -1,7 +1,7 @@
 # SLP trên Paseo — Design spec
 
 - Ngày: 2026-10-21 (rev 2: 2026-10-22, gộp kết quả spike; rev 3: 2026-10-22, sửa theo review độc lập; rev 4: 2026-10-22, mỗi feature một Supervisor + nhịp kiểm)
-- Trạng thái: draft rev 5.7, chờ anh duyệt
+- Trạng thái: draft rev 5.8, chờ anh duyệt
 - Paseo đã kiểm: 0.12.0 đang chạy (source v0.10.3 + v0.12.0, CLI, và probe live — xem [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md))
 - Superpowers đang cài: 6.4.1
 - Nền: báo cáo "Tinh túy Superpowers và SLP" (2026-10-09), spec SLP cũ `~/.agents/skills/slp/docs/spec.md` (không có Supervisor), mining transcript + git 2026-09-21 → 10-20, ghi chú [`docs/research/paseo-capabilities-verified.md`](../../research/paseo-capabilities-verified.md).
@@ -29,6 +29,7 @@
   - round 2–3 của review: evidence gắn với định nghĩa task (A→B→A vẫn đúng) và stale lan sang task phụ thuộc; Peer tiếp quản giữ commit đã có; ở cổng duyệt mọi mệnh đề của tin phải là câu đồng ý thuần; resume gửi một lượt mỗi tick, hỏng thì lùi, không chặn job khác; evidence chỉ xanh khi chạy đúng commit nó ghi.
 - Rev 5.6 (2026-10-23): chốt model mặc định từng vai (Supervisor và Lead Opus 5.5, Peer-impl Sonnet 5.5, Peer-review `gpt-6-astra`) và `models.allowed` (§2, §8).
 - Rev 5.7 (2026-10-23, học từ `codex-room-setup` của hoangnb24 rồi probe trên máy, S11): vai SLP không nạp setting của anh hay của repo nữa, vì hook trong `.claude/settings.json` của checkout chạy ngoài sandbox và `.mcp.json` tự khởi động server; `.claude/`, `.codex/`, `.mcp.json` thành file được bảo vệ như hook git; vai Codex có `CODEX_HOME` riêng (§4, §7.1, §8, §12). Sonnet 5.5 cần Claude Code ≥ 2.1.284 (§8).
+- Rev 5.8 (2026-10-23, luật giao tiếp học từ `codex-room-setup` và `paseo-supervision`): mỗi report của Peer phải được Lead đóng bằng một quyết định, gói kiểm hiện report đang chờ; report có mẫu 4 nhóm và `blocked` nói rõ loại; task có `outcome`; Supervisor can thiệp bằng một quan sát và một câu hỏi mở, giữ item mở tới khi đóng có lý do, coi dữ liệu thiếu là khe quan sát; quyết định xong thì đi tiếp; không subagent có sẵn, không Ultra Code (§4, §6.3, §6.5, §6.6, §7.7).
 
 **Core mechanism:** mỗi ý tưởng anh mở một Supervisor → Supervisor phỏng vấn, viết brief, anh duyệt → Supervisor tạo Lead cho feature → Lead viết spec (anh duyệt) và plan (Supervisor duyệt) → Lead giao từng task cho Peer-impl trong worktree riêng, trong sandbox → mọi tin nhắn, báo cáo, challenge đi qua tool MCP của plugin `slp`; plugin kiểm quyền, ghi log append-only ngoài repo, commit thay Peer, chạy verify trong sandbox, tự resume khi dính limit, mỗi 15 phút gửi Supervisor một gói kiểm → Supervisor gom ship, anh duyệt đúng commit hash → push + PR → anh merge.
 
@@ -170,6 +171,7 @@ Vai Claude chạy mode `default`: lệnh shell trong sandbox tự được cho (
 - Vai Claude: plugin thêm cờ CLI qua `providerOptions.extraArgs` (`--setting-sources=` rỗng, `--strict-mcp-config`, `--plugin-dir <Superpowers>`), `additionalDirectories: [cwd]` và env `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`. Kết quả: không hook, chỉ MCP `slp`/`paseo`, CLAUDE.md của repo và Superpowers vẫn có; CLAUDE.md toàn cục của anh thì không.
 - Vai Codex: env `CODEX_HOME=~/.slp/codex-home`. Plugin ghi lại `config.toml` (không MCP, không project trusted) trước mỗi lần tạo; `auth.json` là symlink tới file của anh.
 - `.claude/`, `.codex/`, `.mcp.json` là file được bảo vệ: `Write`/`Edit` bị từ chối và không bao giờ vào commit. Bash ghi vào `.claude/settings.json` và `.mcp.json` thì sandbox Claude đã tự chặn.
+- Một chuỗi lệnh (rev 5.8): vai Claude bị bỏ tool `Agent`/`Task` (subagent có sẵn của Claude Code), và plugin từ chối tạo agent SLP có thinking `ultracode`. Mọi trợ giúp đi qua `slp_spawn`, nên trần writer, gói kiểm và quota vẫn đúng.
 
 ## 5. Shared state
 
@@ -212,7 +214,7 @@ Mỗi dòng JSONL:
 | `spec`, `plan` (version + sha256 + touch set) | Lead | plan: mỗi task có `Depends on`, task kiểm chứng có `Verifies` |
 | `plan_approved` | Supervisor | sha256 của plan |
 | `assign` / `release` | Lead (qua `slp_spawn` / `slp_accept`) | task, agent, worktree, BASE commit, model |
-| `report` | Peer-impl | status (`done` / `done_with_concerns` / `blocked`), commit message đề xuất, nội dung báo cáo. Plugin chuyển status và nội dung báo cáo cho Lead cùng thông báo commit; `blocked` mà không đổi file thì chỉ báo Lead, không trả lại Peer |
+| `report` | Peer-impl | status (`done` / `done_with_concerns` / `blocked`), commit message đề xuất, nội dung báo cáo (mẫu ở §6.5). Plugin chuyển status và nội dung báo cáo cho Lead cùng thông báo commit; `blocked` mà không đổi file thì chỉ báo Lead, không trả lại Peer |
 | `commit` | Plugin | hash, BASE, danh sách file, cờ: file ngoài touch set / file nhạy cảm bị loại |
 | `merge` | Plugin (khi Lead `slp_accept`, hoặc Lead yêu cầu merge main) | nguồn, đích, hash kết quả, conflict? |
 | `evidence` | Plugin | commit, lệnh (lấy từ plan hoặc config, không lấy từ Peer), chạy trong sandbox, exit code, thời gian |
@@ -303,10 +305,11 @@ Mục bắt buộc:
 
 - Theo `superpowers:writing-plans` (đã kiểm S6: agent Claude trong Paseo nạp được Superpowers); nếu Lead đổi sang vendor không có skill, prompt vai Lead chứa format.
 - Plan ghi quyết định, không ghi code (tinh thần 6.4.2): signature, assertion của test, giá trị lấy từ spec.
-- Mỗi task: `**Depends on:** D#, H#, T#`; task kiểm chứng: `**Verifies:** H#`; `**Touch set:**` file/module dự kiến sửa, contract chung ghi dạng `contract:<tên>`; tuỳ chọn `**Waits on:** <slug>` (chờ feature khác nhả contract); lệnh verify; tuỳ chọn `**Model:**` (chỉ trong `models.allowed`; bỏ trống = model của profile `slp-peer-impl`).
+- Mỗi task: `**Outcome:**` anh hoặc task sau làm được gì khi task xong (rev 5.8; mô tả, không thuộc `taskDef`); `**Depends on:** D#, H#, T#`; task kiểm chứng: `**Verifies:** H#`; `**Touch set:**` file/module dự kiến sửa, contract chung ghi dạng `contract:<tên>`; tuỳ chọn `**Waits on:** <slug>` (chờ feature khác nhả contract); lệnh verify; tuỳ chọn `**Model:**` (chỉ trong `models.allowed`; bỏ trống = model của profile `slp-peer-impl`).
 - Global Constraints: mỗi dòng kết bằng `[D#]`, `[H#]`, `[Goal]`, `[HC]`, hoặc `[Repo]`.
 - Task `Depends on` một H# open phải đứng sau task `Verifies` H# đó.
-- Supervisor từ chối plan khi: thiếu thứ tự verify-trước; vượt ngân sách. Plugin từ chối `slp_approve_plan` khi plan chạm một `contract:` đang do feature khác giữ mà task chạm nó không có `Waits on` feature đó.
+- Supervisor từ chối plan khi: thiếu thứ tự verify-trước; task không nêu outcome hoặc lệnh verify không chạm tới outcome đó (test xanh không chứng minh UI dùng được hay save/reopen chạy); vượt ngân sách.
+- Lead tách outcome bắt buộc khỏi cách làm đã chọn: một lựa chọn thiết kế hay yêu cầu của bản sau không tự thành điều kiện của task hiện tại. Chọn bước nhỏ nhất chạy được end-to-end; route nào thêm việc mà không đẩy outcome thì mở lại. Plugin từ chối `slp_approve_plan` khi plan chạm một `contract:` đang do feature khác giữ mà task chạm nó không có `Waits on` feature đó.
 
 ### 6.4 Song song giữa các feature
 
@@ -342,11 +345,18 @@ Không phải challenge:
 - Cách hay hơn mà plan vẫn đúng: nếu là chi tiết không bị khoá thì cứ làm; nếu chạm thứ đã khoá thì ghi `suggestion` trong báo cáo.
 - Nghi ngờ không bằng chứng: hoàn thành task, báo `done_with_concerns`.
 
+**Report của Peer và quyết định của Lead** (rev 5.8):
+- Nội dung `slp_report`: đã làm gì; bốn danh sách ngắn: đã kiểm (lệnh và kết quả), chưa kiểm, fail, chưa biết; rủi ro còn lại. Bằng chứng phải khớp outcome của task.
+- Peer có ba cách dừng có kiểu, mỗi cách kèm bằng chứng, hệ quả và quyết định hoặc dependency cần: tiền đề sai → `slp_challenge`; thiếu một tiền đề chưa ai sở hữu → `blocked` loại dependency; hết đường an toàn trong task → `blocked`.
+- Lead đóng mỗi report bằng một quyết định: accept (`slp_accept`); yêu cầu sửa cụ thể (`slp_send` tới task, nêu thiếu gì); release kèm lý do (`slp_release`); hoặc hoãn, nêu ai giữ bước tiếp và lúc quay lại. Im lặng, "DONE" hay test xanh không phải quyết định. Gói kiểm (§7.7) liệt kê mọi report còn chờ Lead.
+
 **`slp_ask` / `slp_answer`** — kênh hỏi không chặn:
 - Peer → Lead, Lead → Supervisor. Plugin giao câu hỏi khi người nhận kết thúc turn (không ngắt giữa turn), giao câu trả lời ngược lại cho người hỏi.
 - Q#/answer nằm trong state. Câu trả lời làm đổi hướng → Lead ghi thêm ruling hoặc challenge tương ứng.
 
 ### 6.6 Không ngồi chờ
+
+Quyết định hay dependency vừa xong thì làm tiếp task sẵn sàng kế tiếp; xác nhận hay cập nhật tài liệu không phải điểm dừng. Không còn việc sẵn sàng thì Lead nêu đúng input hoặc quyền đang thiếu, ai giữ, và event nào cho đi tiếp. Không hỏi lại quyền đã cấp, không tự đặt thêm cổng duyệt (rev 5.8).
 
 Ngoài 3 cổng, hệ thống không chờ anh. Khi đang chờ quyết định về một tiền đề, task độc lập vẫn chạy. Khi mọi task đều kẹt, Supervisor gửi câu hỏi gom và tạo heartbeat nhắc (Paseo heartbeat trên chính Supervisor, có `expiresIn`). Supervisor không bao giờ tự trả lời thay anh ở cổng.
 
@@ -447,10 +457,16 @@ Mục đích: bắt sớm agent quay vòng / overthink và đi sai hướng — 
    - với Peer-impl: số lần verify fail, file chưa commit và lần đổi cuối (mtime mới nhất), `git diff --shortstat` so với BASE;
    - `watch.packToolCalls` (mặc định 10) tool call gần nhất: tên, tham số rút gọn ≤ 80 ký tự, exit code hoặc lỗi;
    - lặp lại trong 60 item timeline gần nhất: lệnh giống nhau chạy ≥ 3 lần, file bị đọc ≥ 4 lần.
+   - dòng tool call ghi "N of M", để Supervisor biết gói đã cắt (rev 5.8);
+   - cuối gói: "Waiting for the Lead's decision" (task `reported` mà Lead chưa accept/release, kèm số phút) và "Your open items" (verdict `watch`/`intervene` mới nhất của mỗi agent chưa được đóng) (rev 5.8).
 4. **Giao.** Qua router như tin plugin (`slp-` messageId): chỉ khi Supervisor `idle`, nên không ngắt lúc anh đang chat. Gói chưa giao bị gói mới thay, không chồng lên. Ghi `ops: watch_sent`. Lúc gửi gói mới mà gói trước đã giao nhưng chưa có `slp_watch_result` → `ops: watch_unanswered`.
 5. **Phán.** Supervisor đánh giá từng agent: `ok`, `watch` (để ý lần sau), `intervene`; ghi bằng `slp_watch_result` rồi kết thúc turn. Mọi agent `ok` → trả lời anh đúng một dòng. Cần xem sâu hơn → `slp_activity(agent, n ≤ 50)`: n item timeline gần nhất đã rút gọn, chỉ của Lead/Peer thuộc feature mình. Plugin không nhắc lại gói chưa được trả lời.
+   - Dữ liệu thiếu không phải vi phạm: gói bị cắt, dòng thiếu hay tool không đọc được là khe quan sát; Supervisor đọc `slp_activity` trước khi `intervene`, và báo khe đó thay vì suy ra lỗi.
+   - Item mở: verdict `watch`/`intervene` còn hiện ở các gói sau tới khi Supervisor đóng bằng `ok` kèm `note` nói cái gì đã giải quyết; plugin từ chối đóng mà không có `note`. Lead xác nhận chưa đủ để đóng: cần report đã sửa và quyết định của Lead. Không nhắc lại một lo ngại nếu không có bằng chứng mới, lỡ mốc hay hệ quả tăng.
+   - Tiến độ dùng được: task và layer cứ tăng mà capability trong brief vẫn chưa nối end-to-end, hoặc việc sẵn sàng nằm im sau một quyết định → hỏi Lead: "Bước kế tiếp mở ra outcome dùng được nào, còn gì chặn đường chạy được nhỏ nhất?"
 6. **Can thiệp.**
-   - Lead có vấn đề → Supervisor `slp_send(→ Lead, mode: "steer")`, kèm nhận xét và đề xuất.
+   - Lead có vấn đề → Supervisor `slp_send(→ Lead, mode: "steer")`: một quan sát kèm bằng chứng và một câu hỏi mở; Lead chọn cách sửa. Không kê đơn trá hình thành câu hỏi. Để turn Lead đang chạy tự xử lý report vừa tới; can thiệp trước khi spawn task phụ thuộc hay accept.
+   - Tin Supervisor gửi Lead tách điều anh đã quyết (trích D# hay quyết định) khỏi điều Supervisor suy ra; suy luận là câu hỏi, không phải chỉ thị.
    - Peer có vấn đề → Supervisor steer Lead kèm nhận xét về Peer; Lead quyết và chỉnh Peer bằng `slp_send(→ Peer, mode: "steer" | "interrupt")`. Supervisor không nhắn Peer: Peer chỉ có một chủ.
    - Agent chờ permission của anh → Supervisor báo anh trong tab của mình.
    - Plugin không tự dừng hay tự phán agent nào.

@@ -11,8 +11,9 @@ interface FeatureWatch { tick: number; lastAt: string; lastSeq: number; lastChan
 type WatchState = Record<string, FeatureWatch>;
 
 export const watchKey = (project: string, feature: string): string => `watch:${project}:${feature}`;
-/** Peer-chosen text (commands, paths, file names) goes on one line: a newline could forge a pack section or blow the line budget. */
-const cut = (s: string, n: number) => { const t = s.replace(/\s+/g, " ").trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
+/** Untrusted text on one line: any line break or control character (U+0085, U+001C..U+001F, U+2028/9 included) could forge a pack section or blow the line budget. Takes any value, because a timeline item may be off-spec. */
+const oneLine = (s: unknown) => String(s ?? "").replace(/[\s\p{Cc}\p{Zl}\p{Zp}]+/gu, " ").trim();
+const cut = (s: unknown, n: number) => { const t = oneLine(s); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 const minutes = (from: number, now: Date) => Math.max(0, Math.round((now.getTime() - from) / 60_000));
 
 interface ItemLike { type?: string; name?: string; status?: string; text?: string; detail?: { type?: string; command?: string; filePath?: string; query?: string; exitCode?: number | null } }
@@ -29,8 +30,8 @@ export function summarizeItem(raw: unknown): string | null {
     const result = d.type === "shell" && typeof d.exitCode === "number" ? ` → exit ${d.exitCode}` : it.status === "failed" ? " → failed" : it.status === "running" ? " (running)" : "";
     return `${what}${result}`;
   }
-  if (it.type === "assistant_message" && it.text) return `says: ${cut(it.text.replace(/\s+/g, " "), 120)}`;
-  if (it.type === "user_message" && it.text) return `got: ${cut(it.text.replace(/\s+/g, " "), 120)}`;
+  if (it.type === "assistant_message" && it.text) return `says: ${cut(it.text, 120)}`;
+  if (it.type === "user_message" && it.text) return `got: ${cut(it.text, 120)}`;
   return null;
 }
 
@@ -118,7 +119,7 @@ async function agentPack(ctx: Ctx, ident: Identity, now: Date): Promise<string[]
     const task = deriveFeature(ident.feature, events).tasks.get(ident.task);
     const assigned = [...events].reverse().find((e) => e.kind === "assign" && e.data.task === ident.task);
     const fails = events.filter((e) => e.kind === "evidence" && e.data.scope === "task" && e.data.task === ident.task && e.data.exitCode !== 0 && (!assigned || e.seq > assigned.seq)).length;
-    if (task) lines.push(`- task ${task.id}: ${task.title}${assigned ? ` (assigned ${minutes(Date.parse(assigned.ts), now)} min ago)` : ""}, failed verifies: ${fails}`);
+    if (task) lines.push(`- task ${task.id}: ${cut(task.title, 120)}${assigned ? ` (assigned ${minutes(Date.parse(assigned.ts), now)} min ago)` : ""}, failed verifies: ${fails}`);
     if (unsafeGitDrivers(ident.worktree).length) {
       lines.push("- files: not inspected (the repo's git config runs commands on git status; a human must remove them)");
     } else {
@@ -126,7 +127,7 @@ async function agentPack(ctx: Ctx, ident: Identity, now: Date): Promise<string[]
       const last = lastFileChange(ident.worktree);
       const base = assigned ? String(assigned.data.base) : null;
       const stat = base ? git(ident.worktree, ["diff", "--shortstat", "--ignore-submodules=all", base], true).stdout.trim() : "";
-      lines.push(`- files: ${changed.length ? `${changed.length} uncommitted (${changed.slice(0, 5).map((f) => f.replace(/\s+/g, " ")).join(", ")}${changed.length > 5 ? ", …" : ""}), last change ${last ? `${minutes(last, now)} min ago` : "unknown"}` : "no uncommitted changes"}${stat ? `; vs BASE: ${stat}` : ""}`);
+      lines.push(`- files: ${changed.length ? `${changed.length} uncommitted (${changed.slice(0, 5).map(oneLine).join(", ")}${changed.length > 5 ? ", …" : ""}), last change ${last ? `${minutes(last, now)} min ago` : "unknown"}` : "no uncommitted changes"}${stat ? `; vs BASE: ${stat}` : ""}`);
     }
   }
   const items = await timeline(ctx, agentId, 60);

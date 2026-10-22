@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { extractHumanMessages, SeenIds } from "../server/human";
@@ -22,5 +23,19 @@ describe("extractHumanMessages", () => {
     const file = join(tmpDir(), "seen.json");
     extractHumanMessages([{ type: "user_message", text: "a", clientMessageId: "c1" }], () => false, new SeenIds(file));
     expect(extractHumanMessages([{ type: "user_message", text: "a", clientMessageId: "c1" }], () => false, new SeenIds(file))).toEqual([]);
+  });
+  it("still returns a message when the seen file cannot be written, and does not return it twice", () => {
+    const dir = tmpDir(); const blocker = join(dir, "blocker"); writeFileSync(blocker, "not a directory");
+    const errors: unknown[] = [];
+    const seen = new SeenIds(join(blocker, "seen.json"), (e) => errors.push(e));
+    const items = [{ type: "user_message", text: "hello", messageId: "h9" }];
+    expect(extractHumanMessages(items, () => false, seen)).toEqual([{ messageId: "h9", text: "hello" }]);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(extractHumanMessages(items, () => false, seen)).toEqual([]);
+  });
+  it("treats an item as a plugin message if either of its ids is a plugin id", () => {
+    const seen = new SeenIds(join(tmpDir(), "seen.json"));
+    expect(extractHumanMessages([{ type: "user_message", text: "hi", messageId: "uuid-1", clientMessageId: "slp-x" }], (id) => id.startsWith("slp-"), seen)).toEqual([]);
+    expect(extractHumanMessages([{ type: "user_message", text: "yo", messageId: "uuid-2", clientMessageId: "uuid-3" }], (id) => id.startsWith("slp-"), seen)).toEqual([{ messageId: "uuid-2", text: "yo" }]);
   });
 });

@@ -4,12 +4,12 @@ export interface TimelineItemLike { type?: string; text?: string; messageId?: st
 
 export class SeenIds {
   private readonly ids: string[];
-  constructor(private readonly file: string) { this.ids = readJson<string[]>(file, []); }
+  constructor(private readonly file: string, private readonly onError?: (error: unknown) => void) { this.ids = readJson<string[]>(file, []); }
   has(id: string): boolean { return this.ids.includes(id); }
   add(id: string): void {
     this.ids.push(id);
     if (this.ids.length > 20000) this.ids.splice(0, this.ids.length - 20000);
-    writeJson(this.file, this.ids);
+    try { writeJson(this.file, this.ids); } catch (error) { this.onError?.(error); }
   }
 }
 
@@ -19,8 +19,10 @@ export function extractHumanMessages(items: readonly TimelineItemLike[], isPlugi
   const out: Array<{ messageId: string; text: string }> = [];
   for (const it of items) {
     if (it.type !== "user_message" || typeof it.text !== "string" || ENVELOPE.test(it.text)) continue;
-    const id = it.messageId ?? it.clientMessageId;
-    if (!id || isPluginId(id) || seen.has(id)) continue;
+    const ids = [it.messageId, it.clientMessageId].filter((x): x is string => typeof x === "string" && x.length > 0);
+    if (!ids.length || ids.some(isPluginId)) continue;
+    const id = ids[0]!;
+    if (seen.has(id)) continue;
     seen.add(id);
     out.push({ messageId: id, text: it.text });
   }

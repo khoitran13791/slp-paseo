@@ -26,6 +26,13 @@ function evidenceOkFor(store: EventStore, commit: string, task: TaskState): bool
  * In the Lead worktree, which no agent may write, tracked files are put back so later merges and verifies start clean.
  */
 async function runEvidence(deps: PipelineDeps, feature: string | null, worktree: string, command: string, data: Record<string, unknown>): Promise<(SandboxResult & { dirty: string[] }) | { runnerError: string }> {
+  // Every git call below (and the callers' before it) would run clean/smudge filters, merge drivers or textconv that a Peer may have configured.
+  const drivers = unsafeGitDrivers(worktree);
+  if (drivers.length) {
+    const runnerError = `the repo's git config runs commands on add/status (${drivers.join("; ")}); the plugin will not run git here until a human removes them`;
+    deps.store.append({ feature, kind: "ops", by_role: "plugin", by_agent: null, data: { ...data, type: "unsafe_git_config", error: runnerError, summary: runnerError.slice(0, 200) } }, deps.now());
+    return { runnerError };
+  }
   const probe = await deps.run(deps.config.sandbox.runner, worktree, "true", 60);
   if (probe.exitCode !== 0) {
     const runnerError = `sandbox runner failed (exit ${probe.exitCode}): ${probe.stderrTail.trim().slice(-300)}`;
@@ -131,6 +138,11 @@ export async function processChallengeEvidence(deps: PipelineDeps, task: TaskSta
   if (deps.store.all().some((e) => e.data.challengeSeq === challenge.seq)) return null;
   const worktree = task.worktree;
   if (!worktree) return null;
+  const drivers = unsafeGitDrivers(worktree);
+  if (drivers.length) {
+    deps.store.append({ feature: challenge.feature, kind: "ops", by_role: "plugin", by_agent: null, data: { type: "challenge_evidence", challenge: challenge.id, challengeSeq: challenge.seq, summary: `${challenge.id}: the repo's git config runs commands on add/status (${drivers.join("; ")}); no evidence until a human removes them` } }, deps.now());
+    return { commit: null, exitCode: null };
+  }
   let commit: string | null = null;
   const hookDir = hooksDir(worktree);
   const nested = new Set(nestedRepos(worktree)); const isNested = (f: string) => nested.has(f.replace(/\/$/, ""));

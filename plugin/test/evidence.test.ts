@@ -20,6 +20,11 @@ function setup(over: Record<string, unknown> = {}) {
   return { repo, store, run, deps, task, report };
 }
 const verifyCalls = (run: ReturnType<typeof vi.fn>) => run.mock.calls.filter((c) => c[2] !== "true");
+/** A clean filter that touches `marker` and a .gitattributes selecting it for every file: if git runs it, the marker appears. */
+function armFilter(repo: string, marker: string): void {
+  sh(repo, "git", ["config", "filter.fmt.clean", `touch '${marker}' && cat`]);
+  writeFileSync(join(repo, ".gitattributes"), "* filter=fmt\n");
+}
 
 describe("processReport", () => {
   it("commits the worktree, then runs verify in the sandbox and records evidence", async () => {
@@ -52,6 +57,19 @@ describe("processReport", () => {
     writeFileSync(join(repo, "src.ts"), "x");
     expect(await processReport(deps, task, report)).toMatchObject({ outcome: "rejected", reason: expect.stringMatching(/filter\.fmt\.clean/) });
     expect(store.all().some((e) => e.kind === "commit")).toBe(false);
+  });
+  it("does not run git to verify a recorded commit once the repo config has a driver that runs repo files", async () => {
+    const { repo, store, deps, task, report } = setup({ sandbox: { runner: ["/nonexistent/runner"] } });
+    const marker = join(tmpDir(), "filter.log");
+    writeFileSync(join(repo, "src.ts"), "x"); writeFileSync(join(repo, ".gitattributes"), "* filter=fmt\n");
+    const first = await processReport(deps, task, report); // commit recorded, but the broken runner leaves it without evidence
+    expect(first).toMatchObject({ outcome: "committed", evidenceOk: null });
+    armFilter(repo, marker); sh(repo, "touch", ["src.ts"]); // stat-dirty tracked file: `git status` would run the clean filter on it
+    const fixed = { ...deps, config: parseSlpConfig({ projects: { p: { repo, verify: ["test -f src.ts"] } }, sandbox: { runner: FAKE_RUNNER } }) };
+    expect(await processReport(fixed, task, report)).toMatchObject({ outcome: "committed", commit: (first as { commit: string }).commit, evidenceOk: null, runnerError: expect.stringMatching(/git config runs commands/) });
+    expect(existsSync(marker)).toBe(false);
+    expect(store.all().some((e) => e.kind === "evidence")).toBe(false);
+    expect(store.all().at(-1)!.data.type).toBe("unsafe_git_config");
   });
   it("rejects empty, sensitive-only and oversized changes", async () => {
     let s = setup();
@@ -148,6 +166,17 @@ describe("processReport", () => {
 });
 
 describe("challenge evidence and feature verification", () => {
+  it("does not run git for a challenge when the repo config has a driver that runs repo files", async () => {
+    const { repo, store, run, deps, task } = setup();
+    const marker = join(tmpDir(), "filter.log");
+    armFilter(repo, marker); writeFileSync(join(repo, "repro.test.ts"), "x");
+    const ch = store.append({ feature: "f", kind: "challenge", by_role: "peer-impl", by_agent: "peer-1", idPrefix: "C", data: { target: "D1", repro_command: "exit 1" } });
+    expect(await processChallengeEvidence(deps, task, ch)).toEqual({ commit: null, exitCode: null });
+    expect(existsSync(marker)).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+    expect(store.all().some((e) => e.kind === "commit" || e.kind === "evidence")).toBe(false);
+    expect(await processChallengeEvidence(deps, task, ch)).toBeNull();
+  });
   it("commits repro work as challenge-scoped and runs the repro command once", async () => {
     const { repo, store, deps, task } = setup();
     writeFileSync(join(repo, "repro.test.ts"), "x");

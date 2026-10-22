@@ -10,7 +10,7 @@
 
 **Spec:** [`docs/superpowers/specs/2026-10-21-slp-paseo-design.md`](../specs/2026-10-21-slp-paseo-design.md) (rev 4). Bằng chứng nền: [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md).
 
-**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 272 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 87 lần gỡ thử từng phần sửa mới (round 4 thêm: git filter/driver chạy file của repo, giữ git-lfs, rollback xoá branch của chính nó, `last()` bỏ identity tạo hỏng, câu duyệt có `?`, gỡ worktree chỉ qua git; round 3 thay chặn theo đường dẫn bằng worktree do plugin tạo, và thêm: tick một lượt một lúc, resume theo đúng job, câu duyệt mọi mệnh đề đều là đồng ý, evidence A→B→A; round 2 thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
+**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 273 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 89 lần gỡ thử từng phần sửa mới (round 5 thêm: giá trị git-lfs khớp nguyên văn, kiểm config của chính worktree mới trước khi checkout; round 4 thêm: git filter/driver chạy file của repo, giữ git-lfs, rollback xoá branch của chính nó, `last()` bỏ identity tạo hỏng, câu duyệt có `?`, gỡ worktree chỉ qua git; round 3 thay chặn theo đường dẫn bằng worktree do plugin tạo, và thêm: tick một lượt một lúc, resume theo đúng job, câu duyệt mọi mệnh đề đều là đồng ý, evidence A→B→A; round 2 thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
 
 **Core mechanism:** mỗi ý tưởng một Supervisor (brief đầu tiên gắn nó với feature) → `slp_spawn` → plugin tạo worktree (hook tắt) và một workspace `directory` cho nó, Paseo tạo agent trong đó → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng, `toolPolicy`) và ghi worktree thật vào identity → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `turn_started`/`turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer (hook tắt, git dir tin cậy), chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh → mỗi `watch.intervalMinutes` plugin dựng gói kiểm (trạng thái, tool call gần nhất, lặp lại, file đang đổi) gửi Supervisor của feature; Supervisor steer Lead khi cần.
 
@@ -2010,6 +2010,7 @@ Ba lớp chặn code của repo chạy ngoài sandbox qua git (review B2):
 - Mọi lệnh git của plugin có `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, không riêng commit/merge/push.
 - Plugin không tin file `<worktree>/.git`, vì file này nằm trong cwd của Peer và Peer ghi được. `git()` tự tìm admin dir bằng cách đọc ngược `<common dir>/worktrees/*/gitdir` của repo đã đăng ký qua `trustRepo`; common dir nằm ngoài sandbox của mọi vai. Sau đó chạy với `--git-dir` và `--work-tree` cố định. Thư mục không thuộc repo nào đã đăng ký thì `git()` ném `UntrustedGitDirError`, tức là fail closed.
 - Paseo tự chạy `git worktree add` (có hook `post-checkout`) và lệnh `worktree.setup` trong `paseo.json` khi tạo worktree mới, ngoài sandbox. Vì vậy plugin không bao giờ commit thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath` của repo) hay ở `paseo.json`. Các file này bị loại khỏi commit như file nhạy cảm và được báo cho Lead.
+- Rev 5.4 (review Codex vòng 5): ngoại lệ `git-lfs` phải khớp nguyên văn giá trị `git lfs install` ghi, không chỉ tiền tố. Config git có thể phụ thuộc branch (`includeIf onbranch:`), nên `addWorktree` tạo worktree với `--no-checkout`, kiểm `unsafeGitDrivers` trong chính worktree đó, rồi mới `reset --hard` để đổ file (checkout chạy smudge filter); có driver thì gỡ worktree và branch. Workspace dùng lại (Lead khởi động lại, Peer tiếp quản) được kiểm theo worktree của nó.
 - Rev 5.3 (review Codex vòng 4): hook tắt không tắt git filter. Nếu config git của repo có filter `clean`/`smudge`/`process`, merge driver hay `textconv` (`.gitattributes` trong cây chọn chúng), thì `git add` của plugin và `git status` nền của Paseo chạy lệnh đó, có thể là script Peer sửa được. `unsafeGitDrivers(repo)` liệt kê chúng (bỏ qua `git-lfs`, là chương trình chứ không phải file của repo); có thì plugin không tạo agent cho project và không commit report (fail closed, báo rõ).
 - Rev 5.2 (review Codex 2026-10-22, ba vòng): vá từng đường dẫn không đủ, vì lệnh setup gọi file khác của repo (`npm ci` chạy `postinstall`), hook có thể nằm sau symlink, và `teardown` được đọc từ chính worktree lúc archive. Vì vậy **plugin tự tạo worktree** (`addWorktree`, hook tắt) dưới `ctx.worktreeRoot` (mặc định `~/.slp-worktrees/<project>/`), rồi gắn agent vào một workspace kiểu `directory`. Theo source Paseo 0.12, workspace `directory` không chạy setup, và archive chỉ chạy `teardown` với worktree nằm dưới `~/.paseo/worktrees`. Plugin tự gỡ worktree (`removeWorktree`) khi task xong, giữ branch.
 
@@ -2130,6 +2131,22 @@ describe("git helpers", () => {
     expect(unsafeGitDrivers(r)).toEqual([]);
     sh(r, "git", ["config", "filter.fmt.clean", "node scripts/filter.js"]); sh(r, "git", ["config", "merge.ours.driver", "./scripts/merge.sh %O %A %B"]);
     expect(unsafeGitDrivers(r)).toEqual(["filter.fmt.clean node scripts/filter.js", "merge.ours.driver ./scripts/merge.sh %O %A %B"]);
+    const lfs = repo();
+    sh(lfs, "git", ["config", "filter.lfs.clean", "git-lfs clean -- %f; node scripts/filter.js"]);
+    expect(unsafeGitDrivers(lfs)).toEqual(["filter.lfs.clean git-lfs clean -- %f; node scripts/filter.js"]);
+  });
+  it("checks the new worktree's own config, including branch-conditional includes, before checking anything out", () => {
+    const r = repo(); const marker = join(tmpDir(), "smudge-ran");
+    writeFileSync(join(r, ".gitattributes"), "*.txt filter=fmt\n"); writeFileSync(join(r, "a.txt"), "a\n");
+    sh(r, "git", ["add", "."]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "attrs"]);
+    writeFileSync(join(r, ".git", "slp.inc"), `[filter "fmt"]\n\tsmudge = "touch ${marker} && cat"\n`); // no ";": it starts a comment in git config
+    sh(r, "git", ["config", "includeIf.onbranch:slp/**.path", "slp.inc"]);
+    expect(unsafeGitDrivers(r)).toEqual([]);
+    const path = join(tmpDir(), "wts", "demo", "slp-f-T9-1");
+    expect(() => addWorktree(r, path, "slp/f/T9-1", "main")).toThrow(/filter\.fmt\.smudge/);
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(path)).toBe(false);
+    expect(sh(r, "git", ["branch", "--list", "slp/f/T9-1"])).toBe("");
   });
 });
 ```
@@ -2239,7 +2256,16 @@ export function isProtectedPath(p: string, hookDir: string | null): boolean {
 export function addWorktree(repo: string, path: string, branch: string, base: string): void {
   if (existsSync(path)) throw new Error(`${path} already exists; SLP neither reuses nor overwrites it`);
   mkdirSync(dirname(path), { recursive: true });
-  git(repo, ["worktree", "add", "-q", "-b", branch, path, base]);
+  // No checkout yet: checkout runs smudge filters, and config can depend on the new branch (includeIf onbranch). Check this
+  // worktree's own config first, then populate it (review Codex 2026-10-22, round 5).
+  git(repo, ["worktree", "add", "-q", "--no-checkout", "-b", branch, path, base]);
+  const drivers = unsafeGitDrivers(path);
+  if (drivers.length) {
+    removeWorktree(repo, path);
+    git(repo, ["branch", "-D", branch], true);
+    throw new Error(`git config for ${branch} runs commands on checkout/add/status that a Peer could change (${drivers.join("; ")})`);
+  }
+  git(path, ["reset", "-q", "--hard", "HEAD"]);
 }
 
 /** Removes an SLP worktree through git only (hooks off), keeping its branch. A path git does not know as a worktree is left alone. */
@@ -2254,10 +2280,13 @@ export function removeWorktree(repo: string, path: string): boolean {
  * textconv): `.gitattributes` in the tree picks them, so they can run files a Peer edits, outside any sandbox, in the
  * plugin's git and in Paseo's own status refresh (review Codex 2026-10-22, round 4). git-lfs is a program, not a repo file.
  */
-export function unsafeGitDrivers(repo: string): string[] {
+export function unsafeGitDrivers(cwd: string): string[] {
   const keys = "^(filter\\..*\\.(clean|smudge|process)|merge\\..*\\.driver|diff\\..*\\.(textconv|command))$";
-  return run(repo, ["config", "--get-regexp", keys], true, ["-c", "core.fsmonitor=false"]).stdout.split("\n").filter(Boolean).filter((line) => !/^\S+\s+git[- ]lfs\b/.test(line));
+  return run(cwd, ["config", "--get-regexp", keys], true, ["-c", "core.fsmonitor=false"]).stdout.split("\n").filter(Boolean)
+    .filter((line) => !LFS.has(line.trim().replace(/\s+/g, " ")));
 }
+/** Exactly what `git lfs install` writes; anything more ("git-lfs clean -- %f; node x.js") is a shell command (review Codex 2026-10-22, round 5). */
+const LFS = new Set(["filter.lfs.clean git-lfs clean -- %f", "filter.lfs.smudge git-lfs smudge -- %f", "filter.lfs.process git-lfs filter-process"]);
 
 export class NoChangesError extends Error {}
 
@@ -5392,7 +5421,7 @@ const stateOf = (ctx: Ctx, project: string, feature: string): FeatureState => de
 
 type Placement =
   | { kind: "worktree"; branch: string; base: string } // SLP creates the worktree off `base` (hooks off) and a directory workspace for it
-  | { kind: "workspace"; workspaceId: string }          // reuse a workspace (rotation, takeover)
+  | { kind: "workspace"; workspaceId: string; worktree?: string | null } // reuse a workspace (rotation, takeover)
   | { kind: "dir"; cwd: string };                        // the Supervisor's project directory
 
 /** Where an SLP worktree for `branch` lives: outside ~/.paseo/worktrees, so Paseo never runs setup or teardown for it (T9). */
@@ -5409,7 +5438,7 @@ async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: 
   const p = o.placement;
   const repo = ctx.config.projects[o.project]!.repo;
   if (p.kind !== "dir") {
-    const drivers = unsafeGitDrivers(repo);
+    const drivers = unsafeGitDrivers(p.kind === "workspace" && p.worktree ? p.worktree : repo);
     if (drivers.length) { ctx.identities.retire(minted.tokenHash); throw new ToolError(`SLP will not run agents in ${o.project}: its git config runs commands on add/status/merge/diff that a Peer could change (${drivers.join("; ")}). Remove them, or keep this repo out of SLP.`); }
   }
   let made: { path: string; branch: string } | null = null;
@@ -5515,7 +5544,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
           if (ctx.identities.current("lead", who.project, feature)) throw new ToolError(`feature ${feature} already has a Lead`);
           const previous = ctx.identities.last("lead", who.project, feature);
           const checkpoint = join(ctx.stores.featureDir(who.project, feature), "checkpoint-lead.md");
-          const placement: Placement = previous?.workspaceId ? { kind: "workspace", workspaceId: previous.workspaceId } : { kind: "worktree", branch: `feat/${feature}`, base: project.baseBranch };
+          const placement: Placement = previous?.workspaceId ? { kind: "workspace", workspaceId: previous.workspaceId, worktree: previous.worktree } : { kind: "worktree", branch: `feat/${feature}`, base: project.baseBranch };
           const prompt = previous
             ? `[SLP] You take over as Lead for feature ${feature}; the previous Lead stopped. Call slp_state first.\n\n${existsSync(checkpoint) ? `${readFileSync(checkpoint, "utf8")}\n\n` : ""}## Current state\n${refreshDigest(ctx, who.project, feature)}\n\n## Note from the Supervisor\n${a.prompt}`
             : leadKickoff(feature, ctx.stores.readDoc(st.brief.path), a.prompt);
@@ -5545,7 +5574,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
             const previous = ctx.identities.last("peer-impl", who.project, feature, task.id);
             if (!previous?.workspaceId) throw new ToolError(`the Peer of ${task.id} is gone and its workspace is unknown; slp_release ${task.id} to start it over`);
             const takeoverPrompt = `${taskBrief(feature, task, st.premises, a.prompt)}\n\n## You take over\nThe previous Peer on ${task.id} stopped. Its work in this worktree is kept, committed and uncommitted: read git status and git log first, then continue.`;
-            const { agentId, ident } = await createAgent(ctx, "peer-impl", { project: who.project, feature, task: task.id, placement: { kind: "workspace", workspaceId: previous.workspaceId }, parent: who.agentId, title: `[Peer ${task.id}] ${feature}`, prompt: takeoverPrompt, model });
+            const { agentId, ident } = await createAgent(ctx, "peer-impl", { project: who.project, feature, task: task.id, placement: { kind: "workspace", workspaceId: previous.workspaceId, worktree: previous.worktree }, parent: who.agentId, title: `[Peer ${task.id}] ${feature}`, prompt: takeoverPrompt, model });
             appendAs(ctx, who, feature, { kind: "assign", data: { task: task.id, agentId, worktree: ident.worktree, branch: ident.branch, base: task.base, attempt: task.attempt, model: model ?? null, takeover: true } });
             return `Peer-impl ${agentId} took over ${task.id} in ${ident.worktree}.`;
           }

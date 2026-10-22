@@ -1,7 +1,7 @@
 # SLP trên Paseo — Design spec
 
 - Ngày: 2026-10-21 (rev 2: 2026-10-22, gộp kết quả spike; rev 3: 2026-10-22, sửa theo review độc lập; rev 4: 2026-10-22, mỗi feature một Supervisor + nhịp kiểm)
-- Trạng thái: draft rev 5.3, chờ anh duyệt
+- Trạng thái: draft rev 5.4, chờ anh duyệt
 - Paseo đã kiểm: 0.12.0 đang chạy (source v0.10.3 + v0.12.0, CLI, và probe live — xem [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md))
 - Superpowers đang cài: 6.4.1
 - Nền: báo cáo "Tinh túy Superpowers và SLP" (2026-10-09), spec SLP cũ `~/.agents/skills/slp/docs/spec.md` (không có Supervisor), mining transcript + git 2026-09-21 → 10-20, ghi chú [`docs/research/paseo-capabilities-verified.md`](../../research/paseo-capabilities-verified.md).
@@ -25,7 +25,7 @@
   - spawn: tuần tự theo project, kiểm phụ thuộc, Peer mới tiếp quản task của Peer đã chết trong workspace cũ (§7.4);
   - challenge vào D#/H#/contract luôn ở mức spec; contract chờ nhau thành vòng bị từ chối; đổi goal dừng hẳn feature (§6.4, §6.5);
   - Lead thấy status và nội dung báo cáo của Peer (§5.2);
-  - (5.3) repo có git filter `clean`/`smudge`/`process`, merge driver hay `textconv` trong config (trừ `git-lfs`) thì SLP không chạy agent và không commit report, vì `git add`/`git status` sẽ chạy chúng ngoài sandbox; tạo agent hỏng thì gỡ đúng worktree và branch vừa tạo; plugin chỉ gỡ worktree qua git;
+  - (5.3) repo có git filter `clean`/`smudge`/`process`, merge driver hay `textconv` trong config (trừ `git-lfs`) thì SLP không chạy agent và không commit report, vì `git add`/`git status` sẽ chạy chúng ngoài sandbox; tạo agent hỏng thì gỡ đúng worktree và branch vừa tạo; plugin chỉ gỡ worktree qua git; (5.4) `git-lfs` chỉ được miễn khi khớp nguyên văn, và config được kiểm trong chính worktree mới trước khi checkout (config có thể phụ thuộc branch qua `includeIf onbranch:`);
   - round 2–3 của review: evidence gắn với định nghĩa task (A→B→A vẫn đúng) và stale lan sang task phụ thuộc; Peer tiếp quản giữ commit đã có; ở cổng duyệt mọi mệnh đề của tin phải là câu đồng ý thuần; resume gửi một lượt mỗi tick, hỏng thì lùi, không chặn job khác; evidence chỉ xanh khi chạy đúng commit nó ghi.
 
 **Core mechanism:** mỗi ý tưởng anh mở một Supervisor → Supervisor phỏng vấn, viết brief, anh duyệt → Supervisor tạo Lead cho feature → Lead viết spec (anh duyệt) và plan (Supervisor duyệt) → Lead giao từng task cho Peer-impl trong worktree riêng, trong sandbox → mọi tin nhắn, báo cáo, challenge đi qua tool MCP của plugin `slp`; plugin kiểm quyền, ghi log append-only ngoài repo, commit thay Peer, chạy verify trong sandbox, tự resume khi dính limit, mỗi 15 phút gửi Supervisor một gói kiểm → Supervisor gom ship, anh duyệt đúng commit hash → push + PR → anh merge.

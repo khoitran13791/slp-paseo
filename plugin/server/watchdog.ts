@@ -1,13 +1,14 @@
 import { readJson, writeJson } from "./jsonFile";
 import type { Vendor } from "./roles";
 
-const STRICT = /(usage|rate) limit (reached|exceeded|hit)|hit (your|the) (usage |rate )?limit|limit (will )?reset|resets? (at|in) \d|out of (credits|extra usage)|quota exceeded|overloaded_error|\b429\b/i;
-const LOOSE_FAILURE = /rate.?limit|usage limit|usage quota|quota exceeded for|exceeded your (current )?quota|overloaded|\b429\b|too many requests/i;
+const STRICT = /\b(usage|rate|session|weekly|\d+-hour) limit (reached|exceeded|hit)\b|\bhit (your|the) (usage |rate )?limit\b|\blimit (will )?resets?\b|\bresets? (at|in) \d|\bout of (credits|extra usage)\b|\b(usage|credits?) quota exceeded\b|overloaded_error|\b(HTTP|status|error|code)\W{0,3}429\b|\b429 too many requests\b/i;
+const LOOSE_FAILURE = /rate.?limit|usage limit|usage quota|quota exceeded for|exceeded your (current )?quota|overloaded|\b(HTTP|status|error|code)\W{0,3}429\b|^\s*429\b|too many requests/i;
+const NORMAL_WORK = /\b(middleware|implement(ed|s|ing)?|added|tests?)\b/i;
 const DISK = /disk quota|EDQUOT|ENOSPC|no space left/i;
 
 export function isLimitTurn(outcome: { kind: string; error?: { message: string } }, lastAssistantText: string | null): boolean {
   if (outcome.kind === "failed") { const m = outcome.error?.message ?? ""; return LOOSE_FAILURE.test(m) && !DISK.test(m); }
-  if (outcome.kind === "completed" && lastAssistantText !== null && lastAssistantText.length <= 400) return STRICT.test(lastAssistantText) && !DISK.test(lastAssistantText) && !/middleware|implement|added|test/i.test(lastAssistantText);
+  if (outcome.kind === "completed" && lastAssistantText !== null && lastAssistantText.length <= 400) return STRICT.test(lastAssistantText) && !DISK.test(lastAssistantText) && !NORMAL_WORK.test(lastAssistantText);
   return false;
 }
 

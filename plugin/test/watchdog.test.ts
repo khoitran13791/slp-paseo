@@ -24,6 +24,33 @@ describe("isLimitTurn", () => {
     expect(isLimitTurn({ kind: "completed" }, `Done. ${"details ".repeat(80)} usage limit reached in tests`)).toBe(false);
     expect(isLimitTurn({ kind: "canceled" }, "usage limit reached")).toBe(false);
   });
+  it("does not flag a turn that only mentions line 429 of a file", () => {
+    expect(isLimitTurn({ kind: "completed" }, "Fixed the off-by-one in parser.ts:429")).toBe(false);
+  });
+  it("does not flag a turn that says a handler returns 429", () => {
+    expect(isLimitTurn({ kind: "completed" }, "Handler now returns 429 on overflow. Done.")).toBe(false);
+  });
+  it("does not flag a turn that handles a quota exceeded error path", () => {
+    expect(isLimitTurn({ kind: "completed" }, "Handled quota exceeded error path, committed.")).toBe(false);
+  });
+  it("does not flag a failed turn whose stack trace has line 429", () => {
+    expect(isLimitTurn({ kind: "failed", error: { message: "TypeError: x is not a function at foo.ts:429:13" } }, null)).toBe(false);
+  });
+  it("detects a 5-hour limit notice", () => {
+    expect(isLimitTurn({ kind: "completed" }, "5-hour limit reached ∙ resets 3pm")).toBe(true);
+  });
+  it("detects a session limit notice", () => {
+    expect(isLimitTurn({ kind: "completed" }, "Session limit reached ∙ resets 2pm")).toBe(true);
+  });
+  it("detects a weekly limit notice", () => {
+    expect(isLimitTurn({ kind: "completed" }, "Weekly limit reached ∙ resets Oct 24 at 9am")).toBe(true);
+  });
+  it("detects a limit notice that mentions the latest model", () => {
+    expect(isLimitTurn({ kind: "completed" }, "Usage limit reached for the latest model · resets at 5pm")).toBe(true);
+  });
+  it("detects a failed API 429 rate_limit_error", () => {
+    expect(isLimitTurn({ kind: "failed", error: { message: "API Error: 429 {\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\"}}" } }, null)).toBe(true);
+  });
 });
 
 describe("usage windows and resume time", () => {

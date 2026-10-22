@@ -157,6 +157,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
         }
         if (who.role !== "lead") throw new ToolError("only the Lead spawns Peers");
         if (!st.plan?.approved) throw new ToolError("the plan is not approved yet");
+        if (!st.spec?.approved) throw new ToolError("the spec is not approved by the human yet");
         const task = st.tasks.get(a.task ?? "");
         if (!task) throw new ToolError(`unknown task ${a.task}`);
         if (a.role === "peer-impl") {
@@ -187,10 +188,18 @@ export function workTools(ctx: Ctx): ToolDef[] {
           const base = headOf(ident.worktree!);
           appendAs(ctx, who, feature, { kind: "assign", data: { task: task.id, agentId, worktree: ident.worktree, branch: ident.branch, base, attempt, model: model ?? null, mergeBase: a.merge_base === true } });
           if (a.merge_base) {
-            git(project.repo, ["fetch", "--quiet", "origin"], true); // network git runs in the human's checkout (T9 pushNoHooks)
-            const conflicts = startMerge(ident.worktree!, project.baseBranch);
-            const note = conflicts.length ? `Resolve the conflict markers in: ${conflicts.join(", ")}.` : "It merged without conflicts; check that the result builds and passes.";
-            await ctx.paseo().agents.ref(agentId).send(`${prompt}\n\n## Merge in progress\nThe plugin started merging ${project.baseBranch} into your branch. ${note} Do not run git; slp_report when done and the plugin records the merge commit.`, { messageId: ctx.router.issue() });
+            try {
+              git(project.repo, ["fetch", "--quiet", "origin"], true); // network git runs in the human's checkout (T9 pushNoHooks)
+              const conflicts = startMerge(ident.worktree!, project.baseBranch);
+              const note = conflicts.length ? `Resolve the conflict markers in: ${conflicts.join(", ")}.` : "It merged without conflicts; check that the result builds and passes.";
+              await ctx.paseo().agents.ref(agentId).send(`${prompt}\n\n## Merge in progress\nThe plugin started merging ${project.baseBranch} into your branch. ${note} Do not run git; slp_report when done and the plugin records the merge commit.`, { messageId: ctx.router.issue() });
+            } catch (error) {
+              // The Peer never got its brief: stop it and return the task, so it is not left assigned to an agent that waits for nothing.
+              const message = error instanceof Error ? error.message : String(error);
+              await retireAgent(ctx, ident, project.repo);
+              appendAs(ctx, who, feature, { kind: "release", data: { task: task.id, outcome: "returned", reason: `merge_base setup failed: ${message}` } });
+              throw new ToolError(`merging ${project.baseBranch} into the new worktree failed: ${message}`);
+            }
           }
           return `Peer-impl ${agentId} started on ${task.id} in ${ident.worktree}.`;
         }
@@ -236,6 +245,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
         if (!t || !t.lastCommit || !t.branch) throw new ToolError(`${a.task} has no commit`);
         if (st.halted) throw new ToolError(`${who.feature} is halted: the human changed the goal`);
         if (!st.plan?.approved) throw new ToolError(`plan v${st.plan?.version ?? "?"} is waiting for approval; accept after it is approved`);
+        if (!st.spec?.approved) throw new ToolError("the spec is not approved by the human yet");
         if (t.status !== "reported") throw new ToolError(`${a.task} is ${t.status}; only a reported task can be accepted`);
         if (ctx.config.flags.evidenceCheck && !t.evidenceOk) throw new ToolError(`${a.task} has no green evidence on ${t.lastCommit.slice(0, 7)}`);
         if (!t.reviewOk) throw new ToolError(`${a.task} has no clean review on ${t.lastCommit.slice(0, 7)}; spawn a peer-review first (a review counts once the reviewer's turn has ended)`);
@@ -297,6 +307,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
         const rulings = events.filter((e) => e.kind === "ruling").map((e) => `- ${e.id}: ${String(e.data.decision)} (cost if wrong: ${String(e.data.cost_if_wrong)})`);
         const openH = [...st.premises.values()].filter((p) => p.status === "open").map((p) => `- ${p.id}: ${p.title}`);
         const text = `# Ship package: ${feature} @ ${v.commit.slice(0, 7)}\n\n${a.summary}\n\n## Diff\n${diffStat(lead.worktree, base, v.commit)}\n\n## Evidence\n- full suite green on ${v.commit} (sandboxed)\n\n## Rulings\n${rulings.join("\n") || "- none"}\n\n## Open hypotheses\n${openH.join("\n") || "- none"}\n`;
+        await syncHumanMessages(ctx, who); // a message typed while the suite ran is older than the package; nothing else may be awaited before the append
         appendAs(ctx, who, feature, { kind: "ship_package", data: { commit: v.commit, text } });
         return `${text}\nShow this to the human. After they approve, call slp_ship with their exact words.`;
       },

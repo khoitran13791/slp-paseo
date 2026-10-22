@@ -180,6 +180,32 @@ describe("slp_spawn", () => {
     expect(existsSync(peer.worktree!)).toBe(false);
     expect(sh(r.repo, "git", ["branch", "--list", peer.branch!])).toContain(peer.branch!);
   });
+  it("refuses Peers once a newer spec waits for the human's approval", async () => {
+    const r = await withLeadAndPlan();
+    expect((await r.call(r.lead, "slp_spec", { markdown: "# Spec v2" })).isError).toBeFalsy();
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/the spec is not approved by the human yet/);
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-review", task: "T1", prompt: "x" })).text).toMatch(/the spec is not approved by the human yet/);
+    expect(r.paseo.created).toHaveLength(1); // the Lead only
+  });
+  it("returns the task and retires the Peer when the base branch cannot be merged in for merge_base", async () => {
+    const r = await withLeadAndPlan();
+    r.ctx.config.projects.demo!.baseBranch = "no-such-branch";
+    const res = await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "resolve", merge_base: true });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/merging no-such-branch into the new worktree failed: .*did not start/);
+    const peerCreate = r.paseo.created[1]!;
+    expect(deriveFeature("cache", r.events()).tasks.get("T1")!.status).toBe("pending");
+    expect(r.ctx.identities.byAgent(peerCreate.id)).toBeNull();
+    expect(r.ctx.identities.active("demo").filter((i) => i.role === "peer-impl")).toHaveLength(0);
+    expect(r.paseo.archived).toContain(peerCreate.id);
+    expect(existsSync(peerCreate.cwd)).toBe(false);
+    expect(r.paseo.sent.some((s) => s.agentId === peerCreate.id)).toBe(false);
+    expect(r.events().filter((e) => e.kind === "release").at(-1)!).toMatchObject({ by_role: "lead", data: { task: "T1", outcome: "returned" } });
+    r.ctx.config.projects.demo!.baseBranch = "main";
+    const again = await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" });
+    expect(again.isError).toBeFalsy();
+    expect(sh(r.paseo.created[2]!.cwd, "git", ["branch", "--show-current"])).toBe("slp/cache/T1-2");
+  });
 });
 
 describe("report → review → accept", () => {
@@ -229,6 +255,12 @@ describe("report → review → accept", () => {
     await processReportFor(r.ctx, r.peer);
     await r.call(r.lead, "slp_plan", { markdown: "# Plan v2", tasks: TASKS });
     expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/plan v2 is waiting for approval/);
+  });
+  it("does not accept while a newer spec waits for the human's approval", async () => {
+    const r = await reported();
+    await processReportFor(r.ctx, r.peer);
+    await r.call(r.lead, "slp_spec", { markdown: "# Spec v2" });
+    expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/the spec is not approved by the human yet/);
   });
   it("runs network git in the project checkout, so a relative sshCommand cannot run a Peer's script", async () => {
     const r = await withLeadAndPlan();
@@ -291,6 +323,22 @@ describe("ship", () => {
     expect(shipped.isError).toBeFalsy();
     expect(sh(bare, "git", ["rev-parse", "feat/cache"])).toBe(headOf(r.lead.worktree!));
     expect(r.events().at(-1)!.kind).toBe("shipped");
+  });
+  it("counts a message typed while the package was verifying as older than the package, so it cannot approve it", async () => {
+    const r = await withLeadAndPlan();
+    r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "ruling", by_role: "lead", by_agent: r.lead.agentId, idPrefix: "R", data: { decision: "skip", reason: "r", cost_if_wrong: "c", drop: ["T1", "T2"] } });
+    const bare = join(r.home, "origin.git"); sh(r.home, "git", ["init", "-q", "--bare", bare]); sh(r.lead.worktree!, "git", ["remote", "add", "origin", bare]);
+    r.ctx.config.ship.openPr = false;
+    const real = r.ctx.run;
+    r.ctx.run = async (runner, worktree, command, timeoutSec) => { await r.human("ok"); return real(runner, worktree, command, timeoutSec); };
+    expect((await r.call(r.sup, "slp_ship_package", { feature: "cache", summary: "s" })).isError).toBeFalsy();
+    r.ctx.run = real;
+    const refused = await r.call(r.sup, "slp_ship", { feature: "cache", quote: "ok" });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toMatch(/no message from the human after the item under approval/);
+    await r.human("ok"); // typed after the package: this one approves
+    expect((await r.call(r.sup, "slp_ship", { feature: "cache", quote: "ok" })).isError).toBeFalsy();
+    expect(sh(bare, "git", ["rev-parse", "feat/cache"])).toBe(headOf(r.lead.worktree!));
   });
 });
 

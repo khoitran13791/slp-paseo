@@ -132,6 +132,31 @@ describe("spec and plan", () => {
     await w.call(w.lead, "slp_plan", { markdown: "# P", tasks: [{ id: "T1", title: "v", dependsOn: [], verifies: ["H1"], touchSet: [], verify: "x" }] });
     expect(deriveFeature("cache", w.events()).plan!.approved).toBe(true);
   });
+  it("keeps a halted feature out of the spec, plan and contract queue", async () => {
+    const w = world();
+    await approvedSpec(w);
+    const task = { id: "T1", title: "verify h", dependsOn: [], verifies: ["H1"], touchSet: ["contract:auth-api"], verify: "npm run bench" };
+    await w.call(w.lead, "slp_plan", { markdown: "# Plan", tasks: [task] });
+    const sha = deriveFeature("cache", w.events()).plan!.sha256;
+    expect((await w.call(w.sup, "slp_approve_plan", { feature: "cache", sha256: sha })).isError).toBeFalsy();
+    expect(contractQueues(w.ctx.stores.project("demo").all()).get("contract:auth-api")).toEqual(["cache"]);
+    await w.call(w.sup, "slp_challenge", { feature: "cache", target: "T1", level: "spec", claim: "goal is wrong", evidence: "evidence text here", impact: "all", smallest_correction: "rethink" });
+    await w.human(w.sup, "đổi goal, dừng feature này lại");
+    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "change_goal", quote: "đổi goal" })).isError).toBeFalsy();
+    expect(contractQueues(w.ctx.stores.project("demo").all()).get("contract:auth-api") ?? []).toEqual([]);
+
+    const plan = await w.call(w.lead, "slp_plan", { markdown: "# Plan v2", tasks: [task] });
+    expect(plan.isError).toBe(true);
+    expect(plan.text).toMatch(/feature cache is halted/);
+    const spec = await w.call(w.lead, "slp_spec", { markdown: "# Spec v2" });
+    expect(spec.isError).toBe(true);
+    expect(spec.text).toMatch(/feature cache is halted/);
+    const approve = await w.call(w.sup, "slp_approve_plan", { feature: "cache", sha256: sha });
+    expect(approve.isError).toBe(true);
+    expect(approve.text).toMatch(/feature cache is halted/);
+    expect(contractQueues(w.ctx.stores.project("demo").all()).get("contract:auth-api") ?? []).toEqual([]);
+    expect(w.events().filter((e) => e.kind === "plan")).toHaveLength(1);
+  });
 });
 
 describe("challenges, questions, messages", () => {
@@ -172,6 +197,40 @@ describe("challenges, questions, messages", () => {
     expect(q.text).toMatch(/Q1/);
     await w.call(w.lead, "slp_answer", { question: "Q1", answer: "No, same session only." });
     expect(w.ctx.router.pending().at(-1)).toMatchObject({ to: { role: "peer-impl", feature: "cache", task: "T1" } });
+  });
+  it("lets only the parent role resolve a challenge: nobody resolves their own, and a skipped level changes nothing", async () => {
+    const w = world();
+    const resolved = () => w.events().filter((e) => e.kind === "challenge_resolved");
+    await w.call(w.peer, "slp_challenge", { target: "T1", claim: "plan step wrong", evidence: "npm test -- retry exits 1: expected 200", impact: "T1", smallest_correction: "use redis" });
+    const bySup = await w.call(w.sup, "slp_resolve", { feature: "cache", challenge: "C1", outcome: "rejected", reason: "skipping the Lead" });
+    expect(bySup.isError).toBe(true);
+    expect(resolved()).toHaveLength(0);
+    expect(deriveFeature("cache", w.events()).challenges.get("C1")!.open).toBe(true);
+    expect(bySup.text).toMatch(/raised by peer-impl; only its parent role/);
+    await w.call(w.lead, "slp_challenge", { target: "T2", level: "plan", claim: "my own step is wrong", evidence: "npm test -- other exits 1: expected 1", impact: "T2", smallest_correction: "redo" });
+    const own = await w.call(w.lead, "slp_resolve", { challenge: "C2", outcome: "accepted", reason: "I agree with myself" });
+    expect(own.isError).toBe(true);
+    expect(resolved()).toHaveLength(0);
+    expect(deriveFeature("cache", w.events()).challenges.get("C2")!.open).toBe(true);
+    expect(own.text).toMatch(/raised by lead; only its parent role/);
+  });
+  it("lets only the parent role answer a question: a Supervisor cannot answer a Peer's", async () => {
+    const w = world();
+    await w.call(w.peer, "slp_ask", { question: "Does retry include other sessions?" });
+    const r = await w.call(w.sup, "slp_answer", { feature: "cache", question: "Q1", answer: "skipping the Lead" });
+    expect(r.isError).toBe(true);
+    expect(w.events().filter((e) => e.kind === "answer")).toHaveLength(0);
+    expect(r.text).toMatch(/Q1 was raised by peer-impl; only its parent role/);
+  });
+  it("still routes an answer or a resolution to the role that raised it, one level down", async () => {
+    const w = world();
+    await w.call(w.lead, "slp_ask", { question: "Which cache TTL?" });
+    expect((await w.call(w.sup, "slp_answer", { feature: "cache", question: "Q1", answer: "60s" })).isError).toBeFalsy();
+    expect(w.ctx.router.pending().at(-1)).toMatchObject({ to: { role: "lead", feature: "cache" } });
+    await w.call(w.lead, "slp_challenge", { target: "T2", level: "plan", claim: "step is wrong", evidence: "npm test -- other exits 1: expected 1", impact: "T2", smallest_correction: "redo" });
+    expect((await w.call(w.sup, "slp_resolve", { feature: "cache", challenge: "C1", outcome: "accepted", reason: "agreed" })).isError).toBeFalsy();
+    expect(w.ctx.router.pending().at(-1)).toMatchObject({ to: { role: "lead", feature: "cache" } });
+    expect(w.events().filter((e) => e.kind === "challenge_resolved")).toHaveLength(1);
   });
   it("hides slp_ask when the ask flag is off", () => {
     const w = makeCtx({ flags: { ask: false } });

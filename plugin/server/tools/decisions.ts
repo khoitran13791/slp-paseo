@@ -4,10 +4,12 @@ import type { Identity } from "../identity";
 import type { ToolDef } from "../mcp/server";
 import { checkPlan, contractsOf } from "../planCheck";
 import { findHumanQuote, messageUsed } from "../quote";
-import type { Address } from "../router";
+import { edgeAllowed, type Address } from "../router";
+import type { Role } from "../roles";
 import { deriveFeature, type PlanTask } from "../store/derive";
 import { defineTool, ToolError } from "./define";
 
+const haltedMessage = (feature: string): string => `feature ${feature} is halted: the human changed the goal; start a new feature`;
 const SLUG = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
 const Premise = z.object({ kind: z.enum(["decision", "hypothesis"]), title: z.string().min(1), verify_by: z.string().min(1).optional() });
 const Task = z.object({ id: z.string().regex(/^T\d+[a-z]?$/), title: z.string().min(1), outcome: z.string().min(1).optional(), dependsOn: z.array(z.string()).default([]), verifies: z.array(z.string()).default([]), touchSet: z.array(z.string()).default([]), verify: z.string(), model: z.string().optional(), waitsOn: z.array(SLUG).default([]) });
@@ -128,8 +130,9 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
       input: z.object({ markdown: z.string().min(1), premises: z.array(Premise).default([]) }),
       run(who, a) {
         const feature = who.feature!;
-        const doc = ctx.stores.writeDoc(who.project, feature, "spec", a.markdown);
         const before = deriveFeature(feature, ctx.stores.feature(who.project, feature).all());
+        if (before.halted) throw new ToolError(haltedMessage(feature));
+        const doc = ctx.stores.writeDoc(who.project, feature, "spec", a.markdown);
         const ids = addPremises(ctx, who, feature, a.premises, doc.sha256);
         const carried = [...before.premises.values()].filter((p) => p.status === "proposed" && new RegExp(`\\b${p.id}\\b`).test(a.markdown)).map((p) => p.id);
         appendAs(ctx, who, feature, { kind: "spec", data: { ...doc, premises: [...carried, ...ids] } });
@@ -144,6 +147,7 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
       run(who, a) {
         const feature = who.feature!;
         const st = deriveFeature(feature, ctx.stores.feature(who.project, feature).all());
+        if (st.halted) throw new ToolError(haltedMessage(feature));
         if (!st.spec?.approved) throw new ToolError("the spec is not approved by the human yet");
         const tasks = a.tasks as PlanTask[];
         const issues = checkPlan(tasks, { premises: st.premises, others: otherFeatures(ctx, who.project, feature), modelsAllowed: ctx.config.models.allowed, heldBy: heldByOthers(ctx, who.project, feature), feature, waits: waitsOfOthers(ctx, who.project, feature) });
@@ -170,6 +174,7 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
       run(who, a) {
         const feature = requireFeature(who, a.feature);
         const st = deriveFeature(feature, ctx.stores.feature(who.project, feature).all());
+        if (st.halted) throw new ToolError(haltedMessage(feature));
         if (!st.plan || st.plan.sha256 !== a.sha256) throw new ToolError(`sha256 does not match the latest plan (${st.plan?.sha256 ?? "none"})`);
         const tasks = [...st.tasks.values()].map(({ id, title, dependsOn, verifies, touchSet, verify, model, waitsOn }) => ({ id, title, dependsOn, verifies, touchSet, verify, model, waitsOn }));
         const errors = checkPlan(tasks, { premises: st.premises, others: otherFeatures(ctx, who.project, feature), modelsAllowed: ctx.config.models.allowed, heldBy: heldByOthers(ctx, who.project, feature), feature, waits: waitsOfOthers(ctx, who.project, feature) }).filter((i) => i.severity === "error");
@@ -221,13 +226,17 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
       input: z.object({ feature: SLUG.optional(), challenge: z.string().regex(/^C\d+$/), outcome: z.enum(["accepted", "rejected"]), reason: z.string().min(1) }),
       run(who, a) {
         const feature = requireFeature(who, a.feature);
-        const c = deriveFeature(feature, ctx.stores.feature(who.project, feature).all()).challenges.get(a.challenge);
+        const events = ctx.stores.feature(who.project, feature).all();
+        const c = deriveFeature(feature, events).challenges.get(a.challenge);
         if (!c?.open) throw new ToolError(`${a.challenge} is not open`);
         if (c.level === "spec") throw new ToolError(`${a.challenge} is spec-level: only the human decides it (slp_human_decision)`);
+        // Only the role above the raiser resolves it, and that is checked before anything is written.
+        const ev = events.find((e) => e.kind === "challenge" && e.id === a.challenge)!;
+        const raiser = ctx.identities.byAgent(ev.by_agent ?? "");
+        const to: Address = { role: (raiser?.role ?? ev.by_role) as Role, project: who.project, feature, task: raiser?.task ?? (typeof ev.data.task === "string" ? ev.data.task : null) };
+        if (!edgeAllowed(who, to)) throw new ToolError(`${a.challenge} was raised by ${to.role}; only its parent role resolves it`);
         appendAs(ctx, who, feature, { kind: "challenge_resolved", refs: [a.challenge], data: { outcome: a.outcome, reason: a.reason } });
-        const ev = ctx.stores.feature(who.project, feature).all().find((e) => e.id === a.challenge)!;
-        const challenger = ctx.identities.byAgent(ev.by_agent ?? "");
-        if (challenger) routeFrom(ctx, who, { role: challenger.role, project: who.project, feature, task: challenger.task }, `${a.challenge} ${a.outcome}: ${a.reason}`);
+        if (raiser) routeFrom(ctx, who, to, `${a.challenge} ${a.outcome}: ${a.reason}`);
         return `${a.challenge} ${a.outcome}.`;
       },
     }),
@@ -250,9 +259,12 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
         const feature = requireFeature(who, a.feature);
         const q = ctx.stores.feature(who.project, feature).all().find((e) => e.kind === "ask" && e.id === a.question);
         if (!q) throw new ToolError(`unknown question ${a.question}`);
-        appendAs(ctx, who, feature, { kind: "answer", refs: [a.question], data: { answer: a.answer } });
+        // Only the role above the asker answers it, and that is checked before anything is written.
         const asker = ctx.identities.byAgent(q.by_agent ?? "");
-        if (asker) routeFrom(ctx, who, { role: asker.role, project: who.project, feature, task: asker.task }, `Answer to ${a.question}: ${a.answer}`);
+        const to: Address = { role: (asker?.role ?? q.by_role) as Role, project: who.project, feature, task: asker?.task ?? (typeof q.data.task === "string" ? q.data.task : null) };
+        if (!edgeAllowed(who, to)) throw new ToolError(`${a.question} was raised by ${to.role}; only its parent role answers it`);
+        appendAs(ctx, who, feature, { kind: "answer", refs: [a.question], data: { answer: a.answer } });
+        if (asker) routeFrom(ctx, who, to, `Answer to ${a.question}: ${a.answer}`);
         return `Answered ${a.question}.`;
       },
     }),

@@ -45,4 +45,14 @@ describe("renderDigest", () => {
     expect(text).toContain("- T1 reported (blocked) — title T1");
     expect(text).toContain("- T2 reported — title T2");
   });
+  it("keeps free text on one line and caps each field at 160 characters", () => {
+    const tasks = [{ ...task("T1"), title: "line one\nline two" }, { ...task("T2"), title: "x".repeat(200) }, ...Array.from({ length: 40 }, (_, i) => task(`T${i + 3}`))];
+    const events = [ev("plan", { version: 1, sha256: "p", path: "p", tasks }), ev("premise", { kind: "hypothesis", title: "h1\nh2" }, { id: "H1", by_role: "supervisor" })];
+    const text = renderDigest(deriveFeature("f", events), [ev("ops", { type: "limit_hit", summary: "claude\nuntil 11:00" }, { by_role: "plugin" })], new Date("2026-10-22T10:00:00.000Z"));
+    expect(text.trimEnd().split("\n").length).toBeLessThanOrEqual(30);
+    expect(text).toContain("Open hypotheses: H1 h1 h2");
+    expect(text).toContain("- T1 pending — line one line two");
+    expect(text).toContain("limit_hit claude until 11:00");
+    expect(text.split("\n")).toContain(`- T2 pending — ${"x".repeat(160)}`);
+  });
 });

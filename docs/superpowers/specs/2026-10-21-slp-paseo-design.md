@@ -17,7 +17,7 @@
   - mỗi feature một Supervisor thay cho một Supervisor mỗi project;
   - plugin giữ chủ contract giữa các feature;
   - nhịp kiểm 15 phút: Supervisor xem Lead và Peer của feature mình (§7.7);
-  - 6 lỗi nhỏ từ review: m1, m9, m11, m12, m13, m17.
+  - lỗi nhỏ từ review: m1, m7, m9, m11, m12, m13, m17.
 
 **Core mechanism:** mỗi ý tưởng anh mở một Supervisor → Supervisor phỏng vấn, viết brief, anh duyệt → Supervisor tạo Lead cho feature → Lead viết spec (anh duyệt) và plan (Supervisor duyệt) → Lead giao từng task cho Peer-impl trong worktree riêng, trong sandbox → mọi tin nhắn, báo cáo, challenge đi qua tool MCP của plugin `slp`; plugin kiểm quyền, ghi log append-only ngoài repo, commit thay Peer, chạy verify trong sandbox, tự resume khi dính limit, mỗi 15 phút gửi Supervisor một gói kiểm → Supervisor gom ship, anh duyệt đúng commit hash → push + PR → anh merge.
 
@@ -161,6 +161,7 @@ Vai Claude chạy mode `default`: lệnh shell trong sandbox tự được cho (
   config.json                    # §8
   <project>/
     project.jsonl                # sự kiện cấp project: contract_claim / contract_release, ngân sách, feature_record
+    watch.json                   # trạng thái nhịp kiểm từng feature (§7.7)
     features/<slug>/
       events.jsonl               # log append-only — nguồn sự thật duy nhất của feature
       checkpoint-supervisor.md  checkpoint-lead.md   # checkpoint xoay vòng mới nhất của từng vai
@@ -216,7 +217,7 @@ Mỗi dòng JSONL:
 
 - D#/H# **hiệu lực** khi chưa có `supersede` trỏ tới; H# **confirmed** khi có `confirms` kèm evidence; còn lại H# **open**.
 - Task: `pending` → `assigned` → `reported` → `accepted`; hoặc `parked` (tiền đề đang bị challenge mức spec), `stale` (đã accepted nhưng `Depends on` — trực tiếp hoặc qua T# — một ID đã bị supersede), `reopened`, `dropped`. `slp_accept` chỉ nhận task đang `reported`; task `parked` không accept được.
-- Task có `**Waits on:** <slug>` chỉ spawn được khi feature `<slug>` đã `shipped` hoặc dừng (contract đã nhả).
+- Task chạm `contract:<tên>` chỉ spawn được khi feature của nó đang giữ contract đó (§6.4). `**Waits on:** <slug>` là chỗ plan khai feature đang giữ lúc duyệt.
 - Task chỉ `accepted` khi có `commit` do plugin tạo từ `report` mới nhất, `evidence` exit code 0 trên đúng commit đó — lệnh là lệnh verify của task trong plan đã duyệt, chạy trong sandbox — và review trên đúng commit đó không còn phát hiện chặn.
 - Feature chỉ nghiệm thu khi: không task `stale`/`parked`, không challenge mở, `evidence` xanh của lệnh `verify` của project (full suite) trên HEAD của `feat/<slug>`.
 
@@ -293,7 +294,7 @@ Mục bắt buộc:
 ### 6.4 Song song giữa các feature
 
 - Mỗi feature có Supervisor riêng; các Supervisor không nhắn nhau. Phần xuyên feature do plugin làm, theo luật cố định:
-  - **Contract chung:** lúc `slp_approve_plan`, mỗi `contract:<tên>` trong plan được ghi `contract_claim` cho feature nếu chưa feature đang chạy nào giữ. Đang bị giữ → task chạm nó phải có `Waits on: <slug giữ>`, không thì plugin từ chối duyệt. Feature giữ `shipped` hoặc dừng → `contract_release`, task chờ mở khoá. v1 không chuyển chủ giữa chừng: muốn đổi thì feature giữ sửa plan bỏ contract đó (plan mới, duyệt lại). Không xếp được → Supervisor hỏi anh thứ tự.
+  - **Contract chung:** lúc `slp_approve_plan`, mỗi `contract:<tên>` trong plan được ghi `contract_claim` cho feature nếu chưa feature đang chạy nào giữ. Đang bị giữ → task chạm nó phải có `Waits on: <slug giữ>`, không thì plugin từ chối duyệt. Mỗi contract có một hàng chờ theo thứ tự duyệt plan; feature đầu hàng giữ contract. Feature giữ `shipped` hoặc dừng, hoặc plan mới của nó bỏ contract đó → `contract_release`; feature kế tiếp trong hàng giữ contract và Lead, Supervisor của nó được báo. v1 không chuyển chủ theo cách khác. Không xếp được → Supervisor hỏi anh thứ tự.
   - **Trùng file lặt vặt** (i18n, registry) → cho chạy, resolve lúc merge.
 - Trước khi duyệt plan, Supervisor đọc digest của các feature đang chạy (chỉ đọc) để thấy chỗ chạm nhau mà luật trên không bắt (ví dụ cùng sửa một module nhưng không khai contract) và hỏi anh nếu cần.
 - Trong lúc chạy: plugin canh touch set (§7).
@@ -369,7 +370,7 @@ Server-only (`index.server.ts`), chạy trên daemon kể cả khi app đóng.
 | Reviewer không sửa | Sau turn của Peer-review: `git status --porcelain` trên file tracked phải rỗng; nếu không → review vô hiệu, dừng reviewer, archive workspace, xoá branch review, báo Lead spawn reviewer mới | `agent.turn_ended` | Reviewer sửa code |
 | Chặn quyền | Từ chối: shell gọi `paseo`, `git push`, `git commit`/`merge` từ agent, lệnh xin ra khỏi sandbox; `Write`/`Edit` có `input.file_path` ngoài worktree của agent hoặc vào `<worktree>/.git` (S10a đã kiểm); mọi tool có đường dẫn trong `~/.slp` hay `~/.paseo`; `WebFetch` tới localhost. Còn lại: plugin không quyết, request chờ anh trong app | `agent.permission_requested` (S5 đã kiểm) | Lách router; ghi ngoài scope; đọc token của agent khác |
 | Canh touch set | Sau mỗi commit: file ngoài touch set task → báo Lead; file trong touch set của feature khác đang chạy → báo Supervisor của feature đó | `commit` | Lấn scope; feature chạm nhau |
-| Giữ contract | Lúc `slp_approve_plan`: ghi `contract_claim` cho các `contract:` chưa ai giữ; từ chối duyệt nếu chạm contract đang bị feature khác giữ mà task không `Waits on` feature đó; lúc `shipped` / feature dừng: `contract_release`, báo Lead có task đang chờ (§6.4) | MCP + `project.jsonl` | Hai feature cùng sửa một contract; feature chờ mãi không biết |
+| Giữ contract | Lúc `slp_approve_plan`: ghi `contract_claim` cho các `contract:` chưa ai giữ; từ chối duyệt nếu chạm contract đang bị feature khác giữ mà task không `Waits on` feature đó; lúc `shipped` / feature dừng / plan mới bỏ contract: `contract_release`, báo Lead và Supervisor của feature giữ kế tiếp (§6.4); `slp_spawn` từ chối task chạm contract mà feature chưa giữ | MCP + `project.jsonl` | Hai feature cùng sửa một contract; feature chờ mãi không biết |
 | Nhịp kiểm | Mỗi `watch.intervalMinutes` dựng gói kiểm cho từng feature và gửi Supervisor của feature đó (§7.7) | timer + SDK `refresh()` + `timeline.refetch` + git (hook tắt) | Agent quay vòng / overthink / sai hướng mà không ai thấy |
 | Cổng ship | `slp_ship` chỉ Supervisor; chỉ khi có `human_decision` duyệt ship đúng commit hash đã qua kiểm quote | MCP | Push trước khi anh duyệt |
 | Đối soát | Khi plugin khởi động: đọc state, liệt kê agent qua SDK, so khớp; agent không còn (SDK trả null hoặc `closed`) → retire định danh, nhả slot writer; giao lại hàng đợi đã lưu; nhắc agent rảnh chưa báo cáo; ghi `ops: reconcile`. Dòng cuối của một file JSONL bị cắt dở (crash giữa lúc ghi) → bỏ đúng dòng đó, ghi `ops: log_truncated`; dòng hỏng ở giữa file → fail closed | khởi động plugin | Sự kiện Paseo không replay; Peer chết vẫn chiếm trần writer; plugin không khởi động được sau crash |
@@ -423,14 +424,14 @@ Mục đích: bắt sớm agent quay vòng / overthink và đi sai hướng — 
 
 1. **Hẹn giờ.** Mỗi feature một timer của plugin, `watch.intervalMinutes` (mặc định 15). Bắt đầu khi Lead được tạo; dừng khi feature `shipped` hoặc dừng. Timer nằm trên đĩa như timer resume.
 2. **Bỏ qua.** Nếu từ lần kiểm trước không agent nào của feature chạy, không có event mới, và không file nào trong worktree đổi → không gửi, ghi `ops: watch_skipped`.
-3. **Gói kiểm** (plugin dựng, không LLM): digest của feature, cộng tối đa 12 dòng cho mỗi agent đang sống của feature (Lead, Peer-impl, Peer-review):
+3. **Gói kiểm** (plugin dựng, không LLM): digest của feature, cộng với mỗi agent đang sống của feature (Lead, Peer-impl, Peer-review), mặc định tối đa 16 dòng một agent:
    - vai, task và mục tiêu task (một dòng từ plan), trạng thái (`running` / `idle` / chờ permission của anh / chờ reset limit kèm giờ);
    - turn hiện tại đã chạy bao lâu; từ lúc nhận task bao lâu; fix round;
-   - bao lâu chưa đổi file trong worktree (mtime mới nhất trong các file đổi), `diffstat` so với BASE;
+   - với Peer-impl: số lần verify fail, file chưa commit và lần đổi cuối (mtime mới nhất), `git diff --shortstat` so với BASE;
    - `watch.packToolCalls` (mặc định 10) tool call gần nhất: tên, tham số rút gọn ≤ 80 ký tự, exit code hoặc lỗi;
-   - lặp lại từ lần kiểm trước: lệnh giống nhau chạy ≥ 3 lần, file bị đọc ≥ 4 lần.
-4. **Giao.** Qua router như tin plugin (`slp-` messageId): chỉ khi Supervisor `idle`, nên không ngắt lúc anh đang chat. Gói chưa giao bị gói mới thay, không chồng lên. Ghi `ops: watch_sent`.
-5. **Phán.** Supervisor đánh giá từng agent: `ok`, `watch` (để ý lần sau), `intervene`; ghi bằng `slp_watch_result` rồi kết thúc turn. Mọi agent `ok` → trả lời anh đúng một dòng. Cần xem sâu hơn → `slp_activity(agent, n ≤ 50)`: n item timeline gần nhất đã rút gọn, chỉ của Lead/Peer thuộc feature mình. Turn kiểm kết thúc mà không có `slp_watch_result` → `ops: watch_unanswered`, không nhắc lại.
+   - lặp lại trong 60 item timeline gần nhất: lệnh giống nhau chạy ≥ 3 lần, file bị đọc ≥ 4 lần.
+4. **Giao.** Qua router như tin plugin (`slp-` messageId): chỉ khi Supervisor `idle`, nên không ngắt lúc anh đang chat. Gói chưa giao bị gói mới thay, không chồng lên. Ghi `ops: watch_sent`. Lúc gửi gói mới mà gói trước đã giao nhưng chưa có `slp_watch_result` → `ops: watch_unanswered`.
+5. **Phán.** Supervisor đánh giá từng agent: `ok`, `watch` (để ý lần sau), `intervene`; ghi bằng `slp_watch_result` rồi kết thúc turn. Mọi agent `ok` → trả lời anh đúng một dòng. Cần xem sâu hơn → `slp_activity(agent, n ≤ 50)`: n item timeline gần nhất đã rút gọn, chỉ của Lead/Peer thuộc feature mình. Plugin không nhắc lại gói chưa được trả lời.
 6. **Can thiệp.**
    - Lead có vấn đề → Supervisor `slp_send(→ Lead, mode: "steer")`, kèm nhận xét và đề xuất.
    - Peer có vấn đề → Supervisor steer Lead kèm nhận xét về Peer; Lead quyết và chỉnh Peer bằng `slp_send(→ Peer, mode: "steer" | "interrupt")`. Supervisor không nhắn Peer: Peer chỉ có một chủ.
@@ -508,7 +509,7 @@ Tắt một cờ → cơ chế đó không chạy, hệ thống quay về hành 
 
 | Ca | Xử lý |
 |---|---|
-| Cả account một vendor dính limit | Cổng limit theo vendor: mọi agent vendor đó tạm dừng; resume lần lượt khi reset; Supervisor chỉ báo anh khi quá `resumeMaxAttempts` hoặc kẹt quá ngân sách thời gian |
+| Cả account một vendor dính limit | Mỗi agent dính limit tự hẹn resume theo giờ reset của vendor (`listUsage`); các tin resume giãn nhau 15 giây; số lần resume giữ qua các lần resume; quá `resumeMaxAttempts` → báo Supervisor của feature. Đơn giản hoá v1: không tạm dừng cả vendor (§7.1 Watchdog limit) |
 | Daemon / plugin restart | State, hàng đợi, timer resume nằm trên đĩa; đối soát khi khởi động (§7.1) |
 | Plugin chết | Fail closed: agent mất tool `slp`, không báo cáo / nhắn được, dừng. Không có ghi nào ngoài router |
 | Context Supervisor / Lead đầy | Xoay vòng (§7.5); Peer vẫn chạy |
@@ -520,7 +521,7 @@ Tắt một cờ → cơ chế đó không chạy, hệ thống quay về hành 
 | `slp_accept` task không ở trạng thái `reported` (ví dụ `parked`) | Từ chối, nêu trạng thái hiện tại |
 | Plan chạm contract feature khác đang giữ | `slp_approve_plan` bị từ chối; Lead thêm `Waits on` hoặc bỏ contract; không xếp được → Supervisor hỏi anh thứ tự |
 | Gói kiểm tới khi Supervisor đang bận (đang chat với anh) | Chờ Supervisor rảnh; gói mới thay gói cũ |
-| Steer không chen được vào turn đang chạy (kiểm ở T20) | Dùng `interrupt` rồi gửi lại tin |
+| Steer không chen được vào turn đang chạy (kiểm ở T21) | Dùng `interrupt` rồi gửi lại tin |
 | Fix round 3 | Lead bắt buộc đối chiếu tiền đề (§6.5); round 5 (trần Superpowers) → park / hoãn / leo thang |
 | Challenge không ai trả lời | Quá `challengeAnswerMinutes` → nhắc Lead; quá gấp đôi → báo Supervisor |
 | Anh vắng ở cổng | Việc độc lập chạy tiếp; heartbeat nhắc; không gì được push |
@@ -581,7 +582,7 @@ Kết quả đầy đủ: [`docs/research/spikes-2026-10-21.md`](../../research/
 | S9 | Codex commit trong worktree | ❌ Codex cố ý khoá `.git` (source `openai/codex`) | Plugin commit thay Peer |
 | S10 | Sandbox của Claude; chạy verify/hook trong sandbox | ✅ (`codex sandbox -P :workspace`) | §7 luật chung; §8 `sandbox` |
 
-**Còn mở, kiểm lúc triển khai (T20):**
+**Còn mở, kiểm lúc triển khai (T21):**
 - dạng thật của một turn dính limit (S2);
 - cách đóng localhost cho Codex chạy qua Paseo (S3);
 - `claudeAllowedDomains` có đủ để Peer cài dependency không;
@@ -591,12 +592,12 @@ Kết quả đầy đủ: [`docs/research/spikes-2026-10-21.md`](../../research/
 - `toolPolicy` có thật sự bỏ hết permission prompt cho `slp_*` không;
 - giá trị `providerId` thật trong `listUsage()`;
 - reviewer Codex có đọc được `~/.paseo` không;
-- SDK `agent.send` có nhận chế độ steer / interrupt không, và steer có chen được vào turn đang chạy của Claude không;
+- steer (`activeTurnBehavior: "steer"`, đã có trong SDK 0.12) có thật sự chen được vào turn đang chạy của Claude không;
 - `timeline.refetch` của một agent đang chạy có trả tool call của turn hiện tại không (gói kiểm cần).
 
 ### 11.2 Unit test plugin
 
-Git dir tin cậy (`.git` giả không làm chạy fsmonitor; thư mục lạ → từ chối); file hook/`paseo.json` không vào commit; `onTurnEnded` chồng nhau chỉ commit một lần; runner hỏng → báo Supervisor, không nhắn Peer; phục hồi commit sau crash; câu duyệt gõ trong cùng turn được tính, câu cũ không duyệt version mới; agent không phải SLP không bị ảnh hưởng khi setup SLP hỏng; Lead/Peer không bao giờ chạy trong checkout chính. Ma trận quyền §5.2 (mỗi ô được/không được); cạnh router §7.3; suy ra trạng thái §5.3 (supersede → stale, kể cả qua T#; confirms; park/unpark); kiểm quote §7.6; cổng limit theo vendor; đối soát sau restart; trần writer; reviewer sửa file → review vô hiệu; commit thay Peer (không thay đổi → từ chối; file nhạy cảm bị loại; hook husky trong worktree **không chạy** khi plugin commit/merge); verify chạy qua `sandbox.runner` (runner hỏng → fail closed, không chạy ngoài sandbox); `Write`/`Edit` ngoài worktree → bị từ chối; model ngoài `models.allowed` → `slp_spawn` bị từ chối.
+Git dir tin cậy (`.git` giả không làm chạy fsmonitor; thư mục lạ → từ chối); file hook/`paseo.json` không vào commit; `onTurnEnded` chồng nhau chỉ commit một lần; runner hỏng → báo Supervisor, không nhắn Peer; phục hồi commit sau crash; câu duyệt gõ trong cùng turn được tính, câu cũ không duyệt version mới; agent không phải SLP không bị ảnh hưởng khi setup SLP hỏng; Lead/Peer không bao giờ chạy trong checkout chính. Ma trận quyền §5.2 (mỗi ô được/không được); cạnh router §7.3; suy ra trạng thái §5.3 (supersede → stale, kể cả qua T#; confirms; park/unpark); kiểm quote §7.6; watchdog limit (số lần resume giữ qua các lần resume, hết lượt → báo Supervisor); đối soát sau restart; trần writer; reviewer sửa file → review vô hiệu; commit thay Peer (không thay đổi → từ chối; file nhạy cảm bị loại; hook husky trong worktree **không chạy** khi plugin commit/merge); verify chạy qua `sandbox.runner` (runner hỏng → fail closed, không chạy ngoài sandbox); `Write`/`Edit` ngoài worktree → bị từ chối; model ngoài `models.allowed` → `slp_spawn` bị từ chối.
 
 Rev 4: Supervisor chỉ một feature (brief v1 tạo feature; brief cho slug khác bị từ chối; không ghi được feature khác; đọc được digest feature khác); tối đa một Lead sống mỗi feature; contract (duyệt trước giữ; chạm contract đang bị giữ mà không `Waits on` → từ chối duyệt; task `Waits on` không spawn được tới khi nhả; ship nhả và báo); steer / interrupt chỉ ở hai cạnh Supervisor → Lead của mình, Lead → Peer của mình; nhịp kiểm (bỏ qua khi không có hoạt động; gói mới thay gói chưa giao; gói đúng cấu trúc và giới hạn dòng; `slp_activity` chỉ trong feature mình; dừng khi ship); `slp_state` không tính là báo cáo, turn `canceled` không bị nhắc; dòng cuối JSONL cắt dở bị bỏ, dòng giữa hỏng → fail closed; `slp_accept` task `parked` bị từ chối; lỗi ghi hàng đợi không làm sập plugin; agent đã mất được retire và nhả slot writer khi đối soát; "disk quota exceeded" không bị coi là limit.
 
@@ -621,6 +622,7 @@ Repo giả dùng một lần. Mỗi kịch bản chạy 3 lần không có promp
 - Tạo agent có `parent` mà không có `workspaceId`/`worktree` → Paseo đặt `cwd` = `cwd` của cha (`create-agent/intent.ts` `resolvePlacement`). Có `worktree: { mode: "branch-off" }` → Paseo tạo worktree (`git worktree add`, có chạy hook `post-checkout`) và chạy `worktree.setup` của `paseo.json` từ worktree mới, ngoài sandbox. `before agent.create` chạy sau bước đó (`agent-manager.ts:1285`). Archive workspace worktree → `git worktree remove --force`, giữ branch.
 - `toolPolicy.preapproved` (`{kind:"mcp", server, tool}`) được Claude (`allowedTools`) và Codex (`approval_mode: "approve"`) áp dụng.
 - Paseo lưu `mcpServers` (kèm header, tức token MCP) của agent trong agent storage dưới `~/.paseo` (`agent-storage.ts:30`).
+- `@getpaseo/client` 0.12: `agent.send(text, { messageId, activeTurnBehavior: "steer" | "interrupt" })`, bỏ trống thì daemon ngắt turn đang chạy (`SendMessageOptions`); `agent.refresh()` trả `null` khi daemon không thấy agent (`fetchAgent`). Item timeline `tool_call` có `status` và `detail.type` `shell` (kèm `command`, `exitCode`) / `read` / `edit` / `write` (kèm `filePath`) / `search` (protocol `agent-types.d.ts`).
 - Payload `providers.listUsage()`: `{ providers: [{ providerId, displayName, windows: [{ usedPct, resetsAt }] }] }` (`messages.ts:6237`).
 - Provider tuỳ chỉnh (`extends`) hiện đúng ID trong hook; plugin set được `providerOptions.sandbox` cho Claude và `sandbox_mode`/`sandbox_workspace_write` cho Codex (Codex dùng lại policy đã resolve nếu cùng loại — `codex-app-server-agent.ts:4256-4263`).
 - Máy anh: Paseo app tự cập nhật lên 0.12.0 ngày 2026-10-21; daemon do app quản lý; `pluginsEnabled` chưa bật (đã bật tạm cho spike rồi trả lại); `injectIntoAgents: true`; Codex CLI 0.163.0 với `sandbox_mode = "danger-full-access"` toàn cục trong `~/.codex/config.toml` (mode `auto` của Paseo vẫn áp workspace-write).
@@ -629,10 +631,10 @@ Còn giả định: xem cuối §11.1.
 
 ## 13. Rủi ro còn mở
 
-- **Localhost mở với Codex chạy qua Paseo (Peer-review):** về lý thuyết reviewer có thể nói chuyện thẳng với WebSocket của daemon (đọc được file credential trong `~/.paseo`) để lách router. Rev 3 thêm: agent storage dưới `~/.paseo` chứa header MCP, tức token `slp` của **mọi** agent. Reviewer Codex (đọc được đĩa, gọi được localhost) vì vậy có thể gọi tool `slp_*` dưới tên Lead hay Supervisor. Plugin chỉ lưu hash token và chặn vai Claude đọc `~/.paseo`, nhưng không chặn được Codex. Nếu T20 xác nhận reviewer đọc được `~/.paseo`, cần chọn: chuyển reviewer sang Claude-sandbox (cùng vendor với implementer), hoặc chấp nhận cho pilot. Giảm bằng: reviewer chỉ chạy trong worktree dùng-một-lần, bị kiểm không sửa file tracked, không có tool nhắn tin; tin lạ tới agent khác hiện là `agent_message` có `sender` hoặc bị ghi là `human_message` (có thể ghi nhầm nguồn). Nếu đo thấy cần, đổi reviewer sang Claude-sandbox và chấp nhận cùng vendor với implementer, hoặc đặt password cho daemon.
+- **Localhost mở với Codex chạy qua Paseo (Peer-review):** về lý thuyết reviewer có thể nói chuyện thẳng với WebSocket của daemon (đọc được file credential trong `~/.paseo`) để lách router. Rev 3 thêm: agent storage dưới `~/.paseo` chứa header MCP, tức token `slp` của **mọi** agent. Reviewer Codex (đọc được đĩa, gọi được localhost) vì vậy có thể gọi tool `slp_*` dưới tên Lead hay Supervisor. Plugin chỉ lưu hash token và chặn vai Claude đọc `~/.paseo`, nhưng không chặn được Codex. Nếu T21 xác nhận reviewer đọc được `~/.paseo`, cần chọn: chuyển reviewer sang Claude-sandbox (cùng vendor với implementer), hoặc chấp nhận cho pilot. Giảm bằng: reviewer chỉ chạy trong worktree dùng-một-lần, bị kiểm không sửa file tracked, không có tool nhắn tin; tin lạ tới agent khác hiện là `agent_message` có `sender` hoặc bị ghi là `human_message` (có thể ghi nhầm nguồn). Nếu đo thấy cần, đổi reviewer sang Claude-sandbox và chấp nhận cùng vendor với implementer, hoặc đặt password cho daemon.
 - **`Write`/`Edit` của Claude không đi qua sandbox hệ điều hành:** chặn ghi ngoài worktree dựa vào plugin đọc `input.file_path` (resolve realpath trước khi so). Còn một khe nhỏ: Claude chạy tool song song, nên giữa lúc plugin kiểm và lúc ghi, một lệnh shell khác có thể tạo symlink tại thư mục chưa tồn tại.
 - **Chi phí topology:** điều phối nhiều agent tốn gấp nhiều lần turn/token so với một phiên đơn. Đo ở §10; nếu không bù được bằng toil giảm, thu hẹp (tắt Supervisor duyệt plan, tắt reviewer khác vendor…).
-- **Limit tập trung:** mặc định 3/4 vai dùng Claude (Supervisor, Lead, Peer-impl) → limit Claude đánh vào cả ba cùng lúc. Cổng limit theo vendor giữ cho reviewer Codex chạy tiếp; cân nhắc đổi Lead sang Codex nếu đo thấy kẹt.
+- **Limit tập trung:** mặc định 3/4 vai dùng Claude (Supervisor, Lead, Peer-impl) → limit Claude đánh vào cả ba cùng lúc; reviewer Codex vẫn chạy tiếp. v1 không tạm dừng cả vendor, nên mỗi agent Claude tự dính limit một lần rồi tự hẹn resume; cân nhắc đổi Lead sang Codex nếu đo thấy kẹt.
 - **Phụ thuộc Codex CLI cho sandbox runner:** verify chạy qua `codex sandbox`; Codex CLI đổi cú pháp (như việc bắt buộc `--permission-profile` ở 0.163) là verify fail closed cho tới khi sửa config.
 - **Supervisor phán đoán sai thay anh:** Supervisor duyệt plan và phân loại leo thang. Giảm bằng: cổng brief/spec/ship luôn là anh; mọi ruling và quyết định của Supervisor nằm trong gói ship.
 - **Nhịp kiểm tốn token và làm phình context Supervisor:** ước ~20k token mỗi giờ cho một feature đang chạy (chưa đo). Giảm bằng: bỏ qua khi không có hoạt động; gói do plugin dựng có giới hạn dòng; đo ở §10 rồi giãn nhịp hoặc đổi cách.

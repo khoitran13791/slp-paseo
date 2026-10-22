@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { projectForCwd, type SlpConfig } from "./config";
 import { currentBranch, gitCommonDir, headOf } from "./git";
@@ -79,13 +79,14 @@ export function findSuperpowersDir(claudeHome: string): string | null {
   return newest ? join(root, newest) : null;
 }
 
-/** Lead and Peers must run in a worktree Paseo created for them, never in the main checkout. */
+/** Lead and Peers must run in a worktree Paseo created for them, never in the main checkout. `cwd` must already be a realpath. */
 function recordPlacement(ident: Identity, cwd: string, identities: IdentityRegistry): void {
   if (ident.role === "supervisor") return;
   if (gitCommonDir(cwd) === join(cwd, ".git")) throw new Error(`SLP: Paseo did not create a worktree for ${ident.role} (cwd is the main checkout ${cwd}).`);
   if (ident.role === "peer-review" && headOf(cwd) !== ident.reviewCommit) throw new Error(`SLP: reviewer worktree ${cwd} is not at the review commit ${ident.reviewCommit}.`);
-  identities.place(ident.tokenHash, { worktree: cwd, workspaceId: ident.workspaceId, branch: currentBranch(cwd) });
-  Object.assign(ident, { worktree: cwd, branch: currentBranch(cwd) });
+  const branch = currentBranch(cwd);
+  identities.place(ident.tokenHash, { worktree: cwd, workspaceId: ident.workspaceId, branch });
+  Object.assign(ident, { worktree: cwd, branch });
 }
 
 export function transformCreate(req: CreateRequest, deps: AgentConfigDeps): CreateRequest {
@@ -93,22 +94,24 @@ export function transformCreate(req: CreateRequest, deps: AgentConfigDeps): Crea
   if (!role) return req;
   let token = req.env?.SLP_TOKEN;
   let ident = token ? deps.identities.byToken(token) : null;
+  if (!ident && role !== "supervisor") throw new Error(`SLP: ${ROLE_PROVIDER[role]} agents can only be created through slp_spawn.`);
+  // Canonicalize once: cwd may be a symlink alias (or /tmp for /private/tmp), and every decision and sandbox path below uses the real path.
+  const cwd = realpathSync(req.config.cwd);
   if (!ident) {
-    if (role !== "supervisor") throw new Error(`SLP: ${ROLE_PROVIDER[role]} agents can only be created through slp_spawn.`);
-    const found = projectForCwd(deps.config, req.config.cwd);
-    if (!found) throw new Error(`SLP: ${req.config.cwd} is not a project in ~/.slp/config.json.`);
+    const found = projectForCwd(deps.config, cwd);
+    if (!found) throw new Error(`SLP: ${cwd} is not a project in ~/.slp/config.json.`);
     // One Supervisor per idea: it has no feature until its first slp_brief (spec §7.4).
     const minted = deps.identities.mint({ role, project: found.name, feature: null, task: null, reviewCommit: null, parentAgentId: null });
     ident = minted; token = minted.token;
   }
   if (ident.role !== role) throw new Error(`SLP: token role ${ident.role} does not match provider ${req.config.provider}`);
   if (req.config.thinkingOptionId === "ultracode") throw new Error("SLP: thinking \"ultracode\" starts Claude Code's own multi-agent workflow, outside slp_spawn and the writer cap; pick xhigh in the role's agent profile.");
-  recordPlacement(ident, req.config.cwd, deps.identities);
+  recordPlacement(ident, cwd, deps.identities);
   const vendor = deps.setup().vendor[role];
   const base = asRecord(req.config.providerOptions);
   const providerOptions = vendor === "claude"
     ? {
-        ...base, sandbox: claudeSandbox(ident, deps.config, req.config.cwd, deps.stateDirs), ...claudeIsolation(req.config.cwd, deps.claudePluginDir, base.extraArgs),
+        ...base, sandbox: claudeSandbox(ident, deps.config, cwd, deps.stateDirs), ...claudeIsolation(cwd, deps.claudePluginDir, base.extraArgs),
         disallowedTools: [...new Set([...(Array.isArray(base.disallowedTools) ? (base.disallowedTools as string[]) : []), ...CLAUDE_DISALLOWED_TOOLS])],
       }
     : { ...base, sandbox_mode: "workspace-write", approval_policy: "on-request", sandbox_workspace_write: { network_access: false } };

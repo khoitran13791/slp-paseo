@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { bindSession, ensureCodexHome, findSuperpowersDir, transformCreate } from "../server/agentConfig";
@@ -81,6 +81,23 @@ describe("transformCreate", () => {
     expect(identities.byToken(peer.token)).toMatchObject({ worktree: wt, branch: "slp/f/T1-1" });
     const other = identities.mint({ ...peerMeta, task: "T2" });
     expect(() => transformCreate({ config: { provider: "slp-peer-impl", cwd: repo }, env: { SLP_TOKEN: other.token } }, d)).toThrow(/did not create a worktree/);
+  });
+  it("sees through a symlinked path: an alias of the main checkout is still refused, an alias of a worktree is recorded by its real path", () => {
+    const { d, identities, repo } = deps();
+    const alias = join(tmpDir(), "main-alias"); symlinkSync(repo, alias);
+    const peer = identities.mint(peerMeta);
+    expect(() => transformCreate({ config: { provider: "slp-peer-impl", cwd: alias }, env: { SLP_TOKEN: peer.token } }, d)).toThrow(/did not create a worktree/);
+    const lead = identities.mint({ role: "lead", project: "demo", feature: "f", task: null, reviewCommit: null, parentAgentId: "sup" });
+    expect(() => transformCreate({ config: { provider: "slp-lead", cwd: alias }, env: { SLP_TOKEN: lead.token } }, d)).toThrow(/did not create a worktree/);
+
+    const wt = worktree(repo, "slp/f/T1-1");
+    const wtAlias = join(tmpDir(), "wt-alias"); symlinkSync(wt, wtAlias);
+    const impl = identities.mint({ ...peerMeta, task: "T2" });
+    const out = transformCreate({ config: { provider: "slp-peer-impl", cwd: wtAlias }, env: { SLP_TOKEN: impl.token } }, d);
+    expect(out.config.cwd).toBe(wtAlias); // Paseo owns cwd; only SLP's own decisions use the real path
+    expect((out.config.providerOptions as { sandbox: { filesystem: unknown } }).sandbox.filesystem).toEqual({ denyWrite: [join(realpathSync(wt), ".git")], denyRead: STATE });
+    expect((out.config.providerOptions as { additionalDirectories: unknown }).additionalDirectories).toEqual([realpathSync(wt)]);
+    expect(identities.byToken(impl.token)).toMatchObject({ worktree: realpathSync(wt), branch: "slp/f/T1-1" });
   });
   it("gives a Peer-impl registry-only network, and denies writing the .git link and reading state dirs", () => {
     const { d, identities, repo } = deps();

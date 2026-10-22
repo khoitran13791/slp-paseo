@@ -1,4 +1,4 @@
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -20,6 +20,25 @@ describe("sandbox runner", () => {
     const r = await runSandboxed(FAKE_RUNNER, tmpDir(), "sleep 30 & sleep 30", 1);
     expect(r.timedOut).toBe(true);
     expect(r.durationMs).toBeLessThan(5000);
+  });
+  it("resolves at the timeout when a descendant escapes the group and keeps stdout open", async () => {
+    const dir = tmpDir();
+    // The parent waits for a child that calls setsid and holds stdout; the escapee's pid goes to escaped.pid.
+    const escapee = `perl -MPOSIX -e 'if (fork == 0) { POSIX::setsid(); open(F, ">escaped.pid"); print F $$; close(F); exec("sleep", "10") } wait'`;
+    try {
+      const r = await runSandboxed(FAKE_RUNNER, dir, escapee, 1);
+      expect(r.timedOut).toBe(true);
+      expect(r.durationMs).toBeLessThan(5000);
+    } finally {
+      const pidFile = join(dir, "escaped.pid");
+      if (existsSync(pidFile)) { try { process.kill(Number(readFileSync(pidFile, "utf8")), "SIGKILL"); } catch { /* already gone */ } }
+    }
+  });
+  it("does not wait for a background child that keeps stdout open after the command exits", async () => {
+    const r = await runSandboxed(FAKE_RUNNER, tmpDir(), "sleep 20 & echo started", 10);
+    expect(r).toMatchObject({ exitCode: 0, timedOut: false });
+    expect(r.stdoutTail).toContain("started");
+    expect(r.durationMs).toBeLessThan(3000);
   });
   it("reports a missing runner binary as a failure, not a pass", async () => {
     const r = await runSandboxed(["/nonexistent/runner"], tmpDir(), "true", 5);

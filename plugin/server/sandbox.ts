@@ -15,16 +15,25 @@ export const runSandboxed: RunFn = (runner, worktree, command, timeoutSec) => {
   const started = Date.now();
   return new Promise((resolve) => {
     let out = ""; let err = ""; let timedOut = false; let done = false;
+    const timers: NodeJS.Timeout[] = [];
+    const after = (ms: number, fn: () => void) => { if (!done) timers.push(setTimeout(fn, ms)); };
     const finish = (exitCode: number | null) => {
-      if (done) return; done = true; clearTimeout(timer);
+      if (done) return; done = true;
+      for (const t of timers) clearTimeout(t);
+      killGroup("SIGKILL"); // nothing the command started in its group outlives the run
+      child.stdout.destroy(); child.stderr.destroy();
       resolve({ exitCode, timedOut, stdoutTail: out, stderrTail: err, durationMs: Date.now() - started });
     };
     const child = spawn(argv[0]!, argv.slice(1), { cwd: worktree, stdio: ["ignore", "pipe", "pipe"], detached: true });
     const killGroup = (sig: NodeJS.Signals) => { try { process.kill(-child.pid!, sig); } catch { /* already gone */ } };
-    const timer = setTimeout(() => { timedOut = true; killGroup("SIGTERM"); setTimeout(() => killGroup("SIGKILL"), 2000).unref(); }, timeoutSec * 1000);
+    after(timeoutSec * 1000, () => {
+      timedOut = true; killGroup("SIGTERM");
+      after(2000, () => { killGroup("SIGKILL"); after(1000, () => finish(null)); }); // hard bound: resolve even if pipes stay open
+    });
     child.stdout.on("data", (d) => { out = tail(out + d); });
     child.stderr.on("data", (d) => { err = tail(err + d); });
     child.on("error", (e) => { err = tail(`${err}${String(e)}`); finish(null); });
+    child.on("exit", (code) => after(300, () => finish(timedOut ? null : code))); // drain window: descendants may still hold stdout
     child.on("close", (code) => finish(timedOut ? null : code));
   });
 };

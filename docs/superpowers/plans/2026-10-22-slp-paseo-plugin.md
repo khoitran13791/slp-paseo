@@ -10,7 +10,7 @@
 
 **Spec:** [`docs/superpowers/specs/2026-10-21-slp-paseo-design.md`](../specs/2026-10-21-slp-paseo-design.md) (rev 4). Bằng chứng nền: [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md).
 
-**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 273 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 89 lần gỡ thử từng phần sửa mới (round 5 thêm: giá trị git-lfs khớp nguyên văn, kiểm config của chính worktree mới trước khi checkout; round 4 thêm: git filter/driver chạy file của repo, giữ git-lfs, rollback xoá branch của chính nó, `last()` bỏ identity tạo hỏng, câu duyệt có `?`, gỡ worktree chỉ qua git; round 3 thay chặn theo đường dẫn bằng worktree do plugin tạo, và thêm: tick một lượt một lúc, resume theo đúng job, câu duyệt mọi mệnh đề đều là đồng ý, evidence A→B→A; round 2 thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
+**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 276 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 95 lần gỡ thử từng phần sửa mới (round 6 thêm: git mạng chạy ở checkout chính, cổng ship cần brief/spec/plan đã duyệt, accept chờ plan mới, ship kiểm lại blocker, resume không cắt ngang turn đang chạy, rollback mọi lỗi sau khi worktree đã có; round 5 thêm: giá trị git-lfs khớp nguyên văn, kiểm config của chính worktree mới trước khi checkout; round 4 thêm: git filter/driver chạy file của repo, giữ git-lfs, rollback xoá branch của chính nó, `last()` bỏ identity tạo hỏng, câu duyệt có `?`, gỡ worktree chỉ qua git; round 3 thay chặn theo đường dẫn bằng worktree do plugin tạo, và thêm: tick một lượt một lúc, resume theo đúng job, câu duyệt mọi mệnh đề đều là đồng ý, evidence A→B→A; round 2 thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
 
 **Core mechanism:** mỗi ý tưởng một Supervisor (brief đầu tiên gắn nó với feature) → `slp_spawn` → plugin tạo worktree (hook tắt) và một workspace `directory` cho nó, Paseo tạo agent trong đó → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng, `toolPolicy`) và ghi worktree thật vào identity → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `turn_started`/`turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer (hook tắt, git dir tin cậy), chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh → mỗi `watch.intervalMinutes` plugin dựng gói kiểm (trạng thái, tool call gần nhất, lặp lại, file đang đổi) gửi Supervisor của feature; Supervisor steer Lead khi cần.
 
@@ -804,10 +804,14 @@ describe("deriveFeature", () => {
 
 describe("acceptanceBlockers", () => {
   it("requires every task accepted, no open challenge, and green full-suite evidence on head", () => {
-    const events = [ev("plan", { version: 1, sha256: "p", path: "p", tasks: [task("T1"), task("T2")] }), ...accepted("T1", "c1"),
+    const approvedDocs = [ev("brief", { version: 1, sha256: "b", path: "p" }, { by_role: "supervisor" }), ev("human_decision", { decides: "approve_brief", target: "b" }, { by_role: "supervisor" }),
+      ev("spec", { version: 1, sha256: "s", path: "p" }), ev("human_decision", { decides: "approve_spec", target: "s" }, { by_role: "supervisor" })];
+    const events = [...approvedDocs, ev("plan", { version: 1, sha256: "p", path: "p", tasks: [task("T1"), task("T2")] }), ev("plan_approved", { sha256: "p" }, { by_role: "supervisor" }), ...accepted("T1", "c1"),
       ev("challenge", { target: "T1", level: "plan" }, { id: "C1", by_role: "peer-impl" })];
     const st = deriveFeature("f", events);
     expect(acceptanceBlockers(st, events, "head1")).toEqual(["T2 is pending", "C1 is open", "no green full-suite evidence on head1"]);
+    const dropped = [...events, ev("plan", { version: 2, sha256: "p2", path: "p", tasks: [task("T1")] })];
+    expect(acceptanceBlockers(deriveFeature("f", dropped), dropped, "head1")).toContain("plan v2 is not approved");
     const done = [...events, ...accepted("T2", "c2"), ev("challenge_resolved", { outcome: "rejected" }, { refs: ["C1"] }),
       ev("evidence", { scope: "feature", commit: "head1", exitCode: 0, timedOut: false }, { by_role: "plugin" })];
     expect(acceptanceBlockers(deriveFeature("f", done), done, "head1")).toEqual([]);
@@ -991,6 +995,8 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
 export function acceptanceBlockers(st: FeatureState, events: readonly SlpEvent[], head: string): string[] {
   const out: string[] = [];
   if (st.halted) out.push("the feature is halted (the human changed the goal)");
+  // The tasks come from the latest plan; an unapproved one must not drop tasks from this gate (review Codex 2026-10-22, round 6).
+  for (const [name, doc] of [["brief", st.brief], ["spec", st.spec], ["plan", st.plan]] as const) if (!doc || !doc.approved) out.push(doc ? `${name} v${doc.version} is not approved` : `no ${name}`);
   for (const t of st.tasks.values()) if (t.status !== "accepted" && t.status !== "dropped") out.push(`${t.id} is ${t.status}`);
   for (const c of st.challenges.values()) if (c.open) out.push(`${c.id} is open`);
   const ev = [...events].reverse().find((e) => e.kind === "evidence" && e.data.scope === "feature" && e.data.commit === head);
@@ -2010,6 +2016,7 @@ Ba lớp chặn code của repo chạy ngoài sandbox qua git (review B2):
 - Mọi lệnh git của plugin có `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, không riêng commit/merge/push.
 - Plugin không tin file `<worktree>/.git`, vì file này nằm trong cwd của Peer và Peer ghi được. `git()` tự tìm admin dir bằng cách đọc ngược `<common dir>/worktrees/*/gitdir` của repo đã đăng ký qua `trustRepo`; common dir nằm ngoài sandbox của mọi vai. Sau đó chạy với `--git-dir` và `--work-tree` cố định. Thư mục không thuộc repo nào đã đăng ký thì `git()` ném `UntrustedGitDirError`, tức là fail closed.
 - Paseo tự chạy `git worktree add` (có hook `post-checkout`) và lệnh `worktree.setup` trong `paseo.json` khi tạo worktree mới, ngoài sandbox. Vì vậy plugin không bao giờ commit thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath` của repo) hay ở `paseo.json`. Các file này bị loại khỏi commit như file nhạy cảm và được báo cho Lead.
+- Rev 5.5 (review Codex vòng 6): lệnh git có mạng (`fetch`, `push`) và `gh` chạy trong checkout chính của project, không trong worktree, vì config transport (`core.sshCommand`, credential helper) có thể gọi một script theo đường dẫn tương đối; trong checkout chính nó chỉ trỏ tới nội dung anh viết.
 - Rev 5.4 (review Codex vòng 5): ngoại lệ `git-lfs` phải khớp nguyên văn giá trị `git lfs install` ghi, không chỉ tiền tố. Config git có thể phụ thuộc branch (`includeIf onbranch:`), nên `addWorktree` tạo worktree với `--no-checkout`, kiểm `unsafeGitDrivers` trong chính worktree đó, rồi mới `reset --hard` để đổ file (checkout chạy smudge filter); có driver thì gỡ worktree và branch. Workspace dùng lại (Lead khởi động lại, Peer tiếp quản) được kiểm theo worktree của nó.
 - Rev 5.3 (review Codex vòng 4): hook tắt không tắt git filter. Nếu config git của repo có filter `clean`/`smudge`/`process`, merge driver hay `textconv` (`.gitattributes` trong cây chọn chúng), thì `git add` của plugin và `git status` nền của Paseo chạy lệnh đó, có thể là script Peer sửa được. `unsafeGitDrivers(repo)` liệt kê chúng (bỏ qua `git-lfs`, là chương trình chứ không phải file của repo); có thì plugin không tạo agent cho project và không commit report (fail closed, báo rõ).
 - Rev 5.2 (review Codex 2026-10-22, ba vòng): vá từng đường dẫn không đủ, vì lệnh setup gọi file khác của repo (`npm ci` chạy `postinstall`), hook có thể nằm sau symlink, và `teardown` được đọc từ chính worktree lúc archive. Vì vậy **plugin tự tạo worktree** (`addWorktree`, hook tắt) dưới `ctx.worktreeRoot` (mặc định `~/.slp-worktrees/<project>/`), rồi gắn agent vào một workspace kiểu `directory`. Theo source Paseo 0.12, workspace `directory` không chạy setup, và archive chỉ chạy `teardown` với worktree nằm dưới `~/.paseo/worktrees`. Plugin tự gỡ worktree (`removeWorktree`) khi task xong, giữ branch.
@@ -2259,13 +2266,15 @@ export function addWorktree(repo: string, path: string, branch: string, base: st
   // No checkout yet: checkout runs smudge filters, and config can depend on the new branch (includeIf onbranch). Check this
   // worktree's own config first, then populate it (review Codex 2026-10-22, round 5).
   git(repo, ["worktree", "add", "-q", "--no-checkout", "-b", branch, path, base]);
-  const drivers = unsafeGitDrivers(path);
-  if (drivers.length) {
-    removeWorktree(repo, path);
-    git(repo, ["branch", "-D", branch], true);
-    throw new Error(`git config for ${branch} runs commands on checkout/add/status that a Peer could change (${drivers.join("; ")})`);
+  try {
+    const drivers = unsafeGitDrivers(path);
+    if (drivers.length) throw new Error(`git config for ${branch} runs commands on checkout/add/status that a Peer could change (${drivers.join("; ")})`);
+    git(path, ["reset", "-q", "--hard", "HEAD"]);
+  } catch (error) {
+    // Any failure after the worktree exists (a driver, a failed LFS download during reset): undo it, branch last (review Codex 2026-10-22, round 6).
+    if (removeWorktree(repo, path)) git(repo, ["branch", "-D", branch], true);
+    throw error;
   }
-  git(path, ["reset", "-q", "--hard", "HEAD"]);
 }
 
 /** Removes an SLP worktree through git only (hooks off), keeping its branch. A path git does not know as a worktree is left alone. */
@@ -2319,8 +2328,12 @@ export function startMerge(worktree: string, ref: string): string[] {
   return git(worktree, ["diff", "--name-only", "--diff-filter=U"], true).stdout.split("\n").filter(Boolean);
 }
 
-export function pushNoHooks(worktree: string, remote: string, branch: string): void {
-  git(worktree, ["push", "--no-verify", remote, `${branch}:${branch}`]);
+/**
+ * Push from the project's main checkout, not a worktree: transport config (core.sshCommand, credential helpers) may name a
+ * relative script, which must resolve in the tree only the human writes (review Codex 2026-10-22, round 6).
+ */
+export function pushNoHooks(repo: string, remote: string, branch: string): void {
+  git(repo, ["push", "--no-verify", remote, `${branch}:${branch}`]);
 }
 
 export function filesOutside(files: string[], touchSet: string[]): string[] {
@@ -5314,6 +5327,21 @@ describe("report → review → accept", () => {
     expect(r.paseo.archivedWorkspaces).toEqual(expect.arrayContaining([r.peer.workspaceId, rev.workspaceId]));
     expect(r.ctx.identities.byAgent(r.peer.agentId!)).toBeNull();
   });
+  it("does not accept while a new plan waits for approval", async () => {
+    const r = await reported();
+    await processReportFor(r.ctx, r.peer);
+    await r.call(r.lead, "slp_plan", { markdown: "# Plan v2", tasks: TASKS });
+    expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/plan v2 is waiting for approval/);
+  });
+  it("runs network git in the project checkout, so a relative sshCommand cannot run a Peer's script", async () => {
+    const r = await withLeadAndPlan();
+    const marker = join(r.home, "ssh-ran");
+    mkdirSync(join(r.lead.worktree!, "scripts"), { recursive: true }); writeFileSync(join(r.lead.worktree!, "scripts", "ssh.sh"), `touch ${marker}\n`);
+    sh(r.lead.worktree!, "git", ["add", "."]); sh(r.lead.worktree!, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "accepted peer work"]);
+    sh(r.repo, "git", ["remote", "add", "origin", "ssh://example.invalid/repo.git"]); sh(r.repo, "git", ["config", "core.sshCommand", "sh scripts/ssh.sh"]);
+    await r.call(r.lead, "slp_merge_main", {});
+    expect(existsSync(marker)).toBe(false);
+  });
   it("refuses to accept a task that is not reported, such as one parked behind a spec-level challenge", async () => {
     const r = await reported();
     await processReportFor(r.ctx, r.peer);
@@ -5359,6 +5387,9 @@ describe("ship", () => {
     r.ctx.config.ship.openPr = false;
     expect((await r.call(r.sup, "slp_ship", { feature: "cache", quote: "ship" })).isError).toBe(true);
     await r.human("ship đi");
+    const late = r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "challenge", by_role: "lead", by_agent: r.lead.agentId, idPrefix: "C", data: { target: "T9", level: "plan", claim: "late" } });
+    expect((await r.call(r.sup, "slp_ship", { feature: "cache", quote: "ship đi" })).text).toMatch(/not ready any more[\s\S]*C1 is open/);
+    r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "challenge_resolved", by_role: "lead", by_agent: r.lead.agentId, refs: [late.id!], data: { outcome: "rejected" } });
     const shipped = await r.call(r.sup, "slp_ship", { feature: "cache", quote: "ship đi" });
     expect(shipped.isError).toBeFalsy();
     expect(sh(bare, "git", ["rev-parse", "feat/cache"])).toBe(headOf(r.lead.worktree!));
@@ -5587,7 +5618,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
           const base = headOf(ident.worktree!);
           appendAs(ctx, who, feature, { kind: "assign", data: { task: task.id, agentId, worktree: ident.worktree, branch: ident.branch, base, attempt, model: model ?? null, mergeBase: a.merge_base === true } });
           if (a.merge_base) {
-            git(ident.worktree!, ["fetch", "--quiet", "origin"], true);
+            git(project.repo, ["fetch", "--quiet", "origin"], true); // network git runs in the human's checkout (T9 pushNoHooks)
             const conflicts = startMerge(ident.worktree!, project.baseBranch);
             const note = conflicts.length ? `Resolve the conflict markers in: ${conflicts.join(", ")}.` : "It merged without conflicts; check that the result builds and passes.";
             await ctx.paseo().agents.ref(agentId).send(`${prompt}\n\n## Merge in progress\nThe plugin started merging ${project.baseBranch} into your branch. ${note} Do not run git; slp_report when done and the plugin records the merge commit.`, { messageId: ctx.router.issue() });
@@ -5635,6 +5666,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
         const t = st.tasks.get(a.task);
         if (!t || !t.lastCommit || !t.branch) throw new ToolError(`${a.task} has no commit`);
         if (st.halted) throw new ToolError(`${who.feature} is halted: the human changed the goal`);
+        if (!st.plan?.approved) throw new ToolError(`plan v${st.plan?.version ?? "?"} is waiting for approval; accept after it is approved`);
         if (t.status !== "reported") throw new ToolError(`${a.task} is ${t.status}; only a reported task can be accepted`);
         if (ctx.config.flags.evidenceCheck && !t.evidenceOk) throw new ToolError(`${a.task} has no green evidence on ${t.lastCommit.slice(0, 7)}`);
         if (!t.reviewOk) throw new ToolError(`${a.task} has no clean review on ${t.lastCommit.slice(0, 7)}; spawn a peer-review first (a review counts once the reviewer's turn has ended)`);
@@ -5670,7 +5702,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
       run(who) {
         const project = ctx.config.projects[who.project]!;
         if (stateOf(ctx, who.project, who.feature!).halted) throw new ToolError(`${who.feature} is halted: the human changed the goal`);
-        git(who.worktree!, ["fetch", "--quiet", "origin"], true);
+        git(project.repo, ["fetch", "--quiet", "origin"], true); // network git runs in the human's checkout (T9 pushNoHooks)
         const merged = mergeNoHooks(who.worktree!, project.baseBranch, `Merge ${project.baseBranch} into ${who.branch}`);
         if (!merged.ok) return `Conflicts in: ${merged.conflicts.join(", ")}. Add a resolve task to the plan, then slp_spawn it as a peer-impl with merge_base: true.`;
         appendPlugin(ctx, who.project, who.feature!, { kind: "merge", data: { source: project.baseBranch, target: who.branch, hash: merged.hash } });
@@ -5714,18 +5746,21 @@ export function workTools(ctx: Ctx): ToolDef[] {
         if (deriveFeature(feature, events).halted) throw new ToolError(`${feature} is halted: the human changed the goal`);
         const ok = verifyShipApproval(events, humanMessagesFor(ctx, who), { agentId: who.agentId!, quote: a.quote, commit: head, extraWords: [feature] });
         if (!ok.ok) throw new ToolError(`ship refused: ${ok.reason}`);
+        // Anything that arrived after the package (a challenge, red evidence, a new plan) still blocks (review Codex 2026-10-22, round 6).
+        const blockers = acceptanceBlockers(deriveFeature(feature, events), events, head);
+        if (blockers.length) throw new ToolError(`ship refused, not ready any more:\n${blockers.map((b) => `- ${b}`).join("\n")}`);
         appendAs(ctx, who, feature, { kind: "human_decision", data: { decides: "approve_ship", target: head, quote: a.quote, messageSeq: ok.seq, messageId: ok.messageId } });
         const branch = lead.branch ?? `feat/${feature}`;
-        pushNoHooks(lead.worktree, ctx.config.ship.remote, branch);
+        pushNoHooks(ctx.config.projects[who.project]!.repo, ctx.config.ship.remote, branch);
         let pr: string | null = null;
         if (ctx.config.ship.openPr) {
           const pkg = [...events].reverse().find((e) => e.kind === "ship_package")!;
           const title = String(events.find((e) => e.kind === "brief")?.data.title ?? feature);
           // A retry after a crash between "gh pr create" and the shipped event finds the PR instead of failing on it (review Codex 2026-10-22).
-          const existing = spawnSync("gh", ["pr", "view", branch, "--json", "url,state", "--jq", 'select(.state == "OPEN") | .url'], { cwd: lead.worktree, encoding: "utf8" });
+          const existing = spawnSync("gh", ["pr", "view", branch, "--json", "url,state", "--jq", 'select(.state == "OPEN") | .url'], { cwd: ctx.config.projects[who.project]!.repo, encoding: "utf8" });
           if (existing.status === 0 && existing.stdout.trim()) pr = existing.stdout.trim();
           else {
-            const r = spawnSync("gh", ["pr", "create", "--head", branch, "--base", ctx.config.projects[who.project]!.baseBranch.replace(/^origin\//, ""), "--title", title, "--body", String(pkg.data.text)], { cwd: lead.worktree, encoding: "utf8" });
+            const r = spawnSync("gh", ["pr", "create", "--head", branch, "--base", ctx.config.projects[who.project]!.baseBranch.replace(/^origin\//, ""), "--title", title, "--body", String(pkg.data.text)], { cwd: ctx.config.projects[who.project]!.repo, encoding: "utf8" });
             if (r.status !== 0) throw new ToolError(`pushed ${branch}, but gh pr create failed: ${r.stderr.trim()}`);
             pr = r.stdout.trim();
           }
@@ -6447,6 +6482,18 @@ describe("permissions, archive, tick", () => {
     expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("usage limit has reset"))).toBe(true);
     expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && s.text.includes("C1 has waited"))).toBe(true);
   });
+  it("never sends a resume into a running turn, and drops it when the agent starts working again", async () => {
+    const w = world();
+    w.ctx.resumes.schedule({ agentId: "peer-1", vendor: "claude", at: new Date(Date.now() - 1000).toISOString(), attempt: 1 });
+    w.paseo.statuses.set("peer-1", "running");
+    await tick(w.ctx);
+    expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("usage limit has reset"))).toBe(false);
+    expect(w.ctx.resumes.jobs()).toEqual([]);
+    w.ctx.resumes.schedule({ agentId: "lead-1", vendor: "claude", at: new Date(Date.now() + 3600_000).toISOString(), attempt: 2 });
+    await onTurnStarted(w.ctx, "lead-1");
+    expect(w.ctx.resumes.jobs()).toEqual([]);
+    expect(w.ctx.resumes.attemptOf("lead-1")).toBe(2);
+  });
   it("runs one tick at a time, so a resume is sent once even when ticks overlap", async () => {
     const w = world();
     w.ctx.resumes.schedule({ agentId: "peer-1", vendor: "claude", at: new Date(Date.now() - 1000).toISOString(), attempt: 1 });
@@ -6512,6 +6559,7 @@ import { isLimitTurn, resumeAt, usageWindowsFrom } from "./watchdog";
 /** The human's prompt is already in the timeline when the turn starts; record it before any tool checks a quote. */
 export async function onTurnStarted(ctx: Ctx, agentId: string): Promise<void> {
   ctx.turnStarts.set(agentId, Date.now());
+  ctx.resumes.done(agentId); // the agent is working again: a pending resume would only interrupt it (attempts are kept)
   const ident = ctx.identities.byAgent(agentId);
   if (ident) await syncHumanMessages(ctx, ident);
 }
@@ -6701,7 +6749,11 @@ async function tickOnce(ctx: Ctx): Promise<void> {
   // of the line for a minute instead of blocking the others (review Codex 2026-10-22, round 2).
   const [job] = [...ctx.resumes.due(ctx.now())].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   if (job) {
-    try { await resume(job.agentId); ctx.resumes.done(job.agentId, job); } // a newer job scheduled meanwhile survives
+    const ref = ctx.paseo().agents.ref(job.agentId);
+    await ref.refresh().catch(() => undefined);
+    // Running means someone already resumed it; sending now would interrupt that turn (the SDK default) (review Codex 2026-10-22, round 6).
+    if (ref.status === "running") ctx.resumes.done(job.agentId, job);
+    else try { await resume(job.agentId); ctx.resumes.done(job.agentId, job); } // a newer job scheduled meanwhile survives
     catch (error) {
       ctx.resumes.postpone(job, new Date(ctx.now().getTime() + 60_000).toISOString());
       ctx.log(`resume of ${job.agentId} failed; retrying in a minute`, error);

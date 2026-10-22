@@ -11,6 +11,7 @@ const calls: string[] = [];
 const tools = [
   defineTool({ name: "slp_echo", description: "echo", roles: ["peer-impl", "lead"], input: z.object({ text: z.string() }), run: (c, a) => `${c.role}:${a.text}` }),
   defineTool({ name: "slp_lead_only", description: "lead", roles: ["lead"], input: z.object({}), run: () => "ok" }),
+  defineTool({ name: "slp_store", description: "store", roles: ["lead"], input: z.object({ text: z.string() }), run: (_c, a) => a.text }),
   defineTool({ name: "slp_refuse", description: "refuse", roles: ["peer-impl"], input: z.object({}), run: () => { throw new ToolError("not now"); } }),
 ];
 let close: (() => Promise<void>) | undefined;
@@ -50,5 +51,16 @@ describe("MCP server", () => {
     const post = await server();
     const res = await (await post("tok-lead", [{ jsonrpc: "2.0", id: 1, method: "ping" }, { jsonrpc: "2.0", method: "notifications/x" }])).json();
     expect(res).toEqual([{ jsonrpc: "2.0", id: 1, result: {} }]);
+  });
+  it("decodes a body that spans several chunks without corrupting multibyte characters", async () => {
+    const post = await server();
+    const big = "ế".repeat(300_000);
+    const res: any = await (await post("tok-lead", { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "slp_store", arguments: { text: big } } })).json();
+    expect(res.result.isError).toBe(false);
+    expect(res.result.content[0].text === big).toBe(true);
+  });
+  it("advertises a schema whose defaulted fields are not required", () => {
+    const t = defineTool({ name: "slp_defaults", description: "d", roles: ["lead"], input: z.object({ text: z.string(), n: z.number().default(3) }), run: () => "ok" });
+    expect(t.inputSchema.required).toEqual(["text"]);
   });
 });

@@ -46,10 +46,10 @@ export async function startMcpServer(opts: {
       res.writeHead(401, { "Content-Type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "unknown or retired SLP token" } }));
       return;
     }
-    let body = "";
-    for await (const chunk of req) body += chunk;
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk);
     let parsed: unknown;
-    try { parsed = JSON.parse(body); } catch { res.writeHead(400).end(); return; }
+    try { parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { res.writeHead(400).end(); return; }
     const batch = Array.isArray(parsed) ? parsed : [parsed];
     const replies = (await Promise.all(batch.map((m) => rpc(m as RpcMessage, caller)))).filter((r) => r !== null);
     if (replies.length === 0) { res.writeHead(202).end(); return; }

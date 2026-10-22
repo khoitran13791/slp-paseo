@@ -13,7 +13,7 @@ export function defineTool<S extends z.ZodType>(def: {
     name: def.name,
     description: def.description,
     roles: def.roles,
-    inputSchema: z.toJSONSchema(def.input) as Record<string, unknown>,
+    inputSchema: z.toJSONSchema(def.input, { io: "input" }) as Record<string, unknown>,
     async handler(caller, raw) {
       const parsed = def.input.safeParse(raw ?? {});
       if (!parsed.success) return { text: `Invalid arguments: ${z.prettifyError(parsed.error)}`, isError: true };

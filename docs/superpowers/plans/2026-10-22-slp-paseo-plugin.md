@@ -10,7 +10,7 @@
 
 **Spec:** [`docs/superpowers/specs/2026-10-21-slp-paseo-design.md`](../specs/2026-10-21-slp-paseo-design.md) (rev 4). Bằng chứng nền: [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md).
 
-**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 267 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 80 lần gỡ thử từng phần sửa mới (round 3 thay chặn theo đường dẫn bằng worktree do plugin tạo, và thêm: tick một lượt một lúc, resume theo đúng job, câu duyệt mọi mệnh đề đều là đồng ý, evidence A→B→A; round 2 thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
+**Đã kiểm plan (2026-10-22, rev 4: mỗi feature một Supervisor, nhịp kiểm, review m1, m5, m6, m7, m9, m11, m12, m13, m17; thêm 2 sửa từ report human attention; rev 5 sửa theo review Codex `gpt-6-astra` (spec rev 5)):** mọi khối code trong plan được extract ra một thư mục tạm và chạy với `@getpaseo/plugin` 0.12.0. Kết quả: `tsc --noEmit` sạch; `vitest run` 24 file, 272 test pass, 1 skip (test `SLP_IT=1` cần `codex sandbox` thật). 87 lần gỡ thử từng phần sửa mới (round 4 thêm: git filter/driver chạy file của repo, giữ git-lfs, rollback xoá branch của chính nó, `last()` bỏ identity tạo hỏng, câu duyệt có `?`, gỡ worktree chỉ qua git; round 3 thay chặn theo đường dẫn bằng worktree do plugin tạo, và thêm: tick một lượt một lúc, resume theo đúng job, câu duyệt mọi mệnh đề đều là đồng ý, evidence A→B→A; round 2 thêm 13: dọn theo filesystem, không archive khi dọn hỏng, chặn Write vào paseo.json/hook, không ngoại lệ `.husky/_`, evidence gắn định nghĩa task, stale lan sang task phụ thuộc, report không đổi giữ commit, verify lại khi định nghĩa đổi, câu rút lại trong cùng tin, tiếp quản giữ commit, resume hỏng không chặn job khác, reconcile không đốt lượt resume, evidence đúng commit; rev 5 thêm 28: setup/teardown/hook cục bộ/scrub, quote tin mới nhất/đồng ý thuần/một tin một quyết định, `~/.paseo/worktrees`, hash plan, premise theo spec, task đổi sau accept, accept khi còn thay đổi chưa commit, merge đúng commit, verify làm bẩn, verdict fail, review tính sớm, phụ thuộc lúc spawn, mức challenge, park theo contract, spawn song song, dừng feature, tiếp quản Peer, resume bền, vòng contract, key nhắc) (m1, m6, m9, m11, m12, m13, m17, cạnh router trong một feature, steer, `key`, contract, brief gắn feature, nhịp kiểm, Lead chết, permission đang chờ; quote: trọn từ, phủ định, câu hỏi, phạm vi mệnh đề, tin mới nhất thắng; report `blocked` tới Lead, status/report trong thông báo, digest) đều làm test tương ứng fail. Tên option `activeTurnBehavior` và `refresh()` trả `null` đọc từ typings `@getpaseo/client` 0.12. Chưa chạy gì trên Paseo thật; phần đó là T21.
 
 **Core mechanism:** mỗi ý tưởng một Supervisor (brief đầu tiên gắn nó với feature) → `slp_spawn` → plugin tạo worktree (hook tắt) và một workspace `directory` cho nó, Paseo tạo agent trong đó → `before agent.create` gắn vai (system prompt, sandbox, MCP `slp` có token riêng, `toolPolicy`) và ghi worktree thật vào identity → agent gọi tool `slp_*` qua HTTP → plugin kiểm token→vai→quyền, append event, xếp tin vào router → `turn_started`/`turn_ended`: ghi tin của anh, phát hiện limit, commit thay Peer (hook tắt, git dir tin cậy), chạy verify trong sandbox, giao tin đang chờ cho agent đã rảnh → mỗi `watch.intervalMinutes` plugin dựng gói kiểm (trạng thái, tool call gần nhất, lặp lại, file đang đổi) gửi Supervisor của feature; Supervisor steer Lead khi cần.
 
@@ -1115,6 +1115,7 @@ describe("findHumanQuote", () => {
     expect(yes("OK, but first explain the risks.", "ok")).toBe(false);
     expect(yes("Nếu CI xanh thì: ship.", "ship")).toBe(false);
     expect(yes("Ok. Ship đi!", "ship đi")).toBe(true);
+    expect(yes("OK, ship?", "ok")).toBe(false);
     expect(yes("OK, wait, stop.", "ok")).toBe(false);
     expect(yes("OK. Do not ship.", "ok")).toBe(false);
     expect(yes("Không vấn đề gì. Duyệt", "duyệt")).toBe(false);
@@ -1257,7 +1258,7 @@ export function findHumanQuote(messages: readonly SlpEvent[], opts: { agentId: s
   // Approvals: every clause of the message must be a plain yes. A blacklist of stop words cannot catch "If CI passes, ship." or
   // "OK, but first explain the risks."; a whitelist can (review Codex 2026-10-22, round 3). Notes go in a separate message.
   const allClauses = text.split(CLAUSE_BREAK).filter((c) => words(c).length > 0);
-  if (!clauses.length || (opts.affirm && !allClauses.every((c) => saysYes(c, extra)))) {
+  if (!clauses.length || (opts.affirm && (text.includes("?") || !allClauses.every((c) => saysYes(c, extra))))) {
     return { ok: false, reason: "in the human's latest message that quote is part of a word, negated, a question, or more than a plain yes; ask them to confirm plainly, e.g. \"duyệt\"" };
   }
   return { ok: true, seq: latest.seq, messageId: String(latest.data.messageId ?? latest.seq) };
@@ -1680,7 +1681,7 @@ describe("IdentityRegistry", () => {
   it("resolves the current agent for a role after rotation and hides retired identities", () => {
     const r = new IdentityRegistry(join(tmpDir(), "i.json"));
     const old = r.mint(meta); r.bind(old.token, "lead-1");
-    const fresh = r.mint(meta); r.bind(fresh.token, "lead-2");
+    const fresh = r.mint(meta); r.bind(fresh.token, "lead-2"); r.place(fresh.tokenHash, { worktree: "/w", branch: "feat/f", workspaceId: "ws-2" });
     r.retire(old.tokenHash);
     expect(r.current("lead", "p", "f")?.agentId).toBe("lead-2");
     expect(r.byToken(old.token)).toBeNull();
@@ -1688,6 +1689,8 @@ describe("IdentityRegistry", () => {
     expect(r.active("p").map((i) => i.agentId)).toEqual(["lead-2"]);
     r.retire(fresh.tokenHash);
     expect(r.current("lead", "p", "f")).toBeNull();
+    expect(r.last("lead", "p", "f")?.agentId).toBe("lead-2");
+    const failed = r.mint(meta); r.retire(failed.tokenHash); // a create that failed: no workspace
     expect(r.last("lead", "p", "f")?.agentId).toBe("lead-2");
   });
 });
@@ -1770,9 +1773,9 @@ export class IdentityRegistry {
     return [...this.items].reverse().find((i) => i.role === role && i.project === project && i.feature === feature && (task === null || i.task === task) && !i.retiredAt && i.agentId) ?? null;
   }
 
-  /** The newest identity of a role in a feature (and task), retired or not: a Lead or Peer that died restarts in its old workspace. */
+  /** The newest identity of a role in a feature (and task) that got a workspace, retired or not: a Lead or Peer that died restarts there. One whose create failed has none and is skipped. */
   last(role: Role, project: string, feature: string | null, task?: string): Identity | null {
-    return [...this.items].reverse().find((i) => i.role === role && i.project === project && i.feature === feature && (task === undefined || i.task === task)) ?? null;
+    return [...this.items].reverse().find((i) => i.role === role && i.project === project && i.feature === feature && (task === undefined || i.task === task) && i.workspaceId) ?? null;
   }
 
   active(project: string): Identity[] {
@@ -2001,12 +2004,13 @@ git commit -m "feat(plugin): role-filtered MCP server over HTTP"
 - Test: `plugin/test/git.test.ts`
 
 **Interfaces:**
-- Produces: `trustRepo(repo): void`, `class UntrustedGitDirError`, `git(cwd, args, allowFail?): { code; stdout; stderr }`, `headOf(cwd)`, `currentBranch(cwd)`, `gitCommonDir(cwd)`, `isAncestor(cwd, a, b)`, `deleteBranch(repo, branch)`, `changedFiles(worktree): string[]`, `trackedChanges(worktree): string[]`, `isSensitivePath(p): boolean`, `hooksDir(cwd): string | null`, `isProtectedPath(p, hookDir): boolean`, `addWorktree(repo, path, branch, base): void`, `removeWorktree(repo, path): void`, `class NoChangesError`, `commitAll(worktree, { message; trailers; exclude }): string`, `commitTrailer(cwd, rev, key): string | null`, `mergeNoHooks(worktree, ref, message): { ok: true; hash } | { ok: false; conflicts: string[] }`, `startMerge(worktree, ref): string[]`, `pushNoHooks(worktree, remote, branch)`, `filesOutside(files, touchSet): string[]`, `hookFile(worktree, name): string | null`, `diffStat(cwd, from, to): string`
+- Produces: `trustRepo(repo): void`, `class UntrustedGitDirError`, `git(cwd, args, allowFail?): { code; stdout; stderr }`, `headOf(cwd)`, `currentBranch(cwd)`, `gitCommonDir(cwd)`, `isAncestor(cwd, a, b)`, `deleteBranch(repo, branch)`, `changedFiles(worktree): string[]`, `trackedChanges(worktree): string[]`, `isSensitivePath(p): boolean`, `hooksDir(cwd): string | null`, `isProtectedPath(p, hookDir): boolean`, `addWorktree(repo, path, branch, base): void` (refuses an existing path), `removeWorktree(repo, path): boolean`, `unsafeGitDrivers(repo): string[]`, `class NoChangesError`, `commitAll(worktree, { message; trailers; exclude }): string`, `commitTrailer(cwd, rev, key): string | null`, `mergeNoHooks(worktree, ref, message): { ok: true; hash } | { ok: false; conflicts: string[] }`, `startMerge(worktree, ref): string[]`, `pushNoHooks(worktree, remote, branch)`, `filesOutside(files, touchSet): string[]`, `hookFile(worktree, name): string | null`, `diffStat(cwd, from, to): string`
 
 Ba lớp chặn code của repo chạy ngoài sandbox qua git (review B2):
 - Mọi lệnh git của plugin có `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, không riêng commit/merge/push.
 - Plugin không tin file `<worktree>/.git`, vì file này nằm trong cwd của Peer và Peer ghi được. `git()` tự tìm admin dir bằng cách đọc ngược `<common dir>/worktrees/*/gitdir` của repo đã đăng ký qua `trustRepo`; common dir nằm ngoài sandbox của mọi vai. Sau đó chạy với `--git-dir` và `--work-tree` cố định. Thư mục không thuộc repo nào đã đăng ký thì `git()` ném `UntrustedGitDirError`, tức là fail closed.
 - Paseo tự chạy `git worktree add` (có hook `post-checkout`) và lệnh `worktree.setup` trong `paseo.json` khi tạo worktree mới, ngoài sandbox. Vì vậy plugin không bao giờ commit thay đổi ở thư mục hook (`.husky/`, `.githooks/`, `core.hooksPath` của repo) hay ở `paseo.json`. Các file này bị loại khỏi commit như file nhạy cảm và được báo cho Lead.
+- Rev 5.3 (review Codex vòng 4): hook tắt không tắt git filter. Nếu config git của repo có filter `clean`/`smudge`/`process`, merge driver hay `textconv` (`.gitattributes` trong cây chọn chúng), thì `git add` của plugin và `git status` nền của Paseo chạy lệnh đó, có thể là script Peer sửa được. `unsafeGitDrivers(repo)` liệt kê chúng (bỏ qua `git-lfs`, là chương trình chứ không phải file của repo); có thì plugin không tạo agent cho project và không commit report (fail closed, báo rõ).
 - Rev 5.2 (review Codex 2026-10-22, ba vòng): vá từng đường dẫn không đủ, vì lệnh setup gọi file khác của repo (`npm ci` chạy `postinstall`), hook có thể nằm sau symlink, và `teardown` được đọc từ chính worktree lúc archive. Vì vậy **plugin tự tạo worktree** (`addWorktree`, hook tắt) dưới `ctx.worktreeRoot` (mặc định `~/.slp-worktrees/<project>/`), rồi gắn agent vào một workspace kiểu `directory`. Theo source Paseo 0.12, workspace `directory` không chạy setup, và archive chỉ chạy `teardown` với worktree nằm dưới `~/.paseo/worktrees`. Plugin tự gỡ worktree (`removeWorktree`) khi task xong, giữ branch.
 
 - [ ] **Step 1: Viết test thất bại**
@@ -2016,7 +2020,7 @@ Ba lớp chặn code của repo chạy ngoài sandbox qua git (review B2):
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addWorktree, changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, NoChangesError, removeWorktree, startMerge, trackedChanges, trustRepo, UntrustedGitDirError } from "../server/git";
+import { addWorktree, changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, NoChangesError, removeWorktree, startMerge, trackedChanges, trustRepo, unsafeGitDrivers, UntrustedGitDirError } from "../server/git";
 import { initRepo, sh, tmpDir } from "./helpers";
 
 function withHusky(repo: string, marker: string): void {
@@ -2111,9 +2115,21 @@ describe("git helpers", () => {
     expect(currentBranch(path)).toBe("slp/f/T1-1");
     expect(existsSync(marker)).toBe(false);
     expect(existsSync(join(path, "SETUP_RAN"))).toBe(false);
-    removeWorktree(r, path);
+    expect(removeWorktree(r, path)).toBe(true);
     expect(existsSync(path)).toBe(false);
     expect(sh(r, "git", ["branch", "--list", "slp/f/T1-1"])).toContain("slp/f/T1-1");
+    const theirs = join(tmpDir(), "theirs"); mkdirSync(theirs); writeFileSync(join(theirs, "keep.txt"), "x");
+    expect(() => addWorktree(r, theirs, "slp/f/T2-1", "main")).toThrow(/already exists/);
+    expect(removeWorktree(r, theirs)).toBe(false);
+    expect(existsSync(join(theirs, "keep.txt"))).toBe(true);
+  });
+  it("lists git filters and drivers that would run repo files, but not git-lfs", () => {
+    const r = repo();
+    expect(unsafeGitDrivers(r)).toEqual([]);
+    sh(r, "git", ["config", "filter.lfs.clean", "git-lfs clean -- %f"]);
+    expect(unsafeGitDrivers(r)).toEqual([]);
+    sh(r, "git", ["config", "filter.fmt.clean", "node scripts/filter.js"]); sh(r, "git", ["config", "merge.ours.driver", "./scripts/merge.sh %O %A %B"]);
+    expect(unsafeGitDrivers(r)).toEqual(["filter.fmt.clean node scripts/filter.js", "merge.ours.driver ./scripts/merge.sh %O %A %B"]);
   });
 });
 ```
@@ -2128,7 +2144,7 @@ Expected: FAIL, "Cannot find module".
 `plugin/server/git.ts`:
 ```ts
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { matchTouch } from "./touch";
 
@@ -2221,15 +2237,26 @@ export function isProtectedPath(p: string, hookDir: string | null): boolean {
  * teardown or terminal command runs outside the sandbox for an SLP agent (review Codex 2026-10-22, round 3).
  */
 export function addWorktree(repo: string, path: string, branch: string, base: string): void {
+  if (existsSync(path)) throw new Error(`${path} already exists; SLP neither reuses nor overwrites it`);
   mkdirSync(dirname(path), { recursive: true });
   git(repo, ["worktree", "add", "-q", "-b", branch, path, base]);
 }
 
-/** Removes an SLP worktree (hooks off) and keeps its branch. */
-export function removeWorktree(repo: string, path: string): void {
-  git(repo, ["worktree", "remove", "--force", path], true);
-  rmSync(path, { recursive: true, force: true });
+/** Removes an SLP worktree through git only (hooks off), keeping its branch. A path git does not know as a worktree is left alone. */
+export function removeWorktree(repo: string, path: string): boolean {
+  const r = git(repo, ["worktree", "remove", "--force", path], true);
   git(repo, ["worktree", "prune"], true);
+  return r.code === 0;
+}
+
+/**
+ * Git config commands that run on `git add`, `status`, `merge` or `diff` (clean/smudge/process filters, merge drivers,
+ * textconv): `.gitattributes` in the tree picks them, so they can run files a Peer edits, outside any sandbox, in the
+ * plugin's git and in Paseo's own status refresh (review Codex 2026-10-22, round 4). git-lfs is a program, not a repo file.
+ */
+export function unsafeGitDrivers(repo: string): string[] {
+  const keys = "^(filter\\..*\\.(clean|smudge|process)|merge\\..*\\.driver|diff\\..*\\.(textconv|command))$";
+  return run(repo, ["config", "--get-regexp", keys], true, ["-c", "core.fsmonitor=false"]).stdout.split("\n").filter(Boolean).filter((line) => !/^\S+\s+git[- ]lfs\b/.test(line));
 }
 
 export class NoChangesError extends Error {}
@@ -2500,6 +2527,13 @@ describe("processReport", () => {
     expect(b).toEqual(a);
     expect(store.all().filter((e) => e.kind === "commit")).toHaveLength(1);
   });
+  it("refuses to run git on a report when the repo config has a filter that runs repo files", async () => {
+    const { repo, store, deps, task, report } = setup();
+    sh(repo, "git", ["config", "filter.fmt.clean", "node scripts/filter.js"]);
+    writeFileSync(join(repo, "src.ts"), "x");
+    expect(await processReport(deps, task, report)).toMatchObject({ outcome: "rejected", reason: expect.stringMatching(/filter\.fmt\.clean/) });
+    expect(store.all().some((e) => e.kind === "commit")).toBe(false);
+  });
   it("rejects empty, sensitive-only and oversized changes", async () => {
     let s = setup();
     expect(await processReport(s.deps, s.task, s.report)).toEqual({ outcome: "rejected", reason: "no changes in worktree" });
@@ -2620,7 +2654,7 @@ Expected: FAIL, "Cannot find module".
 `plugin/server/evidence.ts`:
 ```ts
 import type { ProjectConfig, SlpConfig } from "./config";
-import { changedFiles, commitAll, commitTrailer, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, NoChangesError, trackedChanges } from "./git";
+import { changedFiles, commitAll, commitTrailer, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, NoChangesError, trackedChanges, unsafeGitDrivers } from "./git";
 import type { RunFn, SandboxResult } from "./sandbox";
 import { evidencePassed, taskDef, type TaskState } from "./store/derive";
 import type { EventStore, SlpEvent } from "./store/events";
@@ -2700,6 +2734,8 @@ export async function processReport(deps: PipelineDeps, task: TaskState, report:
     return { outcome: "rejected", reason };
   };
   if (!worktree) return reject("task has no worktree");
+  const drivers = unsafeGitDrivers(worktree); // `git status` would already run them
+  if (drivers.length) return reject(`the repo's git config runs commands on add/status (${drivers.join("; ")}); the plugin will not commit until a human removes them`);
   const files = changedFiles(worktree);
   const hookDir = hooksDir(worktree);
   const excludedSensitive = files.filter(isSensitivePath);
@@ -4328,6 +4364,9 @@ export class FakePaseo implements PaseoLike {
   /** Agents the daemon no longer knows: refresh() resolves to null. */
   gone = new Set<string>();
   failSend = new Set<string>();
+  /** Fail the next N workspaces.create / workspace agents.create calls. */
+  failWorkspaceCreate = 0;
+  failWorkspaceAgentCreate = 0;
   created: Array<Record<string, unknown> & { id: string; cwd: string; workspaceId: string }> = [];
   responses: Array<{ agentId: string; requestId: string; behavior: string; message?: string }> = [];
   archived: string[] = [];
@@ -4359,10 +4398,11 @@ export class FakePaseo implements PaseoLike {
   };
   workspaces = {
     ref: (wsId: string) => ({
-      agents: { create: async (o: CreateOptions) => this.register(o, this.cwdOfWorkspace.get(wsId)!, wsId) },
+      agents: { create: async (o: CreateOptions) => { if (this.failWorkspaceAgentCreate > 0) { this.failWorkspaceAgentCreate--; throw new Error("agent create failed"); } return this.register(o, this.cwdOfWorkspace.get(wsId)!, wsId); } },
       archive: async () => { this.archivedWorkspaces.push(wsId); return {}; },
     }),
     create: async (o: { source: { kind: "directory"; path: string }; title?: string }) => {
+      if (this.failWorkspaceCreate > 0) { this.failWorkspaceCreate--; throw new Error("workspace create failed"); }
       const id = `ws-dir-${this.createdWorkspaces.length + 1}`;
       this.createdWorkspaces.push({ id, ...o });
       this.cwdOfWorkspace.set(id, o.source.path);
@@ -5019,7 +5059,7 @@ git commit -m "feat(plugin): decision tools, one Supervisor per feature, shared 
 
 `plugin/test/tools.work.test.ts`:
 ```ts
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { releaseContracts } from "../server/context";
@@ -5158,6 +5198,30 @@ describe("slp_spawn", () => {
     expect(peerCreate.prompt).toBeUndefined();
     expect(sh(peerCreate.cwd, "git", ["rev-parse", "-q", "--verify", "MERGE_HEAD"])).toBe(headOf(r.repo));
     expect(r.paseo.sent.find((s) => s.agentId === peerCreate.id)!.text).toContain("README.md");
+  });
+  it("rolls back a failed create so a retry works, and never touches a directory it did not make", async () => {
+    const r = await withLeadAndPlan();
+    r.paseo.failWorkspaceCreate = 1;
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).isError).toBe(true);
+    expect(sh(r.repo, "git", ["branch", "--list", "slp/cache/T1-1"])).toBe("");
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).isError).toBeFalsy();
+    const peer = r.ctx.identities.byAgent(r.paseo.created.at(-1)!.id)!;
+    r.ctx.identities.retire(peer.tokenHash);
+    r.paseo.failWorkspaceAgentCreate = 1;
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "go on" })).isError).toBe(true);
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "go on" })).text).toMatch(/took over T1/);
+  });
+  it("leaves a directory it did not make alone when a create fails on it", async () => {
+    const r = await withLeadAndPlan();
+    const theirs = join(r.ctx.worktreeRoot, "demo", "slp-cache-T1-1"); mkdirSync(theirs, { recursive: true }); writeFileSync(join(theirs, "keep.txt"), "mine");
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/already exists/);
+    expect(readFileSync(join(theirs, "keep.txt"), "utf8")).toBe("mine");
+    expect(sh(r.repo, "git", ["branch", "--list", "slp/cache/T1-1"])).toBe("");
+  });
+  it("refuses to start agents when the repo's git config has a filter that runs repo files", async () => {
+    const r = await withLeadAndPlan();
+    sh(r.repo, "git", ["config", "filter.fmt.clean", "node scripts/filter.js"]);
+    expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/filter\.fmt\.clean/);
   });
   it("never lets Paseo run the repo's setup or hooks for an SLP worktree", async () => {
     const r = await withLeadAndPlan();
@@ -5309,7 +5373,7 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 import { appendAs, appendPlugin, claimContracts, humanMessagesFor, leadAddress, notify, refreshDigest, releaseContracts, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, type CreateOptions, type Ctx } from "../context";
 import { processReport, verifyFeature, type PipelineDeps, type ReportOutcome } from "../evidence";
-import { addWorktree, changedFiles, deleteBranch, diffStat, git, headOf, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, pushNoHooks, removeWorktree, startMerge } from "../git";
+import { addWorktree, changedFiles, deleteBranch, diffStat, git, headOf, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, pushNoHooks, removeWorktree, startMerge, unsafeGitDrivers } from "../git";
 import type { Identity } from "../identity";
 import type { ToolDef } from "../mcp/server";
 import { contractQueues, contractsOf, holderOf, isContract } from "../planCheck";
@@ -5344,14 +5408,19 @@ async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: 
   };
   const p = o.placement;
   const repo = ctx.config.projects[o.project]!.repo;
-  let made: string | null = null;
+  if (p.kind !== "dir") {
+    const drivers = unsafeGitDrivers(repo);
+    if (drivers.length) { ctx.identities.retire(minted.tokenHash); throw new ToolError(`SLP will not run agents in ${o.project}: its git config runs commands on add/status/merge/diff that a Peer could change (${drivers.join("; ")}). Remove them, or keep this repo out of SLP.`); }
+  }
+  let made: { path: string; branch: string } | null = null;
   let agent: { id: string; workspaceId?: string | null };
   try {
     if (p.kind === "worktree") {
       // An explicit workspace wins over `parent` for placement (create-agent/intent.ts resolvePlacement), and `parent` still nests the agent.
-      made = worktreePath(ctx, o.project, p.branch);
-      addWorktree(repo, made, p.branch, p.base);
-      const ws = await ctx.paseo().workspaces.create({ source: { kind: "directory", path: made }, title: o.title });
+      const path = worktreePath(ctx, o.project, p.branch);
+      addWorktree(repo, path, p.branch, p.base);
+      made = { path, branch: p.branch }; // only now is there something this call owns and must roll back
+      const ws = await ctx.paseo().workspaces.create({ source: { kind: "directory", path }, title: o.title });
       const a = await ws.agents.create(opts);
       agent = { id: a.id, workspaceId: a.workspaceId ?? ws.id };
     } else {
@@ -5359,7 +5428,8 @@ async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: 
     }
   } catch (error) {
     ctx.identities.retire(minted.tokenHash);
-    if (made) { try { removeWorktree(repo, made); } catch (e) { ctx.log(`could not remove ${made} after a failed create`, e); } }
+    // Undo exactly what this call made: its worktree, then its branch, so a retry can create the same branch again (review Codex 2026-10-22, round 4).
+    if (made) { if (removeWorktree(repo, made.path)) deleteBranch(repo, made.branch); else ctx.log(`could not remove ${made.path} after a failed create`); }
     throw error;
   }
   const placed = ctx.identities.byToken(minted.token)!; // the before-create hook (T16) recorded worktree and branch
@@ -5380,7 +5450,7 @@ export async function retireAgent(ctx: Ctx, i: Identity, repo: string): Promise<
   const stopped = i.agentId ? await ctx.paseo().agents.ref(i.agentId).archive().then(() => true, () => false) : true;
   if (i.workspaceId) await ctx.paseo().workspaces.ref(i.workspaceId).archive().catch(() => undefined); // a directory workspace: Paseo only drops the record
   if (i.worktree && (i.role === "peer-impl" || i.role === "peer-review")) {
-    if (stopped) removeWorktree(repo, i.worktree);
+    if (stopped) { if (!removeWorktree(repo, i.worktree)) ctx.log(`git did not remove ${i.worktree}; left in place`); }
     else ctx.log(`kept ${i.worktree}: could not stop agent ${i.agentId}`);
   }
   if (i.role === "peer-review" && i.branch) deleteBranch(repo, i.branch);
@@ -6648,7 +6718,7 @@ import { join } from "node:path";
 import { bindSession, transformCreate, type CreateRequest } from "./agentConfig";
 import { loadSlpConfig, slpHome, type SlpConfig } from "./config";
 import type { Ctx, PaseoLike } from "./context";
-import { trustRepo } from "./git";
+import { trustRepo, unsafeGitDrivers } from "./git";
 import { reconcile, tick } from "./hooks";
 import { SeenIds } from "./human";
 import { IdentityRegistry } from "./identity";
@@ -6671,7 +6741,11 @@ export function createRuntime(): Runtime {
   let setup: RoleSetup | null = null;
   let setupPromise: Promise<RoleSetup> | null = null;
   for (const [name, project] of Object.entries(config.projects)) {
-    try { trustRepo(project.repo); } catch (e) { console.error(`[slp] project ${name}: ${String(e)}`); }
+    try {
+      trustRepo(project.repo);
+      const drivers = unsafeGitDrivers(project.repo);
+      if (drivers.length) console.error(`[slp] project ${name}: git config runs commands a Peer could change (${drivers.join("; ")}); SLP will refuse to start agents here until they are removed.`);
+    } catch (e) { console.error(`[slp] project ${name}: ${String(e)}`); }
   }
   const stateDirs = [home, process.env.PASEO_HOME ?? join(homedir(), ".paseo")]; // SLP worktrees live in ~/.slp-worktrees, outside both
   const identities = new IdentityRegistry(join(home, "identities.json"));

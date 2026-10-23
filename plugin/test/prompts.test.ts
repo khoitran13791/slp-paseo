@@ -42,6 +42,17 @@ describe("role prompts", () => {
     expect(p).toContain("smallest working path");
     expect(p).toContain("an inference is a question, not an instruction");
     expect(p).toContain("verify command exercises that outcome");
+    expect(p).toContain("Brainstorm with the human");
+    expect(p).toContain("purpose first");
+    expect(p).toContain("2–3 approaches");
+    expect(p).toContain("edge cases and failure modes");
+    expect(p).toContain("Never settle a point yourself to keep the interview short");
+    expect(p).toContain('source "human"');
+    expect(p).toContain("call the Lead in");
+    expect(p).toContain("at most two rounds");
+    expect(p).toContain("the two gates (spec, ship)");
+    expect(p).not.toContain("heartbeat");
+    expect(p).not.toContain("brief is approved");
   });
   it("lead prompt locks contracts, not implementation, and acts on the Supervisor's watch notes", () => {
     const p = promptFor(ident("lead"), {});
@@ -54,6 +65,11 @@ describe("role prompts", () => {
     expect(p).toContain("not a stopping point");
     expect(p).toContain("Do not ask again for permission already given");
     expect(p).toContain("outcome (what the human or the next task can do");
+    expect(p).toContain("## Consulting in the brainstorm");
+    expect(p).toContain("evidence from the repo");
+    expect(p).toContain("Do not concede without evidence");
+    expect(p).toContain("## Decisions added by the Lead");
+    expect(p).toContain("A premise binds work only once the human approves a spec that names it");
   });
   it("peer-impl prompt names its worktree and verify command and forbids commits", () => {
     const p = promptFor(ident("peer-impl"), { task });

@@ -178,13 +178,15 @@ describe("turn_ended", () => {
 });
 
 describe("permissions, archive, tick", () => {
-  it("denies reserved commands and state-dir access, and leaves the rest to the human", async () => {
+  it("denies reserved commands and state-dir access, allows a Claude Peer's sandboxed shell, and leaves outside reads to the human", async () => {
     const w = world();
     await onPermissionRequested(w.ctx, "peer-1", { id: "r1", name: "Bash", input: { command: "git push" } });
     await onPermissionRequested(w.ctx, "peer-1", { id: "r2", name: "Read", input: { file_path: join(w.home, "identities.json") } });
     await onPermissionRequested(w.ctx, "peer-1", { id: "r3", name: "Bash", input: { command: "make bench" } });
+    await onPermissionRequested(w.ctx, "peer-1", { id: "r4", name: "Read", input: { file_path: "/etc/hosts" } });
     await w.ctx.router.flush();
-    expect(w.paseo.responses.map((r) => `${r.requestId}:${r.behavior}`)).toEqual(["r1:deny", "r2:deny"]);
+    expect(w.paseo.responses.map((r) => `${r.requestId}:${r.behavior}`)).toEqual(["r1:deny", "r2:deny", "r3:allow"]);
+    expect(w.ctx.pendingPermissions.get("peer-1")?.name).toBe("Read");
     expect(w.paseo.sent).toEqual([]);
   });
   it("retires the identity of an archived agent", () => {
@@ -194,8 +196,8 @@ describe("permissions, archive, tick", () => {
   });
   it("records a permission left to the human until it is resolved", async () => {
     const w = world();
-    await onPermissionRequested(w.ctx, "peer-1", { id: "r3", name: "Bash", input: { command: "make bench" } });
-    expect(w.ctx.pendingPermissions.get("peer-1")?.name).toBe("Bash");
+    await onPermissionRequested(w.ctx, "peer-1", { id: "r3", name: "Read", input: { file_path: "/etc/hosts" } });
+    expect(w.ctx.pendingPermissions.get("peer-1")?.name).toBe("Read");
     onPermissionResolved(w.ctx, "peer-1");
     expect(w.ctx.pendingPermissions.has("peer-1")).toBe(false);
   });

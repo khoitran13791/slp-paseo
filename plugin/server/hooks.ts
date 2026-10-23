@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { appendPlugin, featuresTouching, leadAddress, notify, supervisorAddress, syncHumanMessages, type Ctx } from "./context";
 import { processChallengeEvidence } from "./evidence";
 import { trackedChanges } from "./git";
@@ -170,7 +171,11 @@ async function turnEnded(ctx: Ctx, ev: TurnEnded): Promise<void> {
 /** `defer` means the plugin does not decide: the request stays pending in the app for the human. */
 export async function onPermissionRequested(ctx: Ctx, agentId: string, request: PermissionLike): Promise<void> {
   const ident = ctx.identities.byAgent(agentId);
-  const decision = decidePermission(request, ident, { deniedRoots: ctx.stateDirs });
+  let vendor: "claude" | "codex" | undefined;
+  try { vendor = ident ? ctx.setup().vendor[ident.role] : undefined; } catch { vendor = undefined; } // setup not loaded: decide nothing new
+  const repo = ident ? ctx.config.projects[ident.project]?.repo : undefined;
+  const readRoots = ident && repo ? [repo, join(ctx.worktreeRoot, ident.project)] : [];
+  const decision = decidePermission(request, ident, { deniedRoots: ctx.stateDirs, vendor, readRoots });
   if (decision.action === "defer" && ident) ctx.pendingPermissions.set(agentId, { name: request.name ?? request.kind ?? "permission", since: ctx.now().getTime() });
   if (decision.action === "ignore" || decision.action === "defer" || !ident) return;
   const ref = ctx.paseo().agents.ref(agentId);

@@ -120,3 +120,50 @@ describe("decidePermission", () => {
     expect(decidePermission({ id: "r", name: "AskUserQuestion", kind: "question" }, ident("peer-impl", "/w"))).toEqual({ action: "defer", reason: "question: AskUserQuestion" });
   });
 });
+
+describe("decidePermission rev 5.9", () => {
+  const claude = { deniedRoots: ["/home/u/.slp", "/home/u/.paseo"], vendor: "claude" as const, readRoots: ["/repo", "/wts/p"], realpath: (p: string) => p };
+  const codex = { ...claude, vendor: "codex" as const };
+  it("allows a Claude role's sandboxed shell, compound commands included (T21 B-8)", () => {
+    for (const command of ["cd /wts/p/feat && npm test >/dev/null 2>&1; echo $?", "out=$(npm test 2>&1); rc=$?", "printf x > src/a.js && npm test | grep ok", "cat > f <<'EOF'\nx\nEOF"]) {
+      expect(decidePermission(bash(command), ident("lead", "/wts/p/feat"), claude)).toEqual({ action: "allow" });
+    }
+  });
+  it.each(["bash -c 'paseo ls'", "echo $(git push origin main)", "true && git -c a=b commit -m x", "sh -c \"git merge main\"", "\"paseo\" ls", "pa\"\"seo ls", "p\\aseo ls", "git -C /repo commit -m x", "git --git-dir=/repo/.git push", "git --no-pager -c x=y merge main", "git -C '/repo with spaces' commit -m x"])(
+    "still denies a reserved command hidden in a compound command: %s", (command) => {
+      expect(decidePermission(bash(command), ident("peer-impl", "/wts/p/T1"), claude).action).toBe("deny");
+    });
+  it("denies a Claude request to leave the sandbox even when shell is auto-allowed", () => {
+    expect(decidePermission(bash("npm install", { dangerouslyDisableSandbox: true }), ident("peer-impl", "/wts/p/T1"), claude).action).toBe("deny");
+  });
+  it("denies every Codex shell approval: for Codex it asks to run outside the sandbox", () => {
+    expect(decidePermission({ id: "r", name: "exec_command", input: { command: "npm test" } }, ident("peer-review", "/wts/p/rev"), codex).action).toBe("deny");
+    expect(decidePermission({ id: "r", name: "CodexBash", input: { command: "cat x" } }, ident("peer-review", "/wts/p/rev"), codex).action).toBe("deny");
+  });
+  it("denies Paseo's own MCP tools (T21 B-3)", () => {
+    expect(decidePermission({ id: "r", name: "mcp__paseo__create_terminal", input: {} }, ident("lead", "/wts/p/feat"), claude).action).toBe("deny");
+  });
+  it("allows reads inside the repo and the project's SLP worktrees, leaves other reads to the human", () => {
+    expect(decidePermission({ id: "r", name: "Read", input: { file_path: "/wts/p/T1/test/a.test.js" } }, ident("lead", "/wts/p/feat"), claude)).toEqual({ action: "allow" });
+    expect(decidePermission({ id: "r", name: "Grep", input: { path: "/repo/src", pattern: "x" } }, ident("supervisor", null), claude)).toEqual({ action: "allow" });
+    expect(decidePermission({ id: "r", name: "Glob", input: { pattern: "**/*.ts" } }, ident("lead", "/wts/p/feat"), claude)).toEqual({ action: "allow" });
+    expect(decidePermission({ id: "r", name: "Read", input: { file_path: "/etc/hosts" } }, ident("lead", "/wts/p/feat"), claude).action).toBe("defer");
+    expect(decidePermission({ id: "r", name: "Read", input: { file_path: "/wts/other/x.ts" } }, ident("lead", "/wts/p/feat"), claude).action).toBe("defer");
+  });
+  it("leaves a Glob whose pattern reaches outside to the human", () => {
+    for (const input of [{ pattern: "/home/u/.paseo/**" }, { path: "/repo", pattern: "/etc/**" }, { pattern: "~/.ssh/*" }, { path: "/repo", pattern: "../**/*.env" }]) {
+      expect(decidePermission({ id: "r", name: "Glob", input }, ident("lead", "/wts/p/feat"), claude).action).toBe("defer");
+    }
+  });
+  it("still allows ordinary read-only git and commands that only mention a reserved word", () => {
+    for (const command of ["git log --oneline -5", "git diff HEAD~1 -- src/commit.ts", "git status --short"]) {
+      expect(decidePermission(bash(command), ident("peer-impl", "/wts/p/T1"), claude)).toEqual({ action: "allow" });
+    }
+  });
+  it("does not allow a read that escapes the worktree through a symlink", () => {
+    const root = tmpDir(); const wt = join(root, "wt"); const outside = join(root, "secret");
+    mkdirSync(wt); mkdirSync(outside); writeFileSync(join(outside, "id_rsa"), "x"); symlinkSync(outside, join(wt, "escape"));
+    const opts = { deniedRoots: [], vendor: "claude" as const, readRoots: [wt] };
+    expect(decidePermission({ id: "r", name: "Read", input: { file_path: join(wt, "escape", "id_rsa") } }, ident("lead", wt), opts).action).toBe("defer");
+  });
+});

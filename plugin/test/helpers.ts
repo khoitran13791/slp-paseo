@@ -53,7 +53,11 @@ export class FakePaseo implements PaseoLike {
   responses: Array<{ agentId: string; requestId: string; behavior: string; message?: string }> = [];
   archived: string[] = [];
   archivedWorkspaces: string[] = [];
-  createdWorkspaces: Array<{ id: string; source: { kind: string; path: string }; title?: string }> = [];
+  createdWorkspaces: Array<{ id: string; source: { kind: string; path: string; projectId?: string }; title?: string; background?: boolean }> = [];
+  projectsList: Array<{ projectId: string; projectRootPath: string }> = [];
+  projects = { list: async () => ({ projects: this.projectsList }) };
+  openedWorkspaces: string[] = [];
+  openFails = false;
   beforeCreate: ((req: CreateRequest) => CreateRequest) | null = null;
   onSessionOpen: ((agentId: string, env: Record<string, string>) => void) | null = null;
   private cwdOfAgent = new Map<string, string>();
@@ -84,12 +88,17 @@ export class FakePaseo implements PaseoLike {
       agents: { create: async (o: CreateOptions) => { if (this.failWorkspaceAgentCreate > 0) { this.failWorkspaceAgentCreate--; throw new Error("agent create failed"); } return this.register(o, this.cwdOfWorkspace.get(wsId)!, wsId); } },
       archive: async () => { this.archivedWorkspaces.push(wsId); return {}; },
     }),
-    create: async (o: { source: { kind: "directory"; path: string }; title?: string }) => {
+    create: async (o: { source: { kind: "directory"; path: string; projectId?: string }; title?: string; background?: boolean }) => {
       if (this.failWorkspaceCreate > 0) { this.failWorkspaceCreate--; throw new Error("workspace create failed"); }
       const id = `ws-dir-${this.createdWorkspaces.length + 1}`;
       this.createdWorkspaces.push({ id, ...o });
       this.cwdOfWorkspace.set(id, o.source.path);
       return { id, agents: { create: async (a: CreateOptions) => this.register(a, o.source.path, id) } };
+    },
+    open: async (cwd: string) => {
+      if (this.openFails) throw new Error("open failed");
+      this.openedWorkspaces.push(cwd);
+      return { id: `ws-open-${this.openedWorkspaces.length}`, projectId: "prj-opened" };
     },
   };
   providers = { listUsage: async () => this.usage };
@@ -117,6 +126,7 @@ export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: 
   const home = tmpDir("slp-home-");
   const config = parseSlpConfig({ projects: { demo: { repo, baseBranch: "main", verify: ["true"] } }, sandbox: { runner: FAKE_RUNNER }, ...over });
   const paseo = new FakePaseo();
+  paseo.projectsList = [{ projectId: "prj-demo", projectRootPath: repo }];
   const identities = new IdentityRegistry(pjoin(home, "identities.json"));
   const router = new Router({ file: pjoin(home, "router.json"), now: () => new Date(), resolve: (to) => identities.current(to.role, to.project, to.feature, to.task ?? null)?.agentId ?? null, status: async (a) => paseo.agents.ref(a).status, send: (a, t, m, b) => paseo.agents.ref(a).send(t, { messageId: m, ...(b ? { activeTurnBehavior: b } : {}) }) });
   const ctx: Ctx = {

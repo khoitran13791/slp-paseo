@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { appendAs, appendPlugin, claimContracts, humanMessagesFor, leadAddress, notify, refreshDigest, releaseContracts, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, type CreateOptions, type Ctx } from "../context";
@@ -30,6 +30,26 @@ type Placement =
 /** Where an SLP worktree for `branch` lives: outside ~/.paseo/worktrees, so Paseo never runs setup or teardown for it (T9). */
 const worktreePath = (ctx: Ctx, project: string, branch: string): string => join(ctx.worktreeRoot, project, branch.replaceAll("/", "-"));
 
+/** The Paseo project of the repo, so SLP workspaces sit under it instead of becoming projects of their own (T21 B-9). */
+async function projectIdOf(ctx: Ctx, repo: string): Promise<string | null> {
+  const real = (p: string) => { try { return realpathSync(p); } catch { return p; } };
+  try {
+    const { projects } = await ctx.paseo().projects.list();
+    const found = projects.find((p) => real(p.projectRootPath) === real(repo))?.projectId;
+    if (found) return found;
+  } catch (error) {
+    ctx.log("could not list Paseo projects; opening the repo instead", error);
+  }
+  try {
+    // No project yet (or the human removed it from the sidebar): opening the repo makes one, as the app does (spec §7.1 Spawn).
+    return (await ctx.paseo().workspaces.open(repo)).projectId ?? null;
+  } catch (error) {
+    // Only the sidebar suffers (B-9); the work must not stop on it.
+    ctx.log("could not open the repo in Paseo; the workspace gets a project of its own", error);
+    return null;
+  }
+}
+
 async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: string | null; task: string | null; placement: Placement; reviewCommit?: string | null; parent: string | null; title: string; prompt: string; model?: string; deferPrompt?: boolean }): Promise<{ agentId: string; ident: Identity }> {
   try { await ctx.refreshSetup(); } catch (error) { throw new ToolError(error instanceof Error ? error.message : String(error)); }
   const profile = ctx.setup().profile[role] ?? {};
@@ -55,7 +75,10 @@ async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: 
       const path = worktreePath(ctx, o.project, p.branch);
       addWorktree(repo, path, p.branch, p.base);
       made = { path, branch: p.branch }; // only now is there something this call owns and must roll back
-      const ws = await ctx.paseo().workspaces.create({ source: { kind: "directory", path }, title: o.title });
+      const projectId = await projectIdOf(ctx, repo);
+      if (!projectId) ctx.log(`no Paseo project for ${repo}; ${o.title} gets a project of its own`);
+      const background = role === "peer-impl" || role === "peer-review";
+      const ws = await ctx.paseo().workspaces.create({ source: { kind: "directory", path, ...(projectId ? { projectId } : {}) }, title: o.title, ...(background ? { background: true } : {}) });
       const a = await ws.agents.create(opts);
       agent = { id: a.id, workspaceId: a.workspaceId ?? ws.id };
     } else {

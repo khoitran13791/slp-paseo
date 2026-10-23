@@ -31,9 +31,12 @@ export interface PaseoLike {
   };
   workspaces: {
     ref(id: string): { agents: { create(o: CreateOptions): Promise<{ id: string; workspaceId?: string | null }> }; archive(): Promise<unknown> };
-    /** SDK workspaces.create with source "directory": Paseo runs no setup for it (T18). */
-    create(o: { source: { kind: "directory"; path: string }; title?: string }): Promise<{ id: string; agents: { create(o: CreateOptions): Promise<{ id: string; workspaceId?: string | null }> } }>;
+    /** SDK workspaces.create with source "directory": Paseo runs no setup for it. projectId keeps it under the repo's project; background hides it from the sidebar (T21 B-9). */
+    create(o: { source: { kind: "directory"; path: string; projectId?: string }; title?: string; background?: boolean }): Promise<{ id: string; agents: { create(o: CreateOptions): Promise<{ id: string; workspaceId?: string | null }> } }>;
+    /** SDK workspaces.open(input: string | { cwd }) → PaseoWorkspaceHandle with projectId (@getpaseo/client 0.12 index.d.ts:101-104, 140). */
+    open(cwd: string): Promise<{ id: string; projectId: string | null }>;
   };
+  projects: { list(): Promise<{ projects: Array<{ projectId: string; projectRootPath: string }> }> };
   providers: { listUsage(): Promise<unknown> };
   config: { get(): Promise<{ config: unknown }> };
 }

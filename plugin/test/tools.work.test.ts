@@ -40,6 +40,33 @@ async function withLeadAndPlan(tasks: Array<Record<string, unknown>> = TASKS, be
 }
 
 describe("slp_spawn", () => {
+  it("puts every SLP workspace under the repo's project, and runs Peer and reviewer workspaces in the background (T21 B-9)", async () => {
+    const r = await withLeadAndPlan();
+    expect(r.paseo.createdWorkspaces[0]).toMatchObject({ source: { kind: "directory", projectId: "prj-demo" }, title: "[Lead] cache" });
+    expect(r.paseo.createdWorkspaces[0]!.background).toBeUndefined();
+    await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "go" });
+    expect(r.paseo.createdWorkspaces[1]).toMatchObject({ source: { kind: "directory", projectId: "prj-demo" }, background: true });
+  });
+  it("opens the repo as a workspace to get its project when Paseo lists none (spec §7.1 Spawn)", async () => {
+    const r = await ready();
+    r.paseo.projectsList = [];
+    expect((await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", prompt: "go" })).isError).toBeFalsy();
+    expect(r.paseo.openedWorkspaces).toEqual([r.repo]);
+    expect(r.paseo.createdWorkspaces[0]).toMatchObject({ source: { kind: "directory", projectId: "prj-opened" } });
+  });
+  it("opens the repo when listing projects fails", async () => {
+    const r = await ready();
+    r.paseo.projects = { list: async () => { throw new Error("list failed"); } };
+    expect((await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", prompt: "go" })).isError).toBeFalsy();
+    expect(r.paseo.createdWorkspaces[0]).toMatchObject({ source: { kind: "directory", projectId: "prj-opened" } });
+  });
+  it("still creates the workspace, logged, when Paseo can neither list nor open a project for the repo", async () => {
+    const r = await ready();
+    r.paseo.projectsList = [];
+    r.paseo.openFails = true;
+    expect((await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", prompt: "go" })).isError).toBeFalsy();
+    expect((r.paseo.createdWorkspaces[0]!.source as { projectId?: string }).projectId).toBeUndefined();
+  });
   it("names the missing agent profile instead of failing inside the client (T21 B-1)", async () => {
     const r = await ready();
     const bare = { ...TEST_SETUP, profile: {} };
@@ -273,6 +300,7 @@ describe("report → review → accept", () => {
     await r.call(r.lead, "slp_spawn", { role: "peer-review", task: "T1", prompt: "review" });
     const revCreate = r.paseo.created[2]!;
     expect((revCreate.config as { provider: string }).provider).toBe("slp-peer-review/gpt-6-astra");
+    expect(r.paseo.createdWorkspaces.at(-1)).toMatchObject({ background: true });
     expect(headOf(revCreate.cwd)).toBe(commit);
     const rev = r.ctx.identities.byAgent(revCreate.id)!;
     expect((await r.call(rev, "slp_review", { commit: "deadbeef", verdict: "pass", findings: [] })).isError).toBe(true);

@@ -2,6 +2,8 @@ import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { onAgentArchived, onAgentClosed, onPermissionRequested, onPermissionResolved, onTurnEnded, onTurnStarted, reconcile, tick } from "../server/hooks";
+import { humanMessagesFor } from "../server/context";
+import { verifyShipApproval } from "../server/quote";
 import { deriveFeature } from "../server/store/derive";
 import { bound, makeCtx, sh } from "./helpers";
 
@@ -19,6 +21,51 @@ function world(over: Record<string, unknown> = {}) {
 const done = { kind: "completed" as const };
 
 describe("turn_ended", () => {
+  it("does not record history that an agent reload replays with new ids (T21 B-4)", async () => {
+    const w = world();
+    w.paseo.timelines.set("lead-1", [{ type: "user_message", text: "duyệt", messageId: "msg_1", timestamp: "2026-10-23T04:12:41.000Z" }]);
+    await onTurnEnded(w.ctx, { agent: { id: "lead-1" }, outcome: done });
+    w.paseo.epochs.set("lead-1", "e2");
+    w.paseo.timelines.set("lead-1", [
+      { type: "user_message", text: "duyệt", messageId: "4347d244", timestamp: "2026-10-23T04:17:51.864Z" },
+      { type: "user_message", text: "[SLP from supervisor · cache] Observation: plan v1 is not approved yet.", messageId: "d73f1998", timestamp: "2026-10-23T04:17:51.864Z" },
+    ]);
+    await onTurnEnded(w.ctx, { agent: { id: "lead-1" }, outcome: done });
+    expect(w.store.all().filter((e) => e.kind === "human_message").map((e) => e.data.text)).toEqual(["duyệt"]);
+    expect(w.store.all().some((e) => e.kind === "ops" && e.data.type === "human_replay_skipped")).toBe(true);
+  });
+  it("a reload after the ship package cannot turn an old \"duyệt\" into a ship approval (T21 B-4)", async () => {
+    // Event times are fixed and ordered, so a recorded replay would come strictly after the package (review Codex 2026-10-23).
+    const w = world();
+    w.ctx.now = () => new Date("2026-10-23T05:00:00.000Z");
+    w.paseo.timelines.set("sup-1", [{ type: "user_message", text: "duyệt", messageId: "msg_s1", timestamp: "2026-10-23T04:12:41.000Z" }]);
+    await onTurnEnded(w.ctx, { agent: { id: "sup-1" }, outcome: done }); // the human approved the spec earlier
+    w.store.append({ feature: "cache", kind: "ship_package", by_role: "lead", by_agent: "lead-1", data: { commit: "abc1234" } }, new Date("2026-10-23T06:00:00.000Z"));
+    w.ctx.now = () => new Date("2026-10-23T07:00:00.000Z");
+    w.paseo.epochs.set("sup-1", "e2"); // agent reload: the same history, new ids, new timestamps
+    w.paseo.timelines.set("sup-1", [{ type: "user_message", text: "duyệt", messageId: "uuid-replayed", timestamp: "2026-10-23T07:00:00.000Z" }]);
+    await onTurnEnded(w.ctx, { agent: { id: "sup-1" }, outcome: done });
+    expect(humanMessagesFor(w.ctx, w.sup).some((e) => e.data.messageId === "uuid-replayed")).toBe(false);
+    const q = verifyShipApproval(w.store.all(), humanMessagesFor(w.ctx, w.sup), { agentId: "sup-1", quote: "duyệt", commit: "abc1234", extraWords: ["cache"] });
+    expect(q.ok).toBe(false);
+  });
+  it("names the reviewer, not a Peer, when the human messages it (T21 B-6)", async () => {
+    const w = world();
+    const rwt = join(w.home, "rev3"); sh(w.repo, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "--detach", rwt, "main"]);
+    bound(w.ctx, { role: "peer-review", project: "demo", feature: "cache", task: "T1", worktree: rwt, reviewCommit: "abc", parentAgentId: "lead-1" }, "rev-3");
+    w.paseo.timelines.set("rev-3", [{ type: "user_message", text: "cat this", messageId: "h-r" }]);
+    await onTurnEnded(w.ctx, { agent: { id: "rev-3" }, outcome: done });
+    expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && s.text.includes("The human messaged the reviewer of T1 directly"))).toBe(true);
+  });
+  it("tells the Supervisor, once, about an ordinary message the human sent to the Lead (spec §6.1)", async () => {
+    const w = world();
+    w.paseo.timelines.set("lead-1", [{ type: "user_message", text: "đơn vị lạ thì báo lỗi", messageId: "h-l1", timestamp: "2026-10-23T06:00:00.000Z" }]);
+    await onTurnEnded(w.ctx, { agent: { id: "lead-1" }, outcome: done });
+    await onTurnEnded(w.ctx, { agent: { id: "lead-1" }, outcome: done });
+    await w.ctx.router.flush();
+    const toSup = [...w.paseo.sent.filter((s) => s.agentId === "sup-1"), ...w.ctx.router.pending().filter((p) => p.to.role === "supervisor")].filter((s) => s.text.includes("The human wrote to the Lead directly"));
+    expect(toSup).toHaveLength(1);
+  });
   it("records a human message to a Peer and tells its Lead", async () => {
     const w = world();
     w.paseo.timelines.set("peer-1", [{ type: "user_message", text: "đổi sang Redis đi", messageId: "h-1" }]);

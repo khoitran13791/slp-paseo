@@ -5,7 +5,7 @@ import { loadSlpConfig, slpHome, type SlpConfig } from "./config";
 import type { Ctx, PaseoLike } from "./context";
 import { trustRepo, unsafeGitDrivers } from "./git";
 import { reconcile, tick } from "./hooks";
-import { SeenIds } from "./human";
+import { SeenIds, TimelineMarks } from "./human";
 import { IdentityRegistry } from "./identity";
 import { startMcpServer } from "./mcp/server";
 import { promptFor } from "./prompts";
@@ -47,6 +47,7 @@ export function createRuntime(): Runtime {
   const ctx: Ctx = {
     config, identities, router, stores: new StoreRegistry(home), seen: new SeenIds(join(home, "seen.json"), (e) => console.error("[slp] could not write seen.json; keeping ids in memory", e)),
     resumes: new ResumeQueue(join(home, "resume.json")), nudges: new NudgeTracker(join(home, "nudges.json")),
+    marks: new TimelineMarks(join(home, "timeline-marks.json"), (e) => console.error("[slp] could not write timeline-marks.json; keeping marks in memory", e)),
     setup: () => { if (!setup) throw new Error("SLP: role setup not loaded yet"); return setup; },
     paseo: () => { if (!paseo) throw new Error("SLP: no Paseo client captured yet"); return paseo; },
     run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs, worktreeRoot: process.env.SLP_WORKTREES ?? join(homedir(), ".slp-worktrees"),

@@ -28,6 +28,13 @@ function world() {
 }
 
 describe("brief and human decisions", () => {
+  it("tells the Supervisor when the human approves the spec in the Lead's tab", async () => {
+    const w = await world();
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec\n## Decisions added by the Lead\nNone." });
+    await w.human(w.lead, "duyệt");
+    expect((await w.call(w.lead, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "duyệt" })).isError).toBeFalsy();
+    expect(w.ctx.router.pending().some((p) => p.to.role === "supervisor" && p.text.includes("The human decided in the Lead's tab: approve_spec"))).toBe(true);
+  });
   it("stores a brief with premises and approves it only with a real human quote", async () => {
     const w = world();
     const r = await w.call(w.sup, "slp_brief", { feature: "cache", title: "Cache", markdown: "# Brief", premises: [{ kind: "decision", title: "Redis" }, { kind: "hypothesis", title: "p95<50ms", verify_by: "bench on staging corpus" }] });

@@ -98,6 +98,8 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
         if (!q.ok) throw new ToolError(`quote rejected: ${q.reason}`);
         if (messageUsed(events, q.messageId, a.decides, target)) throw new ToolError("quote rejected: that message already backs another decision; ask the human about this item separately");
         appendAs(ctx, who, feature, { kind: "human_decision", data: { decides: a.decides, target, quote: a.quote, reason: a.reason, messageSeq: q.seq, messageId: q.messageId } });
+        // The human may decide in the Lead's tab; the Supervisor must not wait for a gate that is already passed (T21).
+        if (who.role === "lead") notify(ctx, supervisorAddress(who.project, feature), `The human decided in the Lead's tab: ${a.decides}${target ? ` ${target.slice(0, 12)}` : ""} (quote: "${a.quote}"). It is recorded; do not ask them again.`);
         const resolve = (outcome: "accepted" | "rejected") => {
           for (const c of st.challenges.values()) if (c.open && (a.decides === "change_goal" || c.target === target)) appendAs(ctx, who, feature, { kind: "challenge_resolved", refs: [c.id], data: { outcome, reason: a.reason ?? a.quote } });
         };

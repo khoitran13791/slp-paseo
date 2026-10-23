@@ -27,7 +27,7 @@ import { bindSession, transformCreate, type CreateRequest } from "../server/agen
 import { parseSlpConfig, type SlpConfig } from "../server/config";
 import type { AgentRefLike, CreateOptions, Ctx, PaseoLike } from "../server/context";
 import { trustRepo } from "../server/git";
-import { SeenIds } from "../server/human";
+import { SeenIds, TimelineMarks } from "../server/human";
 import { IdentityRegistry, type Identity, type IdentityMeta } from "../server/identity";
 import { Router } from "../server/router";
 import type { RoleSetup } from "../server/roles";
@@ -60,6 +60,7 @@ export class FakePaseo implements PaseoLike {
   private cwdOfWorkspace = new Map<string, string>();
   statuses = new Map<string, string>();
   timelines = new Map<string, unknown[]>();
+  epochs = new Map<string, string>();
   usageOf = new Map<string, { contextWindowUsedTokens: number; contextWindowMaxTokens: number }>();
   usage: unknown = [];
   daemonConfig: unknown = {};
@@ -70,7 +71,7 @@ export class FakePaseo implements PaseoLike {
         refresh: async () => (self.gone.has(id) ? null : {}),
         get status() { return self.statuses.get(id) ?? "idle"; },
         get lastUsage() { return self.usageOf.get(id) ?? null; },
-        timeline: { refetch: async () => ({ entries: (self.timelines.get(id) ?? []).map((item) => ({ item })) }) },
+        timeline: { refetch: async () => ({ epoch: self.epochs.get(id) ?? "e1", entries: (self.timelines.get(id) ?? []).map((item) => ({ item, timestamp: (item as { timestamp?: string }).timestamp })) }) },
         send: async (text, o) => { if (self.failSend.has(id)) throw new Error("send failed"); self.sent.push({ agentId: id, text, messageId: o?.messageId, behavior: o?.activeTurnBehavior }); },
         respondToPermission: async (o) => { self.responses.push({ agentId: id, requestId: o.requestId, behavior: o.response.behavior, message: o.response.message }); },
         archive: async () => { self.archived.push(id); return {}; },
@@ -120,7 +121,7 @@ export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: 
   const router = new Router({ file: pjoin(home, "router.json"), now: () => new Date(), resolve: (to) => identities.current(to.role, to.project, to.feature, to.task ?? null)?.agentId ?? null, status: async (a) => paseo.agents.ref(a).status, send: (a, t, m, b) => paseo.agents.ref(a).send(t, { messageId: m, ...(b ? { activeTurnBehavior: b } : {}) }) });
   const ctx: Ctx = {
     config, setup: () => TEST_SETUP, refreshSetup: async () => TEST_SETUP, identities, stores: new StoreRegistry(home), router,
-    seen: new SeenIds(pjoin(home, "seen.json")), resumes: new ResumeQueue(pjoin(home, "resume.json")), nudges: new NudgeTracker(pjoin(home, "nudges.json")),
+    seen: new SeenIds(pjoin(home, "seen.json")), marks: new TimelineMarks(pjoin(home, "timeline-marks.json")), resumes: new ResumeQueue(pjoin(home, "resume.json")), nudges: new NudgeTracker(pjoin(home, "nudges.json")),
     paseo: () => paseo, run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs: [home], worktreeRoot: tmpDir("slp-wts-"),
     pendingPermissions: new Map(), log: () => undefined,
   };

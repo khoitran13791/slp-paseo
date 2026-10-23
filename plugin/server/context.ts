@@ -1,6 +1,6 @@
 import { assertCanWrite } from "./authority";
 import type { SlpConfig } from "./config";
-import { extractHumanMessages, type SeenIds, type TimelineItemLike } from "./human";
+import { extractHumanMessages, type SeenIds, type TimelineItemLike, type TimelineMarks } from "./human";
 import type { Identity, IdentityRegistry } from "./identity";
 import { contractQueues, holderOf } from "./planCheck";
 import { edgeAllowed, steerAllowed, type Address, type Router, type SendMode } from "./router";
@@ -18,7 +18,7 @@ export interface AgentRefLike {
   refresh(): Promise<unknown>;
   readonly status: string | null;
   readonly lastUsage: { contextWindowUsedTokens?: number; contextWindowMaxTokens?: number } | null;
-  timeline: { refetch(o: { direction: "tail"; limit: number }): Promise<{ entries?: Array<{ item?: unknown }> }> };
+  timeline: { refetch(o: { direction: "tail"; limit: number }): Promise<{ epoch?: string; entries?: Array<{ item?: unknown; timestamp?: string }> }> };
   send(text: string, o?: { messageId?: string; activeTurnBehavior?: "steer" | "interrupt" }): Promise<void>;
   respondToPermission(o: { requestId: string; response: { behavior: "allow" | "deny"; message?: string } }): Promise<void>;
   archive(): Promise<unknown>;
@@ -47,6 +47,8 @@ export interface Ctx {
   stores: StoreRegistry;
   router: Router;
   seen: SeenIds;
+  /** Per agent: the timeline epoch and newest human message time already recorded, so a reload's replay is not recorded again (T21 B-4). */
+  marks: TimelineMarks;
   resumes: ResumeQueue;
   nudges: NudgeTracker;
   paseo(): PaseoLike;
@@ -164,12 +166,20 @@ const humanStoreFeature = (ident: Identity): string | null => (ident.role === "s
 export async function syncHumanMessages(ctx: Ctx, ident: Identity): Promise<void> {
   if (!ident.agentId) return;
   const page = await ctx.paseo().agents.ref(ident.agentId).timeline.refetch({ direction: "tail", limit: 30 });
-  const items = (page.entries ?? []).map((e) => (e.item ?? e) as TimelineItemLike);
-  for (const m of extractHumanMessages(items, (id) => ctx.router.isPluginMessageId(id), ctx.seen)) {
-    appendPlugin(ctx, ident.project, humanStoreFeature(ident), { kind: "human_message", data: { agentId: ident.agentId, text: m.text, messageId: m.messageId, role: ident.role } });
+  const entries = (page.entries ?? []).map((e) => ({ item: (e.item ?? e) as TimelineItemLike, timestamp: typeof e.timestamp === "string" ? e.timestamp : undefined }));
+  const prior = new Set(humanMessagesFor(ctx, ident).map((e) => String(e.data.text ?? "")));
+  const r = extractHumanMessages(entries, typeof page.epoch === "string" ? page.epoch : null, ctx.marks.get(ident.agentId), (id) => ctx.router.isPluginMessageId(id), ctx.seen, prior);
+  ctx.marks.set(ident.agentId, r.mark);
+  const store = humanStoreFeature(ident);
+  if (r.replayed) appendPlugin(ctx, ident.project, store, { kind: "ops", data: { type: "human_replay_skipped", agentId: ident.agentId, count: r.replayed, summary: `skipped ${r.replayed} replayed message(s) to ${ident.role}` } });
+  for (const m of r.messages) {
+    appendPlugin(ctx, ident.project, store, { kind: "human_message", data: { agentId: ident.agentId, text: m.text, messageId: m.messageId, role: ident.role } });
     if (ident.role === "peer-impl" || ident.role === "peer-review") {
-      notify(ctx, leadAddress(ident.project, ident.feature!), `The human messaged Peer ${ident.task} directly: "${m.text.slice(0, 500)}". Decide whether it changes direction and record it (slp_rule or slp_challenge).`);
+      const who = ident.role === "peer-review" ? `the reviewer of ${ident.task}` : `Peer ${ident.task}`; // T21 B-6
+      notify(ctx, leadAddress(ident.project, ident.feature!), `The human messaged ${who} directly: "${m.text.slice(0, 500)}". Decide whether it changes direction and record it (slp_rule or slp_challenge).`);
     }
+    // Spec §6.1: the human may talk to the Lead directly, and the Supervisor keeps the brainstorm record, so it hears every such message.
+    if (ident.role === "lead" && ident.feature) notify(ctx, supervisorAddress(ident.project, ident.feature), `The human wrote to the Lead directly: "${m.text.slice(0, 500)}". Update the brainstorm record if it settles or changes something.`);
   }
 }
 

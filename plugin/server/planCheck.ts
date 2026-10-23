@@ -32,6 +32,8 @@ export function contractQueues(events: readonly SlpEvent[]): Map<string, string[
 
 export const holderOf = (queues: Map<string, string[]>, contract: string): string | null => queues.get(contract)?.[0] ?? null;
 
+const unapproved = (task: string, id: string) => `${task} relies on ${id}, which no approved spec version activated`;
+
 export function checkPlan(tasks: PlanTask[], ctx: { premises: Map<string, PremiseState>; others: Array<{ slug: string; touchSet: string[] }>; modelsAllowed: string[]; heldBy?: Map<string, string>; feature?: string; waits?: Map<string, string[]> }): PlanIssue[] {
   const issues: PlanIssue[] = [];
   const err = (code: string, task: string, message: string) => issues.push({ severity: "error", code, task, message });
@@ -46,6 +48,7 @@ export function checkPlan(tasks: PlanTask[], ctx: { premises: Map<string, Premis
     for (const d of t.dependsOn) {
       const premise = ctx.premises.get(d);
       if (premise) {
+        if (premise.status === "proposed") err("unapproved_premise", t.id, unapproved(t.id, d));
         if (premise.status === "superseded") err("superseded_dependency", t.id, `${t.id} depends on ${d}, superseded by ${premise.supersededBy}`);
         if (premise.kind === "hypothesis" && premise.status === "open" && !verifiedBefore.has(d)) err("unverified_hypothesis", t.id, `${t.id} depends on open hypothesis ${d}; put a task that verifies ${d} before it`);
       } else if (allIds.has(d)) {
@@ -57,7 +60,10 @@ export function checkPlan(tasks: PlanTask[], ctx: { premises: Map<string, Premis
     for (const v of t.verifies) {
       const premise = ctx.premises.get(v);
       if (premise?.kind !== "hypothesis") err("verifies_unknown", t.id, `${t.id} verifies ${v}, which is not a hypothesis`);
-      else verifiedBefore.add(v);
+      else {
+        if (premise.status === "proposed") err("unapproved_premise", t.id, unapproved(t.id, v));
+        verifiedBefore.add(v);
+      }
     }
     if (t.model && allowed.length > 0 && !allowed.includes(normalizeModel(t.model))) err("model_not_allowed", t.id, `${t.id} uses model ${t.model}, not in models.allowed (${allowed.join(", ")})`);
     for (const c of t.touchSet.filter(isContract)) {

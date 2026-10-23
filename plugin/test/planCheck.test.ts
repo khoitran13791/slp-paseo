@@ -25,6 +25,15 @@ describe("checkPlan", () => {
   it("requires an earlier verify task before depending on an open hypothesis", () => {
     expect(codes([t("T1", { dependsOn: ["H1"] }), t("T2", { verifies: ["H1"] })])).toContain("error:unverified_hypothesis:T1");
   });
+  it("rejects a task that relies on a premise no approved spec version activated", () => {
+    const withProposed = new Map([...premises, p("D3", "decision", "proposed"), p("H3", "hypothesis", "proposed")]);
+    const run = (tasks: PlanTask[]) => checkPlan(tasks, { premises: withProposed, others: [], modelsAllowed: [] }).map((i) => `${i.severity}:${i.code}:${i.task ?? ""}`);
+    expect(run([t("T1", { dependsOn: ["D3"] })])).toEqual(["error:unapproved_premise:T1"]);
+    expect(run([t("T1", { dependsOn: ["H3"] })])).toEqual(["error:unapproved_premise:T1"]);
+    expect(run([t("T1", { verifies: ["H3"] })])).toEqual(["error:unapproved_premise:T1"]);
+    expect(checkPlan([t("T1", { dependsOn: ["D3"] })], { premises: withProposed, others: [], modelsAllowed: [] })[0]!.message).toBe("T1 relies on D3, which no approved spec version activated");
+    expect(run([t("T1", { verifies: ["H1"] }), t("T2", { dependsOn: ["D1", "H1", "H2"] })])).toEqual([]); // active, open and confirmed still pass
+  });
   it("enforces the model allowlist only when a task names a model", () => {
     expect(codes([t("T1", { model: "claude-opus-5-5" })], [], ["claude-sonnet-5"])).toContain("error:model_not_allowed:T1");
     expect(codes([t("T1", { model: "claude/claude-sonnet-5" })], [], ["claude-sonnet-5"])).toEqual([]);

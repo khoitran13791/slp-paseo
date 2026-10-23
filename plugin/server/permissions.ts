@@ -59,15 +59,20 @@ export function decidePermission(req: PermissionLike, ident: Identity | null, op
   }
   if (WRITE.has(name)) {
     if (ident.role !== "peer-impl" || !ident.worktree) return { action: "deny", message: `SLP: role ${ident.role} does not edit files.` };
-    const target = String(req.input?.file_path ?? req.input?.notebook_path ?? "");
-    if (target.split(/[\\/]+/).includes("..")) return { action: "deny", message: `SLP: ${target} is outside your worktree.` };
+    // A tool may carry several path keys (NotebookEdit: file_path and notebook_path); every one must pass.
+    const targets = ["file_path", "notebook_path", "path"].map((k) => req.input?.[k]).filter((v): v is string => typeof v === "string" && v !== "");
+    if (!targets.length) return { action: "deny", message: "SLP: this edit names no file path." };
     const wt = resolveExisting(ident.worktree, realpath);
-    const abs = resolveExisting(target, realpath);
-    const rel = relative(wt, abs).split(sep).join("/");
-    const folded = rel.toUpperCase().toLowerCase();
-    if (folded === ".git" || folded.startsWith(".git/")) return { action: "deny", message: "SLP: the worktree's .git link is managed by the plugin." };
-    if (isProtectedPath(rel, null)) return { action: "deny", message: "SLP: paseo.json, git hooks and agent settings (.claude/, .codex/, .mcp.json) run outside the sandbox; only a human edits them." };
-    return inside(abs, wt) ? { action: "allow" } : { action: "deny", message: `SLP: ${target} is outside your worktree.` };
+    for (const target of targets) {
+      if (target.split(/[\\/]+/).includes("..")) return { action: "deny", message: `SLP: ${target} is outside your worktree.` };
+      const abs = resolveExisting(target, realpath);
+      const rel = relative(wt, abs).split(sep).join("/");
+      const folded = rel.toUpperCase().toLowerCase();
+      if (folded === ".git" || folded.startsWith(".git/")) return { action: "deny", message: "SLP: the worktree's .git link is managed by the plugin." };
+      if (isProtectedPath(rel, null)) return { action: "deny", message: "SLP: paseo.json, git hooks and agent settings (.claude/, .codex/, .mcp.json) run outside the sandbox; only a human edits them." };
+      if (!inside(abs, wt)) return { action: "deny", message: `SLP: ${target} is outside your worktree.` };
+    }
+    return { action: "allow" };
   }
   return { action: "defer", reason: `${req.kind ?? "tool"}: ${name}` };
 }

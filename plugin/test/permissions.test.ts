@@ -62,6 +62,26 @@ describe("decidePermission", () => {
     }
     expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, "src", ".claude-notes.md") } }, peer)).toEqual({ action: "allow" });
   });
+  it("denies protected paths at any depth, not only at the repo root", () => {
+    const wt = tmpDir(); const peer = ident("peer-impl", wt);
+    for (const p of [join(wt, "pkg", ".claude", "settings.json"), join(wt, "pkg", ".mcp.json"), join(wt, "a", "b", ".codex", "config.toml"), join(wt, "docs", "paseo.json"), join(wt, "frontend", ".husky", "pre-commit")]) {
+      expect(decidePermission({ id: "r", name: "Write", input: { file_path: p } }, peer).action, p).toBe("deny");
+    }
+    expect(decidePermission({ id: "r", name: "Write", input: { file_path: join(wt, "src", "claude", "x.ts") } }, peer)).toEqual({ action: "allow" });
+  });
+  it("checks every path key of a write, not only the first one present", () => {
+    const root = tmpDir(); const wt = join(root, "wt"); const outside = join(root, "outside");
+    mkdirSync(join(wt, "src"), { recursive: true }); mkdirSync(outside);
+    const peer = ident("peer-impl", wt);
+    const edit = (input: Record<string, unknown>) => decidePermission({ id: "r", name: "NotebookEdit", input }, peer);
+    expect(edit({ file_path: join(wt, "src", "a.ipynb"), notebook_path: join(outside, "n.ipynb") }).action).toBe("deny");
+    expect(edit({ notebook_path: join(wt, "src", "a.ipynb"), path: join(outside, "n.ipynb") }).action).toBe("deny");
+    expect(edit({ file_path: join(wt, "src", "a.ipynb"), notebook_path: join(wt, ".claude", "n.ipynb") }).action).toBe("deny");
+    expect(edit({ file_path: join(wt, "src", "a.ipynb"), notebook_path: join(wt, "src", "b.ipynb") })).toEqual({ action: "allow" });
+    expect(edit({ notebook_path: join(wt, "src", "b.ipynb") })).toEqual({ action: "allow" });
+    expect(edit({}).action).toBe("deny");
+    expect(edit({ file_path: "" }).action).toBe("deny");
+  });
   it("denies writes through dangling symlinks, symlink loops and raw .. segments", () => {
     const root = tmpDir(); const wt = join(root, "wt"); const outside = join(root, "outside");
     mkdirSync(join(wt, "src"), { recursive: true }); mkdirSync(outside);

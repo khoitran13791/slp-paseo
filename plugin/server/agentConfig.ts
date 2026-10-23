@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { projectForCwd, type SlpConfig } from "./config";
+import { expandHome, projectForCwd, type SlpConfig } from "./config";
 import { currentBranch, gitCommonDir, headOf } from "./git";
 import type { Identity, IdentityRegistry } from "./identity";
 import { ROLE_PROVIDER, roleOfProvider, type Role, type RoleSetup } from "./roles";
@@ -28,7 +28,7 @@ export function claudeSandbox(ident: Identity, config: SlpConfig, cwd: string, s
     failIfUnavailable: true,
     autoAllowBashIfSandboxed: true,
     allowUnsandboxedCommands: false,
-    filesystem: { denyWrite: [impl ? join(cwd, ".git") : cwd], denyRead: stateDirs },
+    filesystem: { denyWrite: [impl ? join(cwd, ".git") : cwd], denyRead: [...new Set([...stateDirs, ...config.sandbox.denyRead.map(expandHome)])] },
     network: { allowedDomains: impl ? config.sandbox.claudeAllowedDomains : [], allowLocalBinding: false },
   };
 }
@@ -52,17 +52,33 @@ export const CLAUDE_DISALLOWED_TOOLS = ["Agent", "Task"];
 const CODEX_CONFIG = "# Written by the SLP plugin before each Codex role starts. No MCP servers and no trusted projects:\n# the agent gets only what Paseo passes for its session.\n";
 
 /** A CODEX_HOME that shares only auth.json with the operator's Codex home (their MCP servers include computer use). */
-export function ensureCodexHome(dir: string, sourceHome: string): string {
+/** A Codex permission profile on top of :workspace that denies reading each path (checked with codex sandbox -P, 2026-10-23). */
+export function codexDenyProfile(name: string, denyRead: string[]): string {
+  return [`[permissions.${name}]`, `extends = ":workspace"`, "", `[permissions.${name}.filesystem]`, ...denyRead.map((p) => `${JSON.stringify(p)} = "deny"`), ""].join("\n");
+}
+
+export function ensureCodexHome(dir: string, sourceHome: string, denyRead: string[]): string {
   const auth = join(sourceHome, "auth.json");
   if (!existsSync(auth)) throw new Error(`SLP: ${auth} not found; log in to Codex before starting a Codex role.`);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  writeFileSync(join(dir, "config.toml"), CODEX_CONFIG);
+  // Rewritten on every start: this also drops the trust entry Codex or Paseo adds while the reviewer runs (T21).
+  writeFileSync(join(dir, "config.toml"), `${CODEX_CONFIG}default_permissions = "slp-review"\n\n${codexDenyProfile("slp-review", denyRead)}`);
   const link = join(dir, "auth.json");
   let target: string | null = null;
   try { target = lstatSync(link).isSymbolicLink() ? readlinkSync(link) : ""; } catch { target = null; }
   if (target !== auth) { rmSync(link, { force: true }); symlinkSync(auth, link); }
   return dir;
 }
+
+export function ensureRunnerHome(dir: string, denyRead: string[]): string {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeFileSync(join(dir, "config.toml"), `# Written by the SLP plugin for its verify runner (codex sandbox -P slp-verify).\ndefault_permissions = "slp-verify"\n\n${codexDenyProfile("slp-verify", denyRead)}`);
+  return dir;
+}
+
+/** Keys that would pick a legacy sandbox or another permission profile than the CODEX_HOME default (review Codex 2026-10-23). */
+const CODEX_SANDBOX_KEYS = ["sandbox_mode", "sandbox", "default_permissions", "permissions", "profile"];
+export const stripCodexSandbox = (o: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(o).filter(([k]) => !CODEX_SANDBOX_KEYS.includes(k)));
 
 /** Newest Superpowers in Claude Code's plugin cache, or null. */
 export function findSuperpowersDir(claudeHome: string): string | null {
@@ -114,7 +130,7 @@ export function transformCreate(req: CreateRequest, deps: AgentConfigDeps): Crea
         ...base, sandbox: claudeSandbox(ident, deps.config, cwd, deps.stateDirs), ...claudeIsolation(cwd, deps.claudePluginDir, base.extraArgs),
         disallowedTools: [...new Set([...(Array.isArray(base.disallowedTools) ? (base.disallowedTools as string[]) : []), ...CLAUDE_DISALLOWED_TOOLS])],
       }
-    : { ...base, sandbox_mode: "workspace-write", approval_policy: "on-request", sandbox_workspace_write: { network_access: false } };
+    : { ...stripCodexSandbox(base), approval_policy: "on-request", sandbox_workspace_write: { network_access: false } };
   const runtimeEnv: Record<string, string> = vendor === "claude" ? { ...CLAUDE_ISOLATION_ENV } : { CODEX_HOME: deps.codexHome() };
   const preapproved: McpToolRef[] = deps.toolNames(role).map((tool) => ({ kind: "mcp", server: "slp", tool }));
   return {
@@ -122,7 +138,9 @@ export function transformCreate(req: CreateRequest, deps: AgentConfigDeps): Crea
     env: { ...req.env, ...runtimeEnv, SLP_TOKEN: token! },
     config: {
       ...req.config,
-      modeId: vendor === "claude" ? "default" : "auto",
+      // Codex: no modeId and no sandbox_mode, so Paseo sends no legacy sandbox at thread or turn start and the CODEX_HOME
+      // default_permissions profile (deny ~/.slp, ~/.paseo) decides (paseo 0.12 codex-app-server-agent.ts; spike 2026-10-23).
+      ...(vendor === "claude" ? { modeId: "default" } : { modeId: undefined }),
       systemPrompt: deps.promptFor(ident),
       providerOptions,
       toolPolicy: { preapproved: [...(req.config.toolPolicy?.preapproved ?? []), ...preapproved] },

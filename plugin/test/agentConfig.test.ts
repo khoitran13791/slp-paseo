@@ -1,14 +1,16 @@
 import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bindSession, ensureCodexHome, findSuperpowersDir, transformCreate } from "../server/agentConfig";
+import { bindSession, claudeSandbox, ensureCodexHome, ensureRunnerHome, findSuperpowersDir, stripCodexSandbox, transformCreate } from "../server/agentConfig";
 import { parseSlpConfig } from "../server/config";
 import { headOf, trustRepo } from "../server/git";
-import { IdentityRegistry } from "../server/identity";
+import { IdentityRegistry, type Identity } from "../server/identity";
 import type { Role, RoleSetup } from "../server/roles";
 import { initRepo, sh, tmpDir } from "./helpers";
 
 const STATE = ["/home/u/.slp", "/home/u/.paseo"];
+const DENY = [...STATE, join(homedir(), ".slp"), join(homedir(), ".paseo")];
 const PLUGIN_DIR = "/home/u/.claude/plugins/cache/claude-plugins-official/superpowers/6.4.1";
 const CODEX_HOME = "/home/u/.slp/codex-home";
 const ISOLATION = { additionalDirectories: [] as string[], extraArgs: { "setting-sources": "", "strict-mcp-config": null, "plugin-dir": PLUGIN_DIR }, disallowedTools: ["Agent", "Task"] };
@@ -20,6 +22,7 @@ function deps() {
   const d = { identities, config, setup: () => setup, mcpUrl: () => "http://127.0.0.1:47320/mcp", promptFor: (i: { role: string }) => `PROMPT ${i.role}`, toolNames: (r: Role) => ["slp_state", `slp_${r}`], stateDirs: STATE, claudePluginDir: PLUGIN_DIR as string | null, codexHome: () => CODEX_HOME };
   return { repo, config, identities, d };
 }
+const ident = (role: Role): Identity => ({ tokenHash: "t", role, project: "demo", feature: "f", task: null, worktree: "/w", workspaceId: null, branch: null, reviewCommit: null, agentId: "a", parentAgentId: null, createdAt: "", retiredAt: null });
 function worktree(repo: string, branch: string): string {
   const wt = join(tmpDir(), branch.replaceAll("/", "-"));
   sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "-b", branch, wt, "main"]);
@@ -41,7 +44,7 @@ describe("transformCreate", () => {
     expect(out.config).toMatchObject({ modeId: "default", systemPrompt: "PROMPT supervisor" });
     expect(out.config.mcpServers).toEqual({ other: { type: "http", url: "u" }, slp: { type: "http", url: "http://127.0.0.1:47320/mcp", headers: { Authorization: `Bearer ${token}` }, alwaysLoad: true } });
     expect(out.config.toolPolicy).toEqual({ preapproved: [{ kind: "mcp", server: "slp", tool: "slp_state" }, { kind: "mcp", server: "slp", tool: "slp_supervisor" }] });
-    expect(out.config.providerOptions).toEqual({ sandbox: { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [repo], denyRead: STATE }, network: { allowedDomains: [], allowLocalBinding: false } }, ...ISOLATION, additionalDirectories: [repo] });
+    expect(out.config.providerOptions).toEqual({ sandbox: { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [repo], denyRead: DENY }, network: { allowedDomains: [], allowLocalBinding: false } }, ...ISOLATION, additionalDirectories: [repo] });
     expect(out.env).toMatchObject({ CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" });
   });
   it("keeps the operator's and the repo's settings, hooks and MCP servers out of Claude roles, whatever the caller passed", () => {
@@ -95,7 +98,7 @@ describe("transformCreate", () => {
     const impl = identities.mint({ ...peerMeta, task: "T2" });
     const out = transformCreate({ config: { provider: "slp-peer-impl", cwd: wtAlias }, env: { SLP_TOKEN: impl.token } }, d);
     expect(out.config.cwd).toBe(wtAlias); // Paseo owns cwd; only SLP's own decisions use the real path
-    expect((out.config.providerOptions as { sandbox: { filesystem: unknown } }).sandbox.filesystem).toEqual({ denyWrite: [join(realpathSync(wt), ".git")], denyRead: STATE });
+    expect((out.config.providerOptions as { sandbox: { filesystem: unknown } }).sandbox.filesystem).toEqual({ denyWrite: [join(realpathSync(wt), ".git")], denyRead: DENY });
     expect((out.config.providerOptions as { additionalDirectories: unknown }).additionalDirectories).toEqual([realpathSync(wt)]);
     expect(identities.byToken(impl.token)).toMatchObject({ worktree: realpathSync(wt), branch: "slp/f/T1-1" });
   });
@@ -104,15 +107,18 @@ describe("transformCreate", () => {
     const wt = worktree(repo, "slp/f/T1-1");
     const peer = identities.mint(peerMeta);
     const out = transformCreate({ config: { provider: "slp-peer-impl/claude-sonnet-5", cwd: wt }, env: { SLP_TOKEN: peer.token } }, d);
-    expect((out.config.providerOptions as { sandbox: unknown }).sandbox).toEqual({ enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [join(wt, ".git")], denyRead: STATE }, network: { allowedDomains: ["registry.npmjs.org", "pypi.org", "files.pythonhosted.org"], allowLocalBinding: false } });
+    expect((out.config.providerOptions as { sandbox: unknown }).sandbox).toEqual({ enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [join(wt, ".git")], denyRead: DENY }, network: { allowedDomains: ["registry.npmjs.org", "pypi.org", "files.pythonhosted.org"], allowLocalBinding: false } });
   });
-  it("configures a Codex reviewer with workspace-write and no network, at exactly the review commit", () => {
+  it("drops sandbox and profile keys that a Codex request brings in", () => {
+    expect(stripCodexSandbox({ sandbox_mode: "danger-full-access", default_permissions: ":danger", permissions: {}, model_reasoning_effort: "high" })).toEqual({ model_reasoning_effort: "high" });
+  });
+  it("configures a Codex reviewer with no legacy sandbox, so its CODEX_HOME profile decides, at exactly the review commit", () => {
     const { d, identities, repo } = deps();
     const wt = worktree(repo, "slp/f/review-T1-1");
     const rev = identities.mint({ ...peerMeta, role: "peer-review", reviewCommit: headOf(wt) });
-    const out = transformCreate({ config: { provider: "slp-peer-review", cwd: wt }, env: { SLP_TOKEN: rev.token } }, d);
-    expect(out.config.modeId).toBe("auto");
-    expect(out.config.providerOptions).toEqual({ sandbox_mode: "workspace-write", approval_policy: "on-request", sandbox_workspace_write: { network_access: false } });
+    const out = transformCreate({ config: { provider: "slp-peer-review", cwd: wt, modeId: "auto", providerOptions: { sandbox_mode: "workspace-write" } }, env: { SLP_TOKEN: rev.token } }, d);
+    expect(out.config.modeId).toBeUndefined();
+    expect(out.config.providerOptions).toEqual({ approval_policy: "on-request", sandbox_workspace_write: { network_access: false } });
     expect(out.env).toMatchObject({ CODEX_HOME, SLP_TOKEN: rev.token });
     expect(out.env).not.toHaveProperty("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD");
     const stale = identities.mint({ ...peerMeta, role: "peer-review", reviewCommit: "0".repeat(40) });
@@ -121,17 +127,35 @@ describe("transformCreate", () => {
 });
 
 describe("ensureCodexHome", () => {
+  it("writes a Codex home whose default profile denies reading the state dirs", () => {
+    const src = tmpDir(); writeFileSync(join(src, "auth.json"), "{}");
+    const dir = ensureCodexHome(join(tmpDir(), "codex-home"), src, ["/h/.slp", "/h/.paseo"]);
+    const toml = readFileSync(join(dir, "config.toml"), "utf8");
+    expect(toml).toContain('default_permissions = "slp-review"');
+    expect(toml).toContain('[permissions.slp-review.filesystem]');
+    expect(toml).toContain('"/h/.paseo" = "deny"');
+    expect(toml).not.toContain("trust_level");
+  });
+  it("writes a runner home with the slp-verify profile", () => {
+    const dir = ensureRunnerHome(join(tmpDir(), "runner"), ["/h/.slp"]);
+    expect(readFileSync(join(dir, "config.toml"), "utf8")).toContain('[permissions.slp-verify]\nextends = ":workspace"');
+  });
+  it("adds sandbox.denyRead to the Claude sandbox's denyRead", () => {
+    const cfg = parseSlpConfig({ projects: { demo: { repo: "/r", verify: ["true"] } }, sandbox: { denyRead: ["~/.slp", "~/.ssh"] } });
+    const sb = claudeSandbox(ident("lead"), cfg, "/w", ["/state/.slp"]) as { filesystem: { denyRead: string[] } };
+    expect(sb.filesystem.denyRead).toEqual(["/state/.slp", join(homedir(), ".slp"), join(homedir(), ".ssh")]);
+  });
   it("shares only auth.json, rewrites config.toml on every call, and fails without a Codex login", () => {
     const source = tmpDir(); writeFileSync(join(source, "auth.json"), "{}"); writeFileSync(join(source, "config.toml"), "[mcp_servers.cua_repl]\ncommand = \"x\"\n");
     const dir = join(tmpDir(), "codex-home");
-    expect(ensureCodexHome(dir, source)).toBe(dir);
+    expect(ensureCodexHome(dir, source, [])).toBe(dir);
     expect(lstatSync(join(dir, "auth.json")).isSymbolicLink()).toBe(true);
     expect(readlinkSync(join(dir, "auth.json"))).toBe(join(source, "auth.json"));
     expect(readFileSync(join(dir, "config.toml"), "utf8")).not.toMatch(/^\[(mcp_servers|projects)/m);
     writeFileSync(join(dir, "config.toml"), `[projects."/x"]\ntrust_level = "trusted"\n`); // Codex may record trust here
-    ensureCodexHome(dir, source);
+    ensureCodexHome(dir, source, []);
     expect(readFileSync(join(dir, "config.toml"), "utf8")).not.toMatch(/trust_level/);
-    expect(() => ensureCodexHome(join(tmpDir(), "h"), tmpDir())).toThrow(/log in to Codex/);
+    expect(() => ensureCodexHome(join(tmpDir(), "h"), tmpDir(), [])).toThrow(/log in to Codex/);
   });
 });
 

@@ -2,10 +2,15 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkRunner, runnerArgv, runSandboxed } from "../server/sandbox";
+import { checkRunner, makeRunSandboxed, runnerArgv, runSandboxed } from "../server/sandbox";
 import { FAKE_RUNNER, tmpDir } from "./helpers";
 
 describe("sandbox runner", () => {
+  it("passes extra env, such as the runner's CODEX_HOME, to the sandboxed command", async () => {
+    const run = makeRunSandboxed({ CODEX_HOME: "/x/codex-runner" });
+    const r = await run(FAKE_RUNNER, tmpDir(), 'printf %s "$CODEX_HOME"', 10);
+    expect(r.stdoutTail).toBe("/x/codex-runner");
+  });
   it("substitutes {worktree} and appends sh -c", () => {
     expect(runnerArgv(["codex", "sandbox", "-P", ":workspace", "-C", "{worktree}", "--"], "/w", "npm test"))
       .toEqual(["codex", "sandbox", "-P", ":workspace", "-C", "/w", "--", "sh", "-c", "npm test"]);

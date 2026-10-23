@@ -32,8 +32,10 @@ export const SlpConfigSchema = z.object({
   }).prefault({}),
   models: z.object({ allowed: z.array(z.string()).default([]) }).prefault({}),
   sandbox: z.object({
-    runner: z.array(z.string()).min(1).default(["codex", "sandbox", "-P", ":workspace", "-C", "{worktree}", "--"]),
+    runner: z.array(z.string()).min(1).default(["codex", "sandbox", "-P", "slp-verify", "-C", "{worktree}", "--"]),
     claudeAllowedDomains: z.array(z.string()).default(["registry.npmjs.org", "pypi.org", "files.pythonhosted.org"]),
+    /** No SLP sandbox (Claude roles, Codex reviewer, verify runner) may read these (spec §8). */
+    denyRead: z.array(z.string().min(1)).default(["~/.slp", "~/.paseo"]),
   }).prefault({}),
   rotation: z.object({
     contextRatio: z.number().gt(0).lte(1).default(0.6),
@@ -49,6 +51,8 @@ export const SlpConfigSchema = z.object({
   runtime: z.object({ claudePluginDir: z.string().min(1).nullable().default(null) }).prefault({}),
 });
 export type SlpConfig = z.infer<typeof SlpConfigSchema>;
+
+export const expandHome = (p: string): string => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p);
 
 export function slpHome(): string {
   return process.env.SLP_HOME ?? join(homedir(), ".slp");

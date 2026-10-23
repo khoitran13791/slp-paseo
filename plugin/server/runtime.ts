@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { bindSession, ensureCodexHome, findSuperpowersDir, transformCreate, type CreateRequest } from "./agentConfig";
-import { loadSlpConfig, slpHome, type SlpConfig } from "./config";
+import { bindSession, ensureCodexHome, ensureRunnerHome, findSuperpowersDir, transformCreate, type CreateRequest } from "./agentConfig";
+import { expandHome, loadSlpConfig, slpHome, type SlpConfig } from "./config";
 import type { Ctx, PaseoLike } from "./context";
 import { trustRepo, unsafeGitDrivers } from "./git";
 import { reconcile, tick } from "./hooks";
@@ -11,7 +11,7 @@ import { startMcpServer } from "./mcp/server";
 import { promptFor } from "./prompts";
 import { resolveRoleSetup, roleOfProvider, type RoleSetup } from "./roles";
 import { Router } from "./router";
-import { runSandboxed, checkRunner } from "./sandbox";
+import { checkRunner, makeRunSandboxed } from "./sandbox";
 import { deriveFeature } from "./store/derive";
 import { StoreRegistry } from "./store/registry";
 import { buildTools } from "./tools";
@@ -33,6 +33,8 @@ export function createRuntime(): Runtime {
     } catch (e) { console.error(`[slp] project ${name}: ${String(e)}`); }
   }
   const stateDirs = [home, process.env.PASEO_HOME ?? join(homedir(), ".paseo")]; // SLP worktrees live in ~/.slp-worktrees, outside both
+  const denyRead = [...new Set([...stateDirs, ...config.sandbox.denyRead.map(expandHome)])];
+  const run = makeRunSandboxed({ CODEX_HOME: ensureRunnerHome(join(home, "codex-runner"), denyRead) });
   const claudePluginDir = config.runtime.claudePluginDir ?? findSuperpowersDir(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"));
   if (!claudePluginDir) console.error("[slp] Superpowers not found in Claude Code's plugin cache; Claude roles start without it. Set runtime.claudePluginDir in ~/.slp/config.json.");
   const identities = new IdentityRegistry(join(home, "identities.json"));
@@ -50,7 +52,7 @@ export function createRuntime(): Runtime {
     marks: new TimelineMarks(join(home, "timeline-marks.json"), (e) => console.error("[slp] could not write timeline-marks.json; keeping marks in memory", e)),
     setup: () => { if (!setup) throw new Error("SLP: role setup not loaded yet"); return setup; },
     paseo: () => { if (!paseo) throw new Error("SLP: no Paseo client captured yet"); return paseo; },
-    run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs, worktreeRoot: process.env.SLP_WORKTREES ?? join(homedir(), ".slp-worktrees"),
+    run, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs, worktreeRoot: process.env.SLP_WORKTREES ?? join(homedir(), ".slp-worktrees"),
     pendingPermissions: new Map(), log: (message, error) => console.error(`[slp] ${message}`, error ?? ""),
     refreshSetup,
   };
@@ -77,7 +79,7 @@ export function createRuntime(): Runtime {
     paseo = p as PaseoLike;
     setupPromise = paseo.config.get().then((r) => (setup = resolveRoleSetup(r.config, { crossVendorReview: config.flags.crossVendorReview })));
     setupPromise.catch((e) => console.error("[slp] role setup failed; SLP agents cannot be created until ~/.paseo/config.json is fixed", e));
-    void checkRunner(config.sandbox.runner, home).then((problem) => { if (problem) console.error(`[slp] ${problem}. Verification will fail closed until this is fixed.`); });
+    void checkRunner(config.sandbox.runner, home, run).then((problem) => { if (problem) console.error(`[slp] ${problem}. Verification will fail closed until this is fixed.`); });
     void setupPromise.then(() => { if (!reconciled) { reconciled = true; return reconcile(ctx); } }).catch((e) => console.error("[slp] reconcile failed", e));
   }
 
@@ -92,7 +94,7 @@ export function createRuntime(): Runtime {
         promptFor: (ident) => promptFor(ident, { task: ident.feature && ident.task ? deriveFeature(ident.feature, ctx.stores.feature(ident.project, ident.feature).all()).tasks.get(ident.task) ?? null : null }),
         toolNames: (role) => tools.filter((t) => t.roles.includes(role)).map((t) => t.name),
         stateDirs, claudePluginDir,
-        codexHome: () => ensureCodexHome(join(home, "codex-home"), process.env.CODEX_HOME ?? join(homedir(), ".codex")),
+        codexHome: () => ensureCodexHome(join(home, "codex-home"), process.env.CODEX_HOME ?? join(homedir(), ".codex"), denyRead),
       });
     },
     bindSession: (req) => bindSession(req, identities),

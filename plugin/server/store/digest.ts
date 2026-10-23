@@ -4,8 +4,7 @@ import type { SlpEvent } from "./events";
 export function phaseOf(st: FeatureState): string {
   if (st.halted) return "halted";
   if (!st.brief) return "intake";
-  if (!st.brief.approved) return "brief-review";
-  if (!st.spec) return "spec-writing";
+  if (!st.spec) return "brainstorm";
   if (!st.spec.approved) return "spec-review";
   if (!st.plan) return "planning";
   if (!st.plan.approved) return "plan-review";
@@ -27,6 +26,7 @@ export function renderDigest(st: FeatureState, ops: readonly SlpEvent[], now: Da
   lines.push(`Open challenges: ${list([...st.challenges.values()].filter((c) => c.open).map((c) => `${c.id} (${c.level}, ${one(c.target)}, ${minutes(c.ts, now)} min)`))}`);
   lines.push(`Stale: ${list(tasks.filter((t) => t.status === "stale").map((t) => one(t.id)))} | Parked: ${list(tasks.filter((t) => t.status === "parked").map((t) => one(t.id)))}`);
   lines.push(`Open hypotheses: ${list([...st.premises.values()].filter((p) => p.status === "open").map((p) => `${p.id} ${one(p.title)}`))}`);
+  lines.push(`Awaiting spec approval: ${list([...st.premises.values()].filter((p) => p.status === "proposed").map((p) => `${p.id} ${one(p.title, 60)} [${p.source ?? p.byRole}]`))}`);
   const contracts = [...new Set(tasks.flatMap((t) => t.touchSet.filter((e) => e.startsWith("contract:")).map((e) => one(e))))];
   const waits = tasks.filter((t) => t.waitsOn?.length && t.status !== "accepted" && t.status !== "dropped").map((t) => `${one(t.id)} waits on ${t.waitsOn!.map((w) => one(w)).join(", ")}`);
   if (contracts.length || waits.length) lines.push(`Contracts: ${list([...contracts, ...waits])}`);

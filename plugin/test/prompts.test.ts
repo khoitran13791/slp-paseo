@@ -12,6 +12,9 @@ const premises = new Map<string, PremiseState>([
 ]);
 
 describe("role prompts", () => {
+  it("starts the Lead as a consultant to the Supervisor's brainstorm", () => {
+    expect(leadKickoff("cache", "# B", "q?")).toContain("called in by the Supervisor while it brainstorms");
+  });
   it("tells Peers that a reply after their report needs no new report (T21 B-7)", () => {
     expect(promptFor(ident("peer-impl"), { task })).toContain("After your report, a turn that changes no file needs no tool");
     expect(promptFor(ident("peer-review"), { task })).toContain("Once your review is in, answer questions without a new slp_review");

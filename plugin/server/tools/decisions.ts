@@ -11,12 +11,13 @@ import { defineTool, ToolError } from "./define";
 
 const haltedMessage = (feature: string): string => `feature ${feature} is halted: the human changed the goal; start a new feature`;
 const SLUG = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
-const Premise = z.object({ kind: z.enum(["decision", "hypothesis"]), title: z.string().min(1), verify_by: z.string().min(1).optional() });
+const Premise = z.object({ kind: z.enum(["decision", "hypothesis"]), title: z.string().min(1), verify_by: z.string().min(1).optional(), source: z.enum(["human", "self"]).optional() });
 const Task = z.object({ id: z.string().regex(/^T\d+[a-z]?$/), title: z.string().min(1), outcome: z.string().min(1).optional(), dependsOn: z.array(z.string()).default([]), verifies: z.array(z.string()).default([]), touchSet: z.array(z.string()).default([]), verify: z.string(), model: z.string().optional(), waitsOn: z.array(SLUG).default([]) });
 
 function addPremises(ctx: Ctx, who: Identity, feature: string, premises: z.infer<typeof Premise>[], spec?: string): string[] {
   for (const p of premises) if (p.kind === "hypothesis" && !p.verify_by) throw new ToolError(`hypothesis "${p.title}" needs verify_by: a measurement that can fail`);
-  return premises.map((p) => appendAs(ctx, who, feature, { kind: "premise", idPrefix: p.kind === "decision" ? "D" : "H", data: { ...p, spec } }).id!);
+  // source: who chose it, stored with spec §5.2's values ("self" becomes the caller's role). The spec review shows the self-chosen ones apart (spec §6.1).
+  return premises.map((p) => appendAs(ctx, who, feature, { kind: "premise", idPrefix: p.kind === "decision" ? "D" : "H", data: { ...p, source: p.source === "human" ? "human" : who.role === "lead" ? "lead" : "supervisor", spec } }).id!);
 }
 
 function otherFeatures(ctx: Ctx, project: string, feature: string) {
@@ -70,30 +71,29 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
         const doc = ctx.stores.writeDoc(who.project, feature, "brief", a.markdown);
         appendAs(ctx, who, feature, { kind: "brief", data: { ...doc, title: a.title } });
         const ids = addPremises(ctx, who, feature, a.premises);
-        return `Saved brief v${doc.version} (${doc.sha256.slice(0, 12)}) at ${doc.path}. Premises: ${ids.join(", ") || "none"}. Show it to the human and ask for approval.`;
+        return `Saved brief v${doc.version} (${doc.sha256.slice(0, 12)}) at ${doc.path}. Premises: ${ids.join(", ") || "none"}. This is the brainstorm record: there is no approval step. Keep brainstorming with the human; for a hard question, or once the record is complete, call the Lead in with slp_spawn {role: "lead"}.`;
       },
     }),
     defineTool({
       name: "slp_human_decision", description: "Record the human's decision, quoting their exact words. The plugin checks the quote against messages the human actually sent.",
       roles: ["supervisor", "lead"],
-      input: z.object({ feature: SLUG.optional(), decides: z.enum(["approve_brief", "approve_spec", "supersede", "keep", "change_goal"]), target: z.string().optional(), quote: z.string(), replacement: Premise.optional(), reason: z.string().optional() }),
+      input: z.object({ feature: SLUG.optional(), decides: z.enum(["approve_spec", "supersede", "keep", "change_goal"]), target: z.string().optional(), quote: z.string(), replacement: Premise.optional(), reason: z.string().optional() }),
       async run(who, a) {
         await syncHumanMessages(ctx, who); // the approval usually arrives in the turn that calls this tool
         const feature = requireFeature(who, a.feature);
         const events = ctx.stores.feature(who.project, feature).all();
         const st = deriveFeature(feature, events);
         let after: string; let target = a.target ?? "";
-        if (a.decides === "approve_brief" || a.decides === "approve_spec") {
-          const doc = a.decides === "approve_brief" ? st.brief : st.spec;
-          if (!doc) throw new ToolError(`no ${a.decides.slice(8)} to approve`);
-          after = doc.ts; target = doc.sha256;
+        if (a.decides === "approve_spec") {
+          if (!st.spec) throw new ToolError("no spec to approve");
+          after = st.spec.ts; target = st.spec.sha256;
         } else {
           if (!target && a.decides !== "change_goal") throw new ToolError("target is required");
           const asked = [...events].reverse().find((e) => e.kind === "challenge" && (a.decides === "change_goal" || e.data.target === target));
           if (!asked) throw new ToolError(`no challenge about ${target || "the goal"} was raised; the human decides premises only on a raised question`);
           after = asked.ts;
         }
-        const approval = a.decides === "approve_brief" || a.decides === "approve_spec";
+        const approval = a.decides === "approve_spec";
         const q = findHumanQuote(humanMessagesFor(ctx, who), { agentId: who.agentId!, quote: a.quote, after, affirm: approval, extraWords: [feature] });
         if (!q.ok) throw new ToolError(`quote rejected: ${q.reason}`);
         if (messageUsed(events, q.messageId, a.decides, target)) throw new ToolError("quote rejected: that message already backs another decision; ask the human about this item separately");
@@ -137,11 +137,12 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
         const feature = who.feature!;
         const before = deriveFeature(feature, ctx.stores.feature(who.project, feature).all());
         if (before.halted) throw new ToolError(haltedMessage(feature));
+        if (!/^##\s+Decisions added by the Lead\b/m.test(a.markdown)) throw new ToolError('the spec needs a "## Decisions added by the Lead" section listing every decision that is not in the brainstorm record (write "None." if there are none)');
         const doc = ctx.stores.writeDoc(who.project, feature, "spec", a.markdown);
         const ids = addPremises(ctx, who, feature, a.premises, doc.sha256);
         const carried = [...before.premises.values()].filter((p) => p.status === "proposed" && new RegExp(`\\b${p.id}\\b`).test(a.markdown)).map((p) => p.id);
         appendAs(ctx, who, feature, { kind: "spec", data: { ...doc, premises: [...carried, ...ids] } });
-        routeFrom(ctx, who, supervisorAddress(who.project, feature), `Spec v${doc.version} for ${feature} is ready at ${doc.path}${ids.length ? ` (new premises ${ids.join(", ")}, active once the human approves)` : ""}. Check it against the brief, then show it to the human.`);
+        routeFrom(ctx, who, supervisorAddress(who.project, feature), `Spec v${doc.version} for ${feature} is ready at ${doc.path}${ids.length ? ` (new premises ${ids.join(", ")}, active once the human approves)` : ""}. Check it against the brainstorm record, show the human its "Decisions added by the Lead" section first, then ask them to approve the spec.`);
         return `Saved spec v${doc.version}. Wait for the human's approval before planning.`;
       },
     }),

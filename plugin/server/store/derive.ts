@@ -4,7 +4,7 @@ import type { SlpEvent } from "./events";
 export interface PlanTask { id: string; title: string; outcome?: string; dependsOn: string[]; verifies: string[]; touchSet: string[]; verify: string; model?: string; waitsOn?: string[] }
 export interface WatchResult { tick: number; ts: string; verdicts: Array<{ agent: string; verdict: string; note?: string }> }
 export type PremiseStatus = "active" | "open" | "confirmed" | "superseded" | "proposed";
-export interface PremiseState { id: string; kind: "decision" | "hypothesis"; title: string; status: PremiseStatus; supersededBy: string | null; supersededAtSeq: number | null; seq: number; byRole: string }
+export interface PremiseState { id: string; kind: "decision" | "hypothesis"; title: string; status: PremiseStatus; supersededBy: string | null; supersededAtSeq: number | null; seq: number; byRole: string; source?: "human" | "supervisor" | "lead" }
 export type TaskStatus = "pending" | "assigned" | "reported" | "accepted" | "parked" | "stale" | "dropped";
 export interface TaskState extends PlanTask {
   status: TaskStatus; closure: string[]; agentId: string | null; worktree: string | null; branch: string | null; base: string | null;
@@ -48,11 +48,12 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
         break;
       case "premise": {
         const kind = e.data.kind === "hypothesis" ? "hypothesis" : "decision";
-        st.premises.set(e.id!, { id: e.id!, kind, title: String(e.data.title ?? ""), status: e.by_role === "lead" ? "proposed" : kind === "hypothesis" ? "open" : "active", supersededBy: null, supersededAtSeq: null, seq: e.seq, byRole: e.by_role });
+        // Every premise waits for an approved spec that lists it (spec §5.2). With no brief gate this is the human's only look at a premise (review Codex 2026-10-23).
+        const source = e.data.source === "human" || e.data.source === "supervisor" || e.data.source === "lead" ? e.data.source : undefined;
+        st.premises.set(e.id!, { id: e.id!, kind, title: String(e.data.title ?? ""), status: "proposed", supersededBy: null, supersededAtSeq: null, seq: e.seq, byRole: e.by_role, source });
         break;
       }
       case "human_decision":
-        if (e.data.decides === "approve_brief" && st.brief && st.brief.sha256 === e.data.target) st.brief.approved = true;
         if (e.data.decides === "approve_spec" && st.spec && st.spec.sha256 === e.data.target) {
           st.spec.approved = true;
           // Only the premises this spec version lists; a premise proposed with an abandoned version stays proposed (review Codex 2026-10-22).
@@ -67,6 +68,9 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
       case "supersede": {
         const old = e.supersedes ? st.premises.get(e.supersedes) : undefined;
         if (old) Object.assign(old, { status: "superseded", supersededBy: e.refs[0] ?? null, supersededAtSeq: e.seq });
+        // The human chose the replacement, with a quote (supersede comes only from slp_human_decision): it is in force at once.
+        const repl = st.premises.get(e.refs[0] ?? "");
+        if (repl?.status === "proposed") repl.status = repl.kind === "hypothesis" ? "open" : "active";
         break;
       }
       case "confirms": {
@@ -147,7 +151,6 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
     if (moved) ts.status = "stale";
   }
 
-  if (st.brief && !st.brief.approved) st.waitingOnHuman.push(`approve brief v${st.brief.version}`);
   if (st.spec && !st.spec.approved) st.waitingOnHuman.push(`approve spec v${st.spec.version}`);
   for (const c of st.challenges.values()) if (c.open && c.byRole === "supervisor") st.waitingOnHuman.push(`decide ${c.id} on ${c.target}`);
   const lastPkg = [...events].reverse().find((e) => e.kind === "ship_package");
@@ -159,7 +162,7 @@ export function acceptanceBlockers(st: FeatureState, events: readonly SlpEvent[]
   const out: string[] = [];
   if (st.halted) out.push("the feature is halted (the human changed the goal)");
   // The tasks come from the latest plan; an unapproved one must not drop tasks from this gate (review Codex 2026-10-22, round 6).
-  for (const [name, doc] of [["brief", st.brief], ["spec", st.spec], ["plan", st.plan]] as const) if (!doc || !doc.approved) out.push(doc ? `${name} v${doc.version} is not approved` : `no ${name}`);
+  for (const [name, doc] of [["spec", st.spec], ["plan", st.plan]] as const) if (!doc || !doc.approved) out.push(doc ? `${name} v${doc.version} is not approved` : `no ${name}`);
   for (const t of st.tasks.values()) if (t.status !== "accepted" && t.status !== "dropped") out.push(`${t.id} is ${t.status}`);
   for (const c of st.challenges.values()) if (c.open) out.push(`${c.id} is open`);
   const ev = [...events].reverse().find((e) => e.kind === "evidence" && e.data.scope === "feature" && e.data.commit === head);

@@ -149,7 +149,8 @@ export function workTools(ctx: Ctx): ToolDef[] {
         if (st.halted) throw new ToolError(`${feature} is halted: the human changed the goal`);
         if (a.role === "lead") {
           if (who.role !== "supervisor") throw new ToolError("only the Supervisor spawns Leads");
-          if (!st.brief?.approved) throw new ToolError("the brief is not approved by the human yet");
+          if (a.model) throw new ToolError("the Lead's model comes from its agent profile (slp-lead); drop model"); // T21 B-2
+          if (!st.brief) throw new ToolError("write the brief first (slp_brief)");
           if (ctx.identities.current("lead", who.project, feature)) throw new ToolError(`feature ${feature} already has a Lead`);
           const previous = ctx.identities.last("lead", who.project, feature);
           const checkpoint = join(ctx.stores.featureDir(who.project, feature), "checkpoint-lead.md");

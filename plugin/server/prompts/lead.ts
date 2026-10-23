@@ -34,5 +34,5 @@ ${COMMON}`;
 }
 
 export function leadKickoff(feature: string, briefMarkdown: string, note: string): string {
-  return `[SLP] You are the Lead for feature ${feature}. The approved brief follows. Write the spec next (slp_spec).\n\n${briefMarkdown}\n\n## Note from the Supervisor\n${note}`;
+  return `[SLP] You are the Lead for feature ${feature}, called in by the Supervisor while it brainstorms with the human. The brainstorm record (brief) follows; it changes as the brainstorm goes on, so read the latest with slp_state {doc: "brief"}.\n\n${briefMarkdown}\n\n## The Supervisor asks\n${note}\n\nAnswer with slp_send to "supervisor": the options you see, the evidence for each (files, commands and their output, counterexamples) and the risks. Write the spec (slp_spec) only when the Supervisor says the record is complete.`;
 }

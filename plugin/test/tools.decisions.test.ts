@@ -35,23 +35,32 @@ describe("brief and human decisions", () => {
     expect((await w.call(w.lead, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "duyệt" })).isError).toBeFalsy();
     expect(w.ctx.router.pending().some((p) => p.to.role === "supervisor" && p.text.includes("The human decided in the Lead's tab: approve_spec"))).toBe(true);
   });
-  it("stores a brief with premises and approves it only with a real human quote", async () => {
-    const w = world();
-    const r = await w.call(w.sup, "slp_brief", { feature: "cache", title: "Cache", markdown: "# Brief", premises: [{ kind: "decision", title: "Redis" }, { kind: "hypothesis", title: "p95<50ms", verify_by: "bench on staging corpus" }] });
-    expect(r.text).toMatch(/brief v1/);
-    expect(w.events().filter((e) => e.kind === "premise").map((e) => e.id)).toEqual(["D1", "H1"]);
+  it("stores a brief as the brainstorm record, with no approval step", async () => {
+    const w = await world();
+    const r = await w.call(w.sup, "slp_brief", { feature: "cache", title: "Cache", markdown: "# Brief", premises: [{ kind: "decision", title: "Redis", source: "human" }, { kind: "decision", title: "TTL 60s" }] });
+    expect(r.text).toMatch(/brainstorm record: there is no approval step/);
     expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_brief", quote: "duyệt" })).isError).toBe(true);
-    await w.human(w.sup, "ok duyệt brief");
-    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_brief", quote: "duyệt brief" })).isError).toBeFalsy();
-    expect(deriveFeature("cache", w.events()).brief?.approved).toBe(true);
-    expect(w.ctx.stores.project("demo").all().filter((e) => e.kind === "human_message")).toHaveLength(1);
+    const premises = w.events().filter((e) => e.kind === "premise").map((e) => e.data.source);
+    expect(premises).toEqual(["human", "supervisor"]);
+    expect(deriveFeature("cache", w.events()).premises.get("D1")).toMatchObject({ status: "proposed", source: "human" });
   });
-  it("does not let an approval typed before a new brief version approve that version", async () => {
-    const w = world();
-    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "v1" });
+  it("lets no premise govern a plan until an approved spec lists it, Supervisor premises included (spec §5.2)", async () => {
+    const w = await world();
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "Cache", markdown: "# Brief", premises: [{ kind: "decision", title: "Redis", source: "human" }] });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec\n## Premises\n- D1 Redis\n## Decisions added by the Lead\nNone." });
     await w.human(w.sup, "duyệt");
-    await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "v2" });
-    expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_brief", quote: "duyệt" })).text).toMatch(/quote rejected/);
+    await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "duyệt" });
+    expect(deriveFeature("cache", w.events()).premises.get("D1")?.status).toBe("active");
+    // A later brief adds D2 after the human approved the spec: it stays proposed, and a plan that relies on it is refused.
+    await w.call(w.sup, "slp_brief", { feature: "cache", title: "Cache", markdown: "# Brief v2", premises: [{ kind: "decision", title: "TTL 60s" }] });
+    expect(deriveFeature("cache", w.events()).premises.get("D2")?.status).toBe("proposed");
+    const plan = await w.call(w.lead, "slp_plan", { markdown: "# Plan", tasks: [{ id: "T1", title: "t", dependsOn: ["D2"], verifies: [], touchSet: ["a.ts"], verify: "true" }] });
+    expect(plan.text).toMatch(/D2, which no approved spec version activated/);
+  });
+  it("refuses a spec without the Lead's added-decisions section", async () => {
+    const w = await world();
+    expect(await w.call(w.lead, "slp_spec", { markdown: "# Spec only" })).toMatchObject({ isError: true, text: expect.stringMatching(/Decisions added by the Lead/) });
+    expect((await w.call(w.lead, "slp_spec", { markdown: "# Spec\n## Decisions added by the Lead\n- empty input returns \"\"" })).isError).toBeFalsy();
   });
   it("rejects a hypothesis without verify_by and a brief from a non-supervisor", async () => {
     const w = world();
@@ -61,6 +70,9 @@ describe("brief and human decisions", () => {
   it("supersedes a premise from a quoted human decision and resolves its open challenges", async () => {
     const w = world();
     await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "decision", title: "memory cache" }] });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec\nD1\n## Decisions added by the Lead\nNone." });
+    await w.human(w.sup, "duyệt spec");
+    await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "duyệt spec" });
     await w.call(w.lead, "slp_challenge", { target: "D1", level: "spec", claim: "memory cache breaks retries", evidence: "test retry.spec fails: expected same body", impact: "T4,T6", smallest_correction: "Redis TTL" });
     await w.call(w.sup, "slp_challenge", { feature: "cache", target: "D1", level: "spec", claim: "ask human", evidence: "see C1 evidence from lead", impact: "T4", smallest_correction: "Redis" });
     await w.human(w.sup, "supersede D1, dùng Redis");
@@ -76,7 +88,7 @@ describe("brief and human decisions", () => {
 describe("spec and plan", () => {
   async function approvedSpec(w: ReturnType<typeof world>) {
     await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "hypothesis", title: "h", verify_by: "bench" }] });
-    await w.call(w.lead, "slp_spec", { markdown: "# Spec" });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec\nH1\n## Decisions added by the Lead\nNone." });
     await w.human(w.sup, "spec ok");
     await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "spec ok" });
   }
@@ -115,8 +127,8 @@ describe("spec and plan", () => {
   it("activates on spec approval only the Lead premises that spec version lists or names", async () => {
     const w = world();
     await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x" });
-    await w.call(w.lead, "slp_spec", { markdown: "# Spec v1", premises: [{ kind: "decision", title: "memory cache" }, { kind: "decision", title: "TTL 60s" }] });
-    await w.call(w.lead, "slp_spec", { markdown: "# Spec v2 keeps D2 only" });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec v1\n## Decisions added by the Lead\nNone.", premises: [{ kind: "decision", title: "memory cache" }, { kind: "decision", title: "TTL 60s" }] });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec v2 keeps D2 only\n## Decisions added by the Lead\nNone." });
     await w.human(w.sup, "spec ok");
     await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "spec ok" });
     const st = deriveFeature("cache", w.events());
@@ -126,7 +138,7 @@ describe("spec and plan", () => {
   it("lets one human message back only one decision", async () => {
     const w = world();
     await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "decision", title: "memory cache" }] });
-    await w.call(w.lead, "slp_spec", { markdown: "# Spec" });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec\n## Decisions added by the Lead\nNone." });
     await w.call(w.sup, "slp_challenge", { feature: "cache", target: "D1", level: "spec", claim: "c", evidence: "evidence text here", impact: "i", smallest_correction: "s" });
     await w.human(w.sup, "ok");
     expect((await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "ok" })).isError).toBeFalsy();
@@ -155,7 +167,7 @@ describe("spec and plan", () => {
     const plan = await w.call(w.lead, "slp_plan", { markdown: "# Plan v2", tasks: [task] });
     expect(plan.isError).toBe(true);
     expect(plan.text).toMatch(/feature cache is halted/);
-    const spec = await w.call(w.lead, "slp_spec", { markdown: "# Spec v2" });
+    const spec = await w.call(w.lead, "slp_spec", { markdown: "# Spec v2\n## Decisions added by the Lead\nNone." });
     expect(spec.isError).toBe(true);
     expect(spec.text).toMatch(/feature cache is halted/);
     const approve = await w.call(w.sup, "slp_approve_plan", { feature: "cache", sha256: sha });
@@ -268,6 +280,9 @@ describe("challenges, questions, messages", () => {
   it("records rulings and confirms only open hypotheses with evidence", async () => {
     const w = world();
     await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "hypothesis", title: "h", verify_by: "bench" }] });
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec\nH1\n## Decisions added by the Lead\nNone." });
+    await w.human(w.sup, "spec ok");
+    await w.call(w.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "spec ok" });
     expect((await w.call(w.lead, "slp_rule", { decision: "use LRU", reason: "simpler", cost_if_wrong: "rewrite cache module", drop: ["T9"] })).text).toMatch(/R1/);
     expect((await w.call(w.lead, "slp_confirm", { hypothesis: "H1", evidence: "bench p95 41ms on commit abc" })).isError).toBeFalsy();
     expect((await w.call(w.lead, "slp_confirm", { hypothesis: "H1", evidence: "again evidence" })).isError).toBe(true);
@@ -275,7 +290,7 @@ describe("challenges, questions, messages", () => {
   it("returns the digest and documents through slp_state", async () => {
     const w = world();
     await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "# My brief", premises: [] });
-    expect((await w.call(w.sup, "slp_state", {})).text).toContain("# cache — phase: brief-review");
+    expect((await w.call(w.sup, "slp_state", {})).text).toContain("# cache — phase: brainstorm");
     expect((await w.call(w.lead, "slp_state", { doc: "brief" })).text).toContain("# My brief");
     expect((await w.call(w.peer, "slp_state", { feature: "other" })).isError).toBe(true);
   });
@@ -318,7 +333,7 @@ describe("shared contracts", () => {
     for (const a of ["sup-2", "lead-2"]) w.paseo.statuses.set(a, "running");
     const plan = async (sup: Identity, lead: Identity, feature: string, task: Record<string, unknown>) => {
       await w.call(sup, "slp_brief", { feature, title: feature, markdown: "x" });
-      await w.call(lead, "slp_spec", { markdown: "# Spec" });
+      await w.call(lead, "slp_spec", { markdown: "# Spec\n## Decisions added by the Lead\nNone." });
       await w.human(sup, `spec ok ${feature}`);
       await w.call(sup, "slp_human_decision", { decides: "approve_spec", quote: `spec ok ${feature}` });
       return w.call(lead, "slp_plan", { markdown: "# P", tasks: [{ id: "T1", title: "t", dependsOn: [], verifies: [], verify: "true", ...task }] });

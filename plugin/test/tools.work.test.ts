@@ -20,8 +20,6 @@ async function ready() {
   };
   const human = humanSays(w.paseo, "sup-1");
   await call(sup, "slp_brief", { feature: "cache", title: "Cache", markdown: "# Brief", premises: [] });
-  await human("duyệt");
-  await call(sup, "slp_human_decision", { feature: "cache", decides: "approve_brief", quote: "duyệt" });
   return { ...w, sup, call, human, events: () => w.ctx.stores.feature("demo", "cache").all() };
 }
 
@@ -33,7 +31,7 @@ async function withLeadAndPlan(tasks: Array<Record<string, unknown>> = TASKS, be
   const spawned = await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", prompt: "go" });
   expect(spawned.isError).toBeFalsy();
   const lead = r.ctx.identities.byAgent(r.paseo.created[0]!.id)!; // bound by the fake session_open hook
-  await r.call(lead, "slp_spec", { markdown: "# Spec" });
+  await r.call(lead, "slp_spec", { markdown: "# Spec\n## Decisions added by the Lead\nNone." });
   await r.human("spec ok");
   await r.call(r.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "spec ok" });
   await r.call(lead, "slp_plan", { markdown: "# Plan", tasks });
@@ -58,13 +56,23 @@ describe("slp_spawn", () => {
     await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "go" });
     expect((r.paseo.created.at(-1)!.config as { provider: string }).provider).toBe("slp-peer-impl/claude-opus-5-5");
   });
-  it("refuses a Lead before the brief is approved and starts one in an SLP worktree on feat/<feature> after", async () => {
+  it("starts a consulting Lead as soon as the brief exists, with no approval, but no Peer before spec and plan approval", async () => {
     const w = makeCtx();
     const sup = bound(w.ctx, { role: "supervisor", project: "demo", feature: null, task: null, reviewCommit: null, parentAgentId: null }, "sup-1");
     const t = buildTools(w.ctx).find((x) => x.name === "slp_spawn")!;
     await expect(t.handler(sup, { role: "lead", prompt: "go" })).rejects.toThrow(/write the brief first/);
-    w.ctx.identities.setFeature(sup.tokenHash, "cache");
-    await expect(t.handler(sup, { role: "lead", prompt: "go" })).rejects.toThrow(/brief is not approved/);
+    const r = await ready();
+    expect((await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", prompt: "Which cache store fits?" })).isError).toBeFalsy();
+    const lead = r.ctx.identities.byAgent(r.paseo.created[0]!.id)!;
+    expect(String((r.paseo.created[0] as { prompt?: string }).prompt)).toContain("called in by the Supervisor while it brainstorms");
+    expect((await r.call(lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/plan is not approved/);
+    expect(sh(lead.worktree!, "git", ["branch", "--show-current"])).toBe("feat/cache");
+  });
+  it("refuses a model for the Lead: it comes from the agent profile (T21 B-2)", async () => {
+    const r = await ready();
+    expect(await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", model: "claude/claude-opus-5-5", prompt: "go" })).toMatchObject({ isError: true, text: expect.stringMatching(/agent profile/) });
+  });
+  it("starts the Lead in an SLP worktree on feat/<feature>, in its own directory workspace", async () => {
     const r = await withLeadAndPlan();
     const created = r.paseo.created[0]!;
     expect(created).toMatchObject({ parent: "sup-1", title: "[Lead] cache" });
@@ -213,7 +221,7 @@ describe("slp_spawn", () => {
   });
   it("refuses Peers once a newer spec waits for the human's approval", async () => {
     const r = await withLeadAndPlan();
-    expect((await r.call(r.lead, "slp_spec", { markdown: "# Spec v2" })).isError).toBeFalsy();
+    expect((await r.call(r.lead, "slp_spec", { markdown: "# Spec v2\n## Decisions added by the Lead\nNone." })).isError).toBeFalsy();
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/the spec is not approved by the human yet/);
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-review", task: "T1", prompt: "x" })).text).toMatch(/the spec is not approved by the human yet/);
     expect(r.paseo.created).toHaveLength(1); // the Lead only
@@ -290,7 +298,7 @@ describe("report → review → accept", () => {
   it("does not accept while a newer spec waits for the human's approval", async () => {
     const r = await reported();
     await processReportFor(r.ctx, r.peer);
-    await r.call(r.lead, "slp_spec", { markdown: "# Spec v2" });
+    await r.call(r.lead, "slp_spec", { markdown: "# Spec v2\n## Decisions added by the Lead\nNone." });
     expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/the spec is not approved by the human yet/);
   });
   it("runs network git in the project checkout, so a relative sshCommand cannot run a Peer's script", async () => {

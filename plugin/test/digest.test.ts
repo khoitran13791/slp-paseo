@@ -9,11 +9,15 @@ const ev = (kind: SlpEvent["kind"], data: Record<string, unknown> = {}, extra: P
 const task = (id: string): PlanTask => ({ id, title: `title ${id}`, dependsOn: [], verifies: [], touchSet: [], verify: "x" });
 
 describe("renderDigest", () => {
+  it("lists premises awaiting spec approval with who chose them", () => {
+    const d1 = ev("premise", { kind: "decision", title: "Redis", source: "human" }, { id: "D1", by_role: "supervisor" });
+    expect(renderDigest(deriveFeature("f", [d1]), [], new Date())).toContain("Awaiting spec approval: D1 Redis [human]");
+  });
   it("names the phase as the feature moves forward", () => {
     expect(phaseOf(deriveFeature("f", []))).toBe("intake");
     const b = [ev("brief", { version: 1, sha256: "b", path: "p" })];
-    expect(phaseOf(deriveFeature("f", b))).toBe("brief-review");
-    const s = [...b, ev("human_decision", { decides: "approve_brief", target: "b" }), ev("spec", { version: 1, sha256: "s", path: "p" })];
+    expect(phaseOf(deriveFeature("f", b))).toBe("brainstorm");
+    const s = [...b, ev("spec", { version: 1, sha256: "s", path: "p" })];
     expect(phaseOf(deriveFeature("f", s))).toBe("spec-review");
     const p = [...s, ev("human_decision", { decides: "approve_spec", target: "s" }), ev("plan", { version: 1, sha256: "p1", path: "p", tasks: [task("T1")] })];
     expect(phaseOf(deriveFeature("f", p))).toBe("plan-review");
@@ -47,7 +51,8 @@ describe("renderDigest", () => {
   });
   it("keeps free text on one line and caps each field at 160 characters", () => {
     const tasks = [{ ...task("T1"), title: "line one\nline two" }, { ...task("T2"), title: "x".repeat(200) }, ...Array.from({ length: 40 }, (_, i) => task(`T${i + 3}`))];
-    const events = [ev("plan", { version: 1, sha256: "p", path: "p", tasks }), ev("premise", { kind: "hypothesis", title: "h1\nh2" }, { id: "H1", by_role: "supervisor" })];
+    const events = [ev("plan", { version: 1, sha256: "p", path: "p", tasks }), ev("premise", { kind: "hypothesis", title: "h1\nh2" }, { id: "H1", by_role: "supervisor" }),
+      ev("spec", { version: 1, sha256: "s", path: "p", premises: ["H1"] }), ev("human_decision", { decides: "approve_spec", target: "s" })];
     const text = renderDigest(deriveFeature("f", events), [ev("ops", { type: "limit_hit", summary: "claude\nuntil 11:00" }, { by_role: "plugin" })], new Date("2026-10-22T10:00:00.000Z"));
     expect(text.trimEnd().split("\n").length).toBeLessThanOrEqual(30);
     expect(text).toContain("Open hypotheses: H1 h1 h2");

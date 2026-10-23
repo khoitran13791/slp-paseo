@@ -20,13 +20,19 @@ const accepted = (t: string, commit: string) => [
 ];
 
 describe("deriveFeature", () => {
+  it("activates the replacement the human chose in a supersede at once", () => {
+    const st = deriveFeature("f", [premise("D1", "decision"), ev("spec", { version: 1, sha256: "s1", path: "p", premises: ["D1"] }), ev("human_decision", { decides: "approve_spec", target: "s1" }, { by_role: "supervisor" }),
+      premise("D2", "decision"), ev("supersede", {}, { supersedes: "D1", refs: ["D2"], by_role: "supervisor" })]);
+    expect(st.premises.get("D2")?.status).toBe("active");
+  });
   it("tracks premise statuses, including lead proposals activated by spec approval", () => {
-    const events = [premise("D1", "decision"), premise("H1", "hypothesis"), premise("D2", "decision", "lead"), ev("spec", { version: 1, sha256: "s1", path: "p", premises: ["D2"] }),
+    const events = [premise("D1", "decision"), premise("H1", "hypothesis"), premise("D2", "decision", "lead"), ev("spec", { version: 1, sha256: "s1", path: "p", premises: ["D1", "H1", "D2"] }),
       ev("human_decision", { decides: "approve_spec", target: "s1" }, { by_role: "supervisor" })];
     const st = deriveFeature("f", events);
     expect(st.premises.get("D1")?.status).toBe("active");
     expect(st.premises.get("H1")?.status).toBe("open");
     expect(st.premises.get("D2")?.status).toBe("active");
+    expect(deriveFeature("f", events.slice(0, 4)).premises.get("D1")?.status).toBe("proposed");
     expect(deriveFeature("f", events.slice(0, 4)).premises.get("D2")?.status).toBe("proposed");
   });
   it("does not activate a premise proposed with a spec version that was dropped", () => {
@@ -39,7 +45,8 @@ describe("deriveFeature", () => {
   });
 
   it("marks accepted work stale when a premise it depends on is superseded later, directly or via a task", () => {
-    const events = [premise("D1", "decision"), ev("plan", { version: 1, sha256: "p1", path: "p", tasks: [task("T1", ["D1"]), task("T2", ["T1"]), task("T3")] }),
+    const events = [premise("D1", "decision"), ev("spec", { version: 1, sha256: "s1", path: "p", premises: ["D1"] }), ev("human_decision", { decides: "approve_spec", target: "s1" }, { by_role: "supervisor" }),
+      ev("plan", { version: 1, sha256: "p1", path: "p", tasks: [task("T1", ["D1"]), task("T2", ["T1"]), task("T3")] }),
       ...accepted("T1", "c1"), ...accepted("T2", "c2"), ...accepted("T3", "c3"),
       premise("D2", "decision"), ev("supersede", {}, { supersedes: "D1", refs: ["D2"], by_role: "supervisor" })];
     const st = deriveFeature("f", events);
@@ -56,7 +63,8 @@ describe("deriveFeature", () => {
   });
 
   it("confirms a hypothesis and keeps dependent work accepted", () => {
-    const events = [premise("H1", "hypothesis"), ev("plan", { version: 1, sha256: "p", path: "p", tasks: [task("T1", [], ["H1"]), task("T2", ["H1"])] }),
+    const events = [premise("H1", "hypothesis"), ev("spec", { version: 1, sha256: "s1", path: "p", premises: ["H1"] }), ev("human_decision", { decides: "approve_spec", target: "s1" }, { by_role: "supervisor" }),
+      ev("plan", { version: 1, sha256: "p", path: "p", tasks: [task("T1", [], ["H1"]), task("T2", ["H1"])] }),
       ...accepted("T2", "c2"), ev("confirms", { evidence: "x" }, { refs: ["H1"] })];
     const st = deriveFeature("f", events);
     expect(st.premises.get("H1")?.status).toBe("confirmed");
@@ -146,13 +154,13 @@ describe("deriveFeature", () => {
       ev("ship_package", { commit: "abcdef123" }, { by_role: "supervisor" })];
     const st = deriveFeature("f", events);
     expect(st.tasks.get("T1")).toMatchObject({ status: "assigned", reopened: true, attempt: 2 });
-    expect(st.waitingOnHuman).toEqual(["approve brief v1", "approve spec v1", "decide C1 on D9", "approve ship abcdef1"]);
+    expect(st.waitingOnHuman).toEqual(["approve spec v1", "decide C1 on D9", "approve ship abcdef1"]);
   });
 });
 
 describe("acceptanceBlockers", () => {
   it("requires every task accepted, no open challenge, and green full-suite evidence on head", () => {
-    const approvedDocs = [ev("brief", { version: 1, sha256: "b", path: "p" }, { by_role: "supervisor" }), ev("human_decision", { decides: "approve_brief", target: "b" }, { by_role: "supervisor" }),
+    const approvedDocs = [ev("brief", { version: 1, sha256: "b", path: "p" }, { by_role: "supervisor" }),
       ev("spec", { version: 1, sha256: "s", path: "p" }), ev("human_decision", { decides: "approve_spec", target: "s" }, { by_role: "supervisor" })];
     const events = [...approvedDocs, ev("plan", { version: 1, sha256: "p", path: "p", tasks: [task("T1"), task("T2")] }), ev("plan_approved", { sha256: "p" }, { by_role: "supervisor" }), ...accepted("T1", "c1"),
       ev("challenge", { target: "T1", level: "plan" }, { id: "C1", by_role: "peer-impl" })];

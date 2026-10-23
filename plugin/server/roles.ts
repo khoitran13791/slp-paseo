@@ -20,7 +20,7 @@ export interface RoleSetup { vendor: Record<Role, Vendor>; profile: Partial<Reco
 interface ProfileLike { provider?: string; model?: string; thinkingOptionId?: string; featureValues?: Record<string, unknown> }
 /** `paseo.config.get().config`: providers and agentProfiles are top-level (not `agents.providers`). */
 interface DaemonConfigLike {
-  providers?: Record<string, { extends?: string } | undefined>;
+  providers?: Record<string, { extends?: string; paseoTools?: { enabled?: boolean } } | undefined>;
   agentProfiles?: ProfileLike[];
 }
 
@@ -28,10 +28,13 @@ export function resolveRoleSetup(raw: unknown, opts: { crossVendorReview: boolea
   const cfg = (raw ?? {}) as DaemonConfigLike;
   const vendor = {} as Record<Role, Vendor>;
   for (const role of ROLES) {
-    const base = cfg.providers?.[ROLE_PROVIDER[role]]?.extends;
+    const p = cfg.providers?.[ROLE_PROVIDER[role]];
+    const base = p?.extends;
     if (base !== "claude" && base !== "codex") {
       throw new Error(`SLP: provider ${ROLE_PROVIDER[role]} must exist in ~/.paseo/config.json and extend "claude" or "codex" (found ${base ?? "nothing"})`);
     }
+    // Paseo pre-approves its own MCP tools: terminals, schedules and set_agent_mode would bypass the sandbox and the permission policy (T21 B-3).
+    if (p?.paseoTools?.enabled !== false) throw new Error(`SLP: ${ROLE_PROVIDER[role]} must set paseoTools.enabled to false in ~/.paseo/config.json`);
     vendor[role] = base;
   }
   if (opts.crossVendorReview && vendor["peer-review"] === vendor["peer-impl"]) {
@@ -44,6 +47,10 @@ export function resolveRoleSetup(raw: unknown, opts: { crossVendorReview: boolea
     if (p) profile[role] = { model: p.model, thinkingOptionId: p.thinkingOptionId, featureValues: p.featureValues };
   }
   return { vendor, profile };
+}
+
+export function missingProfileError(role: Role): string {
+  return `SLP: no agent profile for ${ROLE_PROVIDER[role]}. Create one in Paseo (Settings → Agent profiles) with provider ${ROLE_PROVIDER[role]} and a model.`;
 }
 
 export function normalizeModel(model: string): string {

@@ -41,6 +41,8 @@ export interface PaseoLike {
 export interface Ctx {
   config: SlpConfig;
   setup(): RoleSetup;
+  /** Reads ~/.paseo/config.json again through the daemon and updates setup(): profiles made after the plugin started count (T21 B-1). */
+  refreshSetup(): Promise<RoleSetup>;
   identities: IdentityRegistry;
   stores: StoreRegistry;
   router: Router;

@@ -106,7 +106,10 @@ export class FakePaseo implements PaseoLike {
   }
 }
 
-export const TEST_SETUP: RoleSetup = { vendor: { supervisor: "claude", lead: "claude", "peer-impl": "claude", "peer-review": "codex" }, profile: { "peer-impl": { model: "claude-sonnet-5" } } };
+export const TEST_SETUP: RoleSetup = {
+  vendor: { supervisor: "claude", lead: "claude", "peer-impl": "claude", "peer-review": "codex" },
+  profile: { supervisor: { model: "claude-opus-5-5" }, lead: { model: "claude-opus-5-5" }, "peer-impl": { model: "claude-sonnet-5" }, "peer-review": { model: "gpt-6-astra" } },
+};
 
 export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: FakePaseo; repo: string; home: string; config: SlpConfig } {
   const repo = initRepo(); trustRepo(repo);
@@ -116,7 +119,7 @@ export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: 
   const identities = new IdentityRegistry(pjoin(home, "identities.json"));
   const router = new Router({ file: pjoin(home, "router.json"), now: () => new Date(), resolve: (to) => identities.current(to.role, to.project, to.feature, to.task ?? null)?.agentId ?? null, status: async (a) => paseo.agents.ref(a).status, send: (a, t, m, b) => paseo.agents.ref(a).send(t, { messageId: m, ...(b ? { activeTurnBehavior: b } : {}) }) });
   const ctx: Ctx = {
-    config, setup: () => TEST_SETUP, identities, stores: new StoreRegistry(home), router,
+    config, setup: () => TEST_SETUP, refreshSetup: async () => TEST_SETUP, identities, stores: new StoreRegistry(home), router,
     seen: new SeenIds(pjoin(home, "seen.json")), resumes: new ResumeQueue(pjoin(home, "resume.json")), nudges: new NudgeTracker(pjoin(home, "nudges.json")),
     paseo: () => paseo, run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs: [home], worktreeRoot: tmpDir("slp-wts-"),
     pendingPermissions: new Map(), log: () => undefined,

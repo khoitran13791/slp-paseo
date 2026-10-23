@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { normalizeModel, providerString, resolveRoleSetup, roleOfProvider } from "../server/roles";
+import { missingProfileError, normalizeModel, providerString, resolveRoleSetup, roleOfProvider } from "../server/roles";
 
-const providers = { "slp-supervisor": { extends: "claude" }, "slp-lead": { extends: "claude" }, "slp-peer-impl": { extends: "claude" }, "slp-peer-review": { extends: "codex" } };
+const off = { enabled: false };
+const providers = {
+  "slp-supervisor": { extends: "claude", paseoTools: off }, "slp-lead": { extends: "claude", paseoTools: off },
+  "slp-peer-impl": { extends: "claude", paseoTools: off }, "slp-peer-review": { extends: "codex", paseoTools: off },
+};
 
 describe("roles", () => {
   it("maps provider ids, with or without a model suffix", () => {
@@ -22,11 +26,20 @@ describe("roles", () => {
     expect(() => resolveRoleSetup({ agents: { providers } }, { crossVendorReview: true })).toThrow(/slp-supervisor/);
   });
   it("rejects a reviewer on the same vendor as the implementer", () => {
-    expect(() => resolveRoleSetup({ providers: { ...providers, "slp-peer-review": { extends: "claude" } } }, { crossVendorReview: true })).toThrow(/different vendor/);
-    expect(() => resolveRoleSetup({ providers: { ...providers, "slp-peer-review": { extends: "claude" } } }, { crossVendorReview: false })).not.toThrow();
+    expect(() => resolveRoleSetup({ providers: { ...providers, "slp-peer-review": { extends: "claude", paseoTools: off } } }, { crossVendorReview: true })).toThrow(/different vendor/);
+    expect(() => resolveRoleSetup({ providers: { ...providers, "slp-peer-review": { extends: "claude", paseoTools: off } } }, { crossVendorReview: false })).not.toThrow();
   });
   it("rejects a missing provider", () => {
     expect(() => resolveRoleSetup({ providers: { "slp-lead": { extends: "claude" } } }, { crossVendorReview: true })).toThrow(/slp-supervisor/);
+  });
+  it("refuses a role provider that still exposes Paseo tools (T21 B-3)", () => {
+    expect(() => resolveRoleSetup({ providers: { ...providers, "slp-lead": { extends: "claude", paseoTools: { disabledTools: ["create_agent"] } } } }, { crossVendorReview: true }))
+      .toThrow(/slp-lead must set paseoTools.enabled to false/);
+    expect(() => resolveRoleSetup({ providers: { ...providers, "slp-supervisor": { extends: "claude" } } }, { crossVendorReview: true }))
+      .toThrow(/slp-supervisor must set paseoTools.enabled to false/);
+  });
+  it("names the missing profile instead of sending a provider without a model", () => {
+    expect(missingProfileError("lead")).toMatch(/no agent profile for slp-lead/);
   });
   it("builds provider strings and normalizes models", () => {
     expect(providerString("lead", "claude-opus-5-5")).toBe("slp-lead/claude-opus-5-5");

@@ -11,7 +11,7 @@ import type { ToolDef } from "../mcp/server";
 import { contractQueues, contractsOf, holderOf, isContract } from "../planCheck";
 import { leadKickoff, reviewBrief, taskBrief } from "../prompts";
 import { verifyShipApproval } from "../quote";
-import { normalizeModel, providerString, type Role } from "../roles";
+import { missingProfileError, normalizeModel, providerString, type Role } from "../roles";
 import { acceptanceBlockers, deriveFeature, taskDef, type FeatureState } from "../store/derive";
 import { defineTool, ToolError } from "./define";
 
@@ -31,10 +31,13 @@ type Placement =
 const worktreePath = (ctx: Ctx, project: string, branch: string): string => join(ctx.worktreeRoot, project, branch.replaceAll("/", "-"));
 
 async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: string | null; task: string | null; placement: Placement; reviewCommit?: string | null; parent: string | null; title: string; prompt: string; model?: string; deferPrompt?: boolean }): Promise<{ agentId: string; ident: Identity }> {
-  const minted = ctx.identities.mint({ role, project: o.project, feature: o.feature, task: o.task, reviewCommit: o.reviewCommit ?? null, parentAgentId: o.parent });
+  try { await ctx.refreshSetup(); } catch (error) { throw new ToolError(error instanceof Error ? error.message : String(error)); }
   const profile = ctx.setup().profile[role] ?? {};
+  const model = o.model ?? profile.model;
+  if (!model) throw new ToolError(missingProfileError(role));
+  const minted = ctx.identities.mint({ role, project: o.project, feature: o.feature, task: o.task, reviewCommit: o.reviewCommit ?? null, parentAgentId: o.parent });
   const opts: CreateOptions = {
-    config: { provider: providerString(role, o.model ?? profile.model), ...(profile.thinkingOptionId ? { thinkingOptionId: profile.thinkingOptionId } : {}), ...(profile.featureValues ? { featureValues: profile.featureValues } : {}) },
+    config: { provider: providerString(role, model), ...(profile.thinkingOptionId ? { thinkingOptionId: profile.thinkingOptionId } : {}), ...(profile.featureValues ? { featureValues: profile.featureValues } : {}) },
     ...(o.parent ? { parent: o.parent } : {}), title: o.title, env: { SLP_TOKEN: minted.token },
     ...(o.deferPrompt ? {} : { prompt: o.prompt, clientMessageId: ctx.router.issue() }),
   };
@@ -139,6 +142,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
       roles: ["supervisor", "lead"],
       input: z.object({ role: z.enum(["lead", "peer-impl", "peer-review"]), feature: SLUG.optional(), task: z.string().optional(), model: z.string().optional(), prompt: z.string().min(1), merge_base: z.boolean().optional() }),
       run: (who, a) => serial(who.project, async () => {
+        try { await ctx.refreshSetup(); } catch (error) { throw new ToolError(error instanceof Error ? error.message : String(error)); } // the Peer default and the allowlist check read the profile below
         const feature = requireFeature(who, a.feature);
         const project = ctx.config.projects[who.project]!;
         const st = stateOf(ctx, who.project, feature);

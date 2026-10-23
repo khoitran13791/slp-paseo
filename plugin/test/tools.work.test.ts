@@ -7,7 +7,7 @@ import { headOf } from "../server/git";
 import { deriveFeature } from "../server/store/derive";
 import { buildTools } from "../server/tools";
 import { finalizeReview, processReportFor, retireAgent } from "../server/tools/work";
-import { bound, humanSays, makeCtx, sh } from "./helpers";
+import { bound, humanSays, makeCtx, sh, TEST_SETUP } from "./helpers";
 
 async function ready() {
   const w = makeCtx();
@@ -42,6 +42,22 @@ async function withLeadAndPlan(tasks: Array<Record<string, unknown>> = TASKS, be
 }
 
 describe("slp_spawn", () => {
+  it("names the missing agent profile instead of failing inside the client (T21 B-1)", async () => {
+    const r = await ready();
+    const bare = { ...TEST_SETUP, profile: {} };
+    r.ctx.setup = () => bare; r.ctx.refreshSetup = async () => bare;
+    const out = await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", prompt: "go" });
+    expect(out).toMatchObject({ isError: true, text: expect.stringMatching(/no agent profile for slp-lead/) });
+    expect(r.paseo.created).toHaveLength(0);
+  });
+  it("uses the current Peer profile when it spawns a Peer", async () => {
+    const r = await withLeadAndPlan();
+    let current = TEST_SETUP;
+    r.ctx.setup = () => current;
+    r.ctx.refreshSetup = async () => (current = { ...TEST_SETUP, profile: { ...TEST_SETUP.profile, "peer-impl": { model: "claude-opus-5-5" } } });
+    await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "go" });
+    expect((r.paseo.created.at(-1)!.config as { provider: string }).provider).toBe("slp-peer-impl/claude-opus-5-5");
+  });
   it("refuses a Lead before the brief is approved and starts one in an SLP worktree on feat/<feature> after", async () => {
     const w = makeCtx();
     const sup = bound(w.ctx, { role: "supervisor", project: "demo", feature: null, task: null, reviewCommit: null, parentAgentId: null }, "sup-1");
@@ -54,7 +70,7 @@ describe("slp_spawn", () => {
     expect(created).toMatchObject({ parent: "sup-1", title: "[Lead] cache" });
     expect(r.paseo.createdWorkspaces[0]).toMatchObject({ source: { kind: "directory", path: created.cwd }, title: "[Lead] cache" });
     expect(created.cwd.startsWith(r.ctx.worktreeRoot)).toBe(true);
-    expect((created.config as { provider: string }).provider).toBe("slp-lead");
+    expect((created.config as { provider: string }).provider).toBe("slp-lead/claude-opus-5-5");
     expect(r.lead).toMatchObject({ worktree: created.cwd, branch: "feat/cache", workspaceId: created.workspaceId });
     expect(r.lead.worktree).not.toBe(r.repo);
     expect(sh(r.lead.worktree!, "git", ["branch", "--show-current"])).toBe("feat/cache");
@@ -248,7 +264,7 @@ describe("report → review → accept", () => {
     expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/review/);
     await r.call(r.lead, "slp_spawn", { role: "peer-review", task: "T1", prompt: "review" });
     const revCreate = r.paseo.created[2]!;
-    expect((revCreate.config as { provider: string }).provider).toBe("slp-peer-review");
+    expect((revCreate.config as { provider: string }).provider).toBe("slp-peer-review/gpt-6-astra");
     expect(headOf(revCreate.cwd)).toBe(commit);
     const rev = r.ctx.identities.byAgent(revCreate.id)!;
     expect((await r.call(rev, "slp_review", { commit: "deadbeef", verdict: "pass", findings: [] })).isError).toBe(true);
@@ -376,6 +392,14 @@ describe("ship", () => {
 });
 
 describe("slp_checkpoint", () => {
+  it("uses the current profile when it rotates a Lead (profiles may change after start)", async () => {
+    const r = await withLeadAndPlan();
+    let current = TEST_SETUP;
+    r.ctx.setup = () => current;
+    r.ctx.refreshSetup = async () => (current = { ...TEST_SETUP, profile: { ...TEST_SETUP.profile, lead: { model: "claude-sonnet-5" } } });
+    await r.call(r.lead, "slp_checkpoint", { summary: "T1 next", pending_human: [], promises: [] });
+    expect((r.paseo.created.at(-1)!.config as { provider: string }).provider).toBe("slp-lead/claude-sonnet-5");
+  });
   it("rotates a Lead to a fresh agent in the same workspace and retires the old identity", async () => {
     const r = await withLeadAndPlan();
     const res = await r.call(r.lead, "slp_checkpoint", { summary: "T1 next", pending_human: [], promises: ["ship by Friday"] });

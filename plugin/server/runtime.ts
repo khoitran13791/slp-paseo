@@ -51,6 +51,7 @@ export function createRuntime(): Runtime {
     paseo: () => { if (!paseo) throw new Error("SLP: no Paseo client captured yet"); return paseo; },
     run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs, worktreeRoot: process.env.SLP_WORKTREES ?? join(homedir(), ".slp-worktrees"),
     pendingPermissions: new Map(), log: (message, error) => console.error(`[slp] ${message}`, error ?? ""),
+    refreshSetup,
   };
   const tools = buildTools(ctx);
   // No onCall: only the report tools mark ctx.toolCalls themselves (review m1).
@@ -59,6 +60,16 @@ export function createRuntime(): Runtime {
   const timer = setInterval(() => { if (paseo) void tick(ctx).catch((e) => console.error("[slp] tick failed", e)); }, 30_000); // tick is single-flight
   timer.unref();
 
+  let reconciled = false;
+  async function refreshSetup(): Promise<RoleSetup> {
+    if (!paseo) throw new Error("SLP: no Paseo client captured yet");
+    const r = await paseo.config.get();
+    setup = resolveRoleSetup(r.config, { crossVendorReview: config.flags.crossVendorReview });
+    // The setup at capture failed (profiles or providers made later, T21): the restart reconcile never ran, so run it now, once.
+    if (!reconciled) { reconciled = true; void reconcile(ctx).catch((e) => console.error("[slp] reconcile failed", e)); }
+    return setup;
+  }
+
   // Never awaited by hooks: non-SLP agents must not wait for, or fail on, SLP's setup (review B4).
   async function capture(p: unknown): Promise<void> {
     if (paseo) return;
@@ -66,14 +77,15 @@ export function createRuntime(): Runtime {
     setupPromise = paseo.config.get().then((r) => (setup = resolveRoleSetup(r.config, { crossVendorReview: config.flags.crossVendorReview })));
     setupPromise.catch((e) => console.error("[slp] role setup failed; SLP agents cannot be created until ~/.paseo/config.json is fixed", e));
     void checkRunner(config.sandbox.runner, home).then((problem) => { if (problem) console.error(`[slp] ${problem}. Verification will fail closed until this is fixed.`); });
-    void setupPromise.then(() => reconcile(ctx)).catch((e) => console.error("[slp] reconcile failed", e));
+    void setupPromise.then(() => { if (!reconciled) { reconciled = true; return reconcile(ctx); } }).catch((e) => console.error("[slp] reconcile failed", e));
   }
 
   return {
     ctx, capture,
     async transformCreate(req) {
       if (!roleOfProvider(req.config.provider)) return req;
-      if (!setup) await setupPromise;
+      // Not `await setupPromise`: once that promise rejected, a fixed config could never get through (review Codex 2026-10-23).
+      await refreshSetup(); // throws the config error for an SLP agent, never for a non-SLP one
       return transformCreate(req, {
         identities, config, setup: () => ctx.setup(), mcpUrl: () => `http://127.0.0.1:${config.mcp.port}/mcp`,
         promptFor: (ident) => promptFor(ident, { task: ident.feature && ident.task ? deriveFeature(ident.feature, ctx.stores.feature(ident.project, ident.feature).all()).tasks.get(ident.task) ?? null : null }),

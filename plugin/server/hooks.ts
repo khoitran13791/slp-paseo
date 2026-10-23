@@ -9,7 +9,7 @@ import { decidePermission, type PermissionLike } from "./permissions";
 import type { Address } from "./router";
 import { deriveFeature } from "./store/derive";
 import { finalizeReview, pipelineDeps, processReportFor, retireAgent } from "./tools/work";
-import { watchTick } from "./watch";
+import { humanWaits, watchTick } from "./watch";
 import { isLimitTurn, resumeAt, usageWindowsFrom } from "./watchdog";
 
 /** The human's prompt is already in the timeline when the turn starts; record it before any tool checks a quote. */
@@ -265,6 +265,14 @@ async function tickOnce(ctx: Ctx): Promise<void> {
           if (age > 2 * limit && !ctx.flags.challengeNudged.has(`${key}:sup`)) { ctx.flags.challengeNudged.add(`${key}:sup`); notify(ctx, supervisorAddress(project, feature), `${feature}: challenge ${c.id} on ${c.target} has waited ${Math.round(age)} min without an answer from the Lead.`); }
           else if (age > limit && !ctx.flags.challengeNudged.has(`${key}:lead`)) { ctx.flags.challengeNudged.add(`${key}:lead`); notify(ctx, leadAddress(project, feature), `${c.id} has waited ${Math.round(age)} min. Resolve it (slp_resolve / slp_rule) or escalate it.`); }
         }
+        if (ctx.identities.current("supervisor", project, feature)) {
+          for (const w of humanWaits(ctx, project, feature, ctx.now())) {
+            if (ctx.flags.humanReminded.has(w.key)) continue;
+            ctx.flags.humanReminded.add(w.key);
+            // The notice may sit in the queue while the Supervisor works; it checks the state before it asks (review Codex 2026-10-23).
+            notify(ctx, supervisorAddress(project, feature), `${feature}: "${w.what}" has waited on the human for ${w.minutes} min. Check slp_state first; if it still waits, remind them in one line in your tab, otherwise ignore this.`);
+          }
+        }
       } catch (error) { ctx.log(`challenge scan of ${project}/${feature} failed`, error); }
     }
   }
@@ -285,6 +293,10 @@ export async function reconcile(ctx: Ctx): Promise<void> {
         const ref = ctx.paseo().agents.ref(ident.agentId);
         const snapshot = await ref.refresh().catch(() => undefined); // undefined: could not ask; keep the agent
         if (snapshot === null || ref.status === "closed") { retireLost(ctx, ident); continue; }
+        // pendingPermissions lives in memory: after a plugin reload, a popup already open would never be reminded (T21 row 24).
+        // Its age restarts at the reload; the snapshot carries no request time.
+        const open = ref.pendingPermissions?.[0];
+        if (open && !ctx.pendingPermissions.has(ident.agentId)) ctx.pendingPermissions.set(ident.agentId, { name: String(open.name ?? open.kind ?? "permission"), since: ctx.now().getTime() });
         // An agent waiting for a usage-limit resume has nothing new to process; replaying its old limit reply would burn a resume attempt (review Codex 2026-10-22, round 2).
         const waiting = ctx.resumes.jobs().some((j) => j.agentId === ident.agentId);
         if (ref.status === "idle" && ident.role === "peer-impl" && !waiting) await onTurnEnded(ctx, { agent: { id: ident.agentId }, outcome: { kind: "completed" }, replay: true });

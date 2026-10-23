@@ -18,6 +18,8 @@ export interface AgentRefLike {
   refresh(): Promise<unknown>;
   readonly status: string | null;
   readonly lastUsage: { contextWindowUsedTokens?: number; contextWindowMaxTokens?: number } | null;
+  /** SDK PaseoAgentHandle.pendingPermissions (@getpaseo/client 0.12 index.d.ts:274): the requests open right now. */
+  readonly pendingPermissions: ReadonlyArray<{ id?: string; name?: string; kind?: string }> | null;
   timeline: { refetch(o: { direction: "tail"; limit: number }): Promise<{ epoch?: string; entries?: Array<{ item?: unknown; timestamp?: string }> }> };
   send(text: string, o?: { messageId?: string; activeTurnBehavior?: "steer" | "interrupt" }): Promise<void>;
   respondToPermission(o: { requestId: string; response: { behavior: "allow" | "deny"; message?: string } }): Promise<void>;
@@ -59,7 +61,8 @@ export interface Ctx {
   now(): Date;
   toolCalls: Map<string, number>;
   turnStarts: Map<string, number>;
-  flags: { checkpointAsked: Set<string>; challengeNudged: Set<string> };
+  /** humanReminded: waits on the human already reminded once (spec §6.6). */
+  flags: { checkpointAsked: Set<string>; challengeNudged: Set<string>; humanReminded: Set<string> };
   /** ~/.slp and ~/.paseo: no agent tool may touch them (T14). */
   stateDirs: string[];
   /** Where SLP creates its own worktrees: outside ~/.paseo/worktrees, so Paseo treats them as plain directories (T9). */

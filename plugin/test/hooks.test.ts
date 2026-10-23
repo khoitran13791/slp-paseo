@@ -225,6 +225,35 @@ describe("turn_ended", () => {
 });
 
 describe("permissions, archive, tick", () => {
+  it("tells the Supervisor once when the spec or a permission has waited on the human too long", async () => {
+    const w = world();
+    w.store.append({ feature: "cache", kind: "spec", by_role: "lead", by_agent: "lead-1", data: { version: 1, sha256: "s1", path: "p", premises: [] } });
+    w.ctx.pendingPermissions.set("peer-1", { name: "Read", since: Date.now() });
+    const later = new Date(Date.now() + 31 * 60_000);
+    w.ctx.now = () => later;
+    await tick(w.ctx);
+    await tick(w.ctx);
+    const toSup = w.ctx.router.pending().filter((p) => p.to.role === "supervisor" && p.text.includes("waited on the human")).map((p) => p.text);
+    const sent = w.paseo.sent.filter((s) => s.agentId === "sup-1" && s.text.includes("waited on the human")).map((s) => s.text);
+    const all = [...toSup, ...sent];
+    expect(all.filter((t) => t.includes("approve spec v1"))).toHaveLength(1);
+    expect(all.filter((t) => t.includes("permission Read"))).toHaveLength(1);
+  });
+  it("does not remind the human about a feature that was halted or shipped", async () => {
+    const w = world();
+    w.store.append({ feature: "cache", kind: "spec", by_role: "lead", by_agent: "lead-1", data: { version: 1, sha256: "s1", path: "p", premises: [] } });
+    w.store.append({ feature: "cache", kind: "human_decision", by_role: "supervisor", by_agent: "sup-1", data: { decides: "change_goal", target: "", quote: "đổi hướng" } });
+    w.ctx.now = () => new Date(Date.now() + 31 * 60_000);
+    await tick(w.ctx);
+    await w.ctx.router.flush();
+    expect([...w.ctx.router.pending(), ...w.paseo.sent].some((m) => m.text.includes("waited on the human"))).toBe(false);
+  });
+  it("finds a permission that was already pending when the plugin restarted (T21 row 24)", async () => {
+    const w = world();
+    w.paseo.pendingOf.set("lead-1", [{ id: "perm-1", name: "Read" }]);
+    await reconcile(w.ctx);
+    expect(w.ctx.pendingPermissions.get("lead-1")?.name).toBe("Read");
+  });
   it("denies reserved commands and state-dir access, allows a Claude Peer's sandboxed shell, and leaves outside reads to the human", async () => {
     const w = world();
     await onPermissionRequested(w.ctx, "peer-1", { id: "r1", name: "Bash", input: { command: "git push" } });

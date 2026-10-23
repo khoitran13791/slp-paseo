@@ -65,6 +65,7 @@ export class FakePaseo implements PaseoLike {
   statuses = new Map<string, string>();
   timelines = new Map<string, unknown[]>();
   epochs = new Map<string, string>();
+  pendingOf = new Map<string, Array<{ id?: string; name?: string; kind?: string }>>();
   usageOf = new Map<string, { contextWindowUsedTokens: number; contextWindowMaxTokens: number }>();
   usage: unknown = [];
   daemonConfig: unknown = {};
@@ -75,6 +76,7 @@ export class FakePaseo implements PaseoLike {
         refresh: async () => (self.gone.has(id) ? null : {}),
         get status() { return self.statuses.get(id) ?? "idle"; },
         get lastUsage() { return self.usageOf.get(id) ?? null; },
+        get pendingPermissions() { return self.pendingOf.get(id) ?? null; },
         timeline: { refetch: async () => ({ epoch: self.epochs.get(id) ?? "e1", entries: (self.timelines.get(id) ?? []).map((item) => ({ item, timestamp: (item as { timestamp?: string }).timestamp })) }) },
         send: async (text, o) => { if (self.failSend.has(id)) throw new Error("send failed"); self.sent.push({ agentId: id, text, messageId: o?.messageId, behavior: o?.activeTurnBehavior }); },
         respondToPermission: async (o) => { self.responses.push({ agentId: id, requestId: o.requestId, behavior: o.response.behavior, message: o.response.message }); },
@@ -132,7 +134,7 @@ export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: 
   const ctx: Ctx = {
     config, setup: () => TEST_SETUP, refreshSetup: async () => TEST_SETUP, identities, stores: new StoreRegistry(home), router,
     seen: new SeenIds(pjoin(home, "seen.json")), marks: new TimelineMarks(pjoin(home, "timeline-marks.json")), resumes: new ResumeQueue(pjoin(home, "resume.json")), nudges: new NudgeTracker(pjoin(home, "nudges.json")),
-    paseo: () => paseo, run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs: [home], worktreeRoot: tmpDir("slp-wts-"),
+    paseo: () => paseo, run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set(), humanReminded: new Set() }, stateDirs: [home], worktreeRoot: tmpDir("slp-wts-"),
     pendingPermissions: new Map(), log: () => undefined,
   };
   paseo.beforeCreate = (req) => transformCreate(req, { identities, config, setup: () => TEST_SETUP, mcpUrl: () => "http://127.0.0.1:1/mcp", promptFor: (i) => `PROMPT ${i.role}`, toolNames: () => [], stateDirs: [], claudePluginDir: null, codexHome: () => pjoin(home, "codex-home") });

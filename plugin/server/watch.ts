@@ -102,6 +102,28 @@ function activitySeq(events: readonly SlpEvent[]): number {
 const label = (i: Identity) => (i.role === "lead" ? "lead" : i.role === "peer-review" ? `review ${i.task}` : String(i.task));
 const watchedAgents = (ctx: Ctx, project: string, feature: string) => ctx.identities.active(project).filter((i) => i.feature === feature && i.role !== "supervisor" && i.agentId);
 
+/** What has waited on the human longer than limits.humanReminderMinutes, keyed so each wait is reminded once. */
+export function humanWaits(ctx: Ctx, project: string, feature: string, now: Date): Array<{ key: string; what: string; minutes: number }> {
+  const events = ctx.stores.feature(project, feature).all();
+  const st = deriveFeature(feature, events);
+  // Same exclusion as the watch: a halted or shipped feature waits on nobody (review Codex 2026-10-23).
+  if (st.halted || events.some((e) => e.kind === "shipped")) return [];
+  const out: Array<{ key: string; what: string; minutes: number }> = [];
+  const add = (key: string, what: string, sinceMs: number) => {
+    const m = minutes(sinceMs, now);
+    if (m >= ctx.config.limits.humanReminderMinutes) out.push({ key: `${project}/${feature}/${key}`, what, minutes: m });
+  };
+  if (st.spec && !st.spec.approved) add(`spec:${st.spec.sha256}`, `approve spec v${st.spec.version}`, Date.parse(st.spec.ts));
+  const pkg = [...events].reverse().find((e) => e.kind === "ship_package");
+  if (pkg && !events.some((e) => e.kind === "shipped" && e.seq > pkg.seq)) add(`ship:${String(pkg.data.commit)}`, `approve ship ${String(pkg.data.commit).slice(0, 7)}`, Date.parse(pkg.ts));
+  for (const c of st.challenges.values()) if (c.open && c.byRole === "supervisor") add(`c:${c.id}`, `decide ${c.id} on ${c.target}`, Date.parse(c.ts));
+  for (const a of watchedAgents(ctx, project, feature)) {
+    const perm = ctx.pendingPermissions.get(a.agentId!);
+    if (perm) add(`perm:${a.agentId}:${perm.since}`, `permission ${perm.name} for ${label(a)}`, perm.since);
+  }
+  return out;
+}
+
 async function agentPack(ctx: Ctx, ident: Identity, now: Date): Promise<string[]> {
   const agentId = ident.agentId!;
   const ref = ctx.paseo().agents.ref(agentId);

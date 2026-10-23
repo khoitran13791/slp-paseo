@@ -52,7 +52,7 @@ export function createRuntime(): Runtime {
     marks: new TimelineMarks(join(home, "timeline-marks.json"), (e) => console.error("[slp] could not write timeline-marks.json; keeping marks in memory", e)),
     setup: () => { if (!setup) throw new Error("SLP: role setup not loaded yet"); return setup; },
     paseo: () => { if (!paseo) throw new Error("SLP: no Paseo client captured yet"); return paseo; },
-    run, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set() }, stateDirs, worktreeRoot: process.env.SLP_WORKTREES ?? join(homedir(), ".slp-worktrees"),
+    run, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set(), humanReminded: new Set() }, stateDirs, worktreeRoot: process.env.SLP_WORKTREES ?? join(homedir(), ".slp-worktrees"),
     pendingPermissions: new Map(), log: (message, error) => console.error(`[slp] ${message}`, error ?? ""),
     refreshSetup,
   };

@@ -18,7 +18,7 @@ describe("parseSlpConfig", () => {
     const c = parseSlpConfig(minimal);
     expect(c.projects.demo).toMatchObject({ baseBranch: "origin/main", maxWriters: 2 });
     expect(c.flags).toEqual({ ask: true, evidenceCheck: true, touchSetGuard: true, crossVendorReview: true, supervisorPlanApproval: true, autoResume: true, watch: true });
-    expect(c.limits).toEqual({ resumeMaxAttempts: 6, challengeAnswerMinutes: 30, noReportNudges: 1, verifyTimeoutSeconds: 900, maxCommitFiles: 500 });
+    expect(c.limits).toEqual({ resumeMaxAttempts: 6, challengeAnswerMinutes: 30, noReportNudges: 1, verifyTimeoutSeconds: 900, maxCommitFiles: 500, humanReminderMinutes: 30 });
     expect(c.sandbox.runner).toEqual(["codex", "sandbox", "-P", "slp-verify", "-C", "{worktree}", "--"]);
     expect(c.sandbox.claudeAllowedDomains).toEqual(["registry.npmjs.org", "pypi.org", "files.pythonhosted.org"]);
     expect(c.rotation).toEqual({ contextRatio: 0.6, maxTurns: 200 });

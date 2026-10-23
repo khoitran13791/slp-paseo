@@ -29,6 +29,7 @@ export const SlpConfigSchema = z.object({
     noReportNudges: z.number().int().nonnegative().default(1),
     verifyTimeoutSeconds: z.number().int().positive().default(900),
     maxCommitFiles: z.number().int().positive().default(500),
+    humanReminderMinutes: z.number().positive().default(30),
   }).prefault({}),
   models: z.object({ allowed: z.array(z.string()).default([]) }).prefault({}),
   sandbox: z.object({

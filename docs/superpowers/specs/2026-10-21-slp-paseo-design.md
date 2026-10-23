@@ -56,7 +56,7 @@
 
 **Decisions:**
 - Supervisor là agent Paseo độc lập, đầu mối chính của anh; lo cả vận hành lẫn tiền đề/mục tiêu.
-- Plugin mỏng (server-only, không UI) làm cảm biến + tay chân + người gác cổng; phán đoán để cho agent.
+- Plugin chủ yếu chạy trên server (cảm biến + tay chân + người gác cổng); phần client chỉ dùng để đánh thức timer và cho view trace; phán đoán để cho agent (rev 5.9).
 - 1 Supervisor + 1 Lead / feature, nhiều feature song song, writer tuần tự trong mỗi feature. Supervisor đọc được digest của feature khác (chỉ đọc). Contract chung: feature được duyệt plan trước giữ contract; không xếp được thì hỏi anh.
 - Giám sát: mỗi 15 phút plugin gửi Supervisor một gói kiểm do plugin dựng (không phải transcript); Supervisor phán ổn / theo dõi / can thiệp; can thiệp Peer luôn đi qua Lead.
 - Anh giữ: brainstorm (bước kỹ nhất), spec, ship (theo commit hash), merge, mọi đổi goal/cost/tiền đề. Không có cổng brief (rev 5.9).
@@ -112,7 +112,7 @@ Không gắn với project nào. Lần chạy đầu: một project mới, anh �
 | Tương tác của anh | Chủ yếu brainstorm với Supervisor. Câu khó thì Supervisor gọi Lead vào cùng nghĩ, và anh tranh luận thẳng với Lead được. Thỉnh thoảng anh nhắn Peer | Đổi hướng ở Lead/Peer phải được ghi vào state. Brainstorm kỹ là chỗ duy nhất ý anh vào hệ thống; từ spec trở đi agent chỉ làm theo cái đã chốt (rev 5.9) |
 | Cổng của anh | Spec (điểm kết của brainstorm) và ship (theo commit hash); merge luôn do anh. **Không có cổng brief** (rev 5.9) | Smoke T21: phỏng vấn nông (1–2 câu, Supervisor tự chọn D2/D3), Lead không chất vấn brief, còn câu "duyệt" spec không bắt được gì (mâu thuẫn trong spec là reviewer tìm ra). Vì vậy dồn công chú ý vào một buổi brainstorm kỹ. Supervisor duyệt plan trở xuống |
 | Ship | Gom một lần cuối feature: diff tóm tắt, bằng chứng chạy lại trên đúng commit, rulings, giả thuyết còn mở | Một lần duyệt có bằng chứng thay cho nhiều "commit"/"ok" |
-| Kiến trúc | Plugin mỏng server-only + file state + prompt theo vai | Phương án 2/3; UI để sau khi có số liệu |
+| Kiến trúc | Plugin chủ yếu server + file state + prompt theo vai. Rev 5.9: thêm phần client nhỏ (RPC "wake" cho timer; view trace theo spec riêng) | Phương án 2/3. T21: timer chết sau reload khi không có hook nào, và anh không lần ra một feature qua cả chục tab |
 | Số Supervisor | 1 / feature: anh mở một Supervisor cho mỗi ý tưởng; nó gắn với feature từ brief v1 và chỉ tạo một Lead. Đọc digest feature khác (chỉ đọc). Contract chung: plan duyệt trước giữ contract (§7.1 Giữ contract); không xếp được thì hỏi anh. Xoay vòng khi context đầy | Một Supervisor chung cho cả project trộn chat của anh với sự kiện của mọi feature; một câu "duyệt" khớp mọi cổng đang chờ (kiểm quote chỉ lọc theo agent và thời gian); phỏng vấn của nhiều feature dồn vào một context. Phần thật sự xuyên feature (so touch set, chủ contract) plugin làm được |
 | Giám sát | Mỗi `watch.intervalMinutes` (15) plugin gửi Supervisor một gói kiểm về Lead và Peer của feature; Supervisor phán ổn / theo dõi / can thiệp (§7.7) | Anh đã gặp agent quay vòng/overthink và đi sai hướng, phát hiện muộn; phán đoán để Supervisor, plugin chỉ gom số liệu |
 | Song song | Nhiều feature song song (mỗi feature 1 Lead, 1 worktree); writer tuần tự trong feature | Scope tách rời thật mới song song |
@@ -129,7 +129,7 @@ Không gắn với project nào. Lần chạy đầu: một project mới, anh �
 ## 3. Phạm vi
 
 **Trong v1:**
-- Plugin Paseo `slp` (server-only) với các thành phần ở §7.
+- Plugin Paseo `slp` (phần server với các thành phần ở §7; phần client chỉ có RPC "wake", rev 5.9).
 - 4 file prompt vai (Supervisor, Lead, Peer-impl, Peer-review).
 - Mẫu provider ID cho `~/.paseo/config.json` và `~/.slp/config.json`.
 - Format brief / spec / plan (§6).
@@ -428,7 +428,7 @@ Agent chờ permission của anh cũng hiện trong gói kiểm, và Supervisor 
 
 ## 7. Plugin `slp`
 
-Server-only (`index.server.ts`), chạy trên daemon kể cả khi app đóng.
+Phần server (`index.server.ts`) chạy trên daemon kể cả khi app đóng, và giữ mọi luật, state và thao tác git. Rev 5.9: phần client chỉ gọi RPC "wake" khi app mở, để timer chạy được sau khi reload plugin mà chưa có hook nào (§7.1 Nhịp kiểm); nó không quyết gì. View trace có spec riêng (§3).
 
 **Luật chung:**
 - Agent SLP không có tool Paseo nào (`paseoTools.enabled: false` cho cả 4 provider ID; rev 5.9). Mọi tạo agent, nhắn tin, báo cáo đi qua MCP server `slp` do plugin inject.

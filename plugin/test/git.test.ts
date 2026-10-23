@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { addWorktree, changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, nestedRepos, NoChangesError, removeWorktree, startMerge, trackedChanges, trustRepo, unsafeGitDrivers, UntrustedGitDirError } from "../server/git";
@@ -211,13 +211,15 @@ describe("git helpers", () => {
   });
   it("handles a repo whose ls-files output exceeds Node's default 1 MiB buffer", () => {
     const r = repo(); const dir = join(r, "src");
-    mkdirSync(dir);
-    for (let i = 0; i < 15000; i++) writeFileSync(join(dir, `module-with-a-long-name-${String(i).padStart(6, "0")}.ts`), "x\n");
-    sh(r, "git", ["add", "-A"]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "many files"]);
-    expect(git(r, ["ls-files", "-s", "-z"]).stdout.length).toBeGreaterThan(1 << 20);
-    expect(nestedRepos(r)).toEqual([]);
-    writeFileSync(join(r, "one-more.ts"), "y\n");
-    expect(commitAll(r, { message: "T1: one more", trailers: {}, exclude: [] })).toBe(headOf(r));
+    try {
+      mkdirSync(dir);
+      for (let i = 0; i < 15000; i++) writeFileSync(join(dir, `module-with-a-long-name-${String(i).padStart(6, "0")}.ts`), "x\n");
+      sh(r, "git", ["add", "-A"]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "many files"]);
+      expect(git(r, ["ls-files", "-s", "-z"]).stdout.length).toBeGreaterThan(1 << 20);
+      expect(nestedRepos(r)).toEqual([]);
+      writeFileSync(join(r, "one-more.ts"), "y\n");
+      expect(commitAll(r, { message: "T1: one more", trailers: {}, exclude: [] })).toBe(headOf(r));
+    } finally { rmSync(r, { recursive: true, force: true }); }
   }, 60_000);
   it("reports a git that cannot start as a failed call instead of a TypeError, honouring allowFail", () => {
     const r = repo(); const saved = process.env.PATH;

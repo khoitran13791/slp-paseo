@@ -12,6 +12,10 @@ const premises = new Map<string, PremiseState>([
 ]);
 
 describe("role prompts", () => {
+  it("tells Peers that a reply after their report needs no new report (T21 B-7)", () => {
+    expect(promptFor(ident("peer-impl"), { task })).toContain("After your report, a turn that changes no file needs no tool");
+    expect(promptFor(ident("peer-review"), { task })).toContain("Once your review is in, answer questions without a new slp_review");
+  });
   it("every role shares the common rules", () => {
     for (const role of ["supervisor", "lead", "peer-impl", "peer-review"] as const) {
       const p = promptFor(ident(role, role === "supervisor" ? { feature: null } : {}), { task });

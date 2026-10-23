@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Identity } from "../server/identity";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { edgeAllowed, Router, steerAllowed } from "../server/router";
 import { tmpDir } from "./helpers";
 
@@ -33,6 +33,15 @@ describe("edgeAllowed (spec §7.3)", () => {
 });
 
 describe("Router", () => {
+  it("reports whether its queue is on disk", () => {
+    const dir = tmpDir(); const file = join(dir, "router.json");
+    const r = new Router({ file, now: () => new Date(), resolve: () => null, status: async () => "idle", send: async () => undefined });
+    r.enqueue({ role: "lead", project: "demo", feature: "f" }, "x");
+    expect(r.durable).toBe(true);
+    rmSync(file); mkdirSync(file);
+    r.enqueue({ role: "lead", project: "demo", feature: "f" }, "y");
+    expect(r.durable).toBe(false);
+  });
   function make(file: string, statuses: Map<string, string>, sent: Array<[string, string, string]>) {
     return new Router({ file, now: () => new Date("2026-10-22T00:00:00Z"), resolve: (to) => `${to.role}-${to.feature}`, status: async (a) => statuses.get(a) ?? null, send: async (a, t, m) => { sent.push([a, t, m]); } });
   }

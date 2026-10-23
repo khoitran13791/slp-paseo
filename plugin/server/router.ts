@@ -105,7 +105,11 @@ export class Router {
     return delivered;
   }
 
+  private saved = true;
+  /** False while the last write of router.json failed: the queue lives only in memory, and a restart would lose it (review Codex 2026-10-23). */
+  get durable(): boolean { return this.saved; }
+
   private save(): void {
-    try { writeJson(this.deps.file, this.state); } catch (error) { this.deps.onError?.(error); }
+    try { writeJson(this.deps.file, this.state); this.saved = true; } catch (error) { this.saved = false; this.deps.onError?.(error); }
   }
 }

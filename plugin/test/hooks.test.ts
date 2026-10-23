@@ -461,3 +461,110 @@ describe("messages to SLP agents go through the router", () => {
     expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("Verify failed"))).toBe(true);
   });
 });
+
+describe("report notices (T21 B-5, B-7)", () => {
+  const reportT1 = (w: ReturnType<typeof world>, extra: Record<string, unknown> = {}) =>
+    w.store.append({ feature: "cache", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done", message: "add a", ...extra } });
+  const turn = async (w: ReturnType<typeof world>, reported = false) => {
+    await new Promise((r) => setTimeout(r, 5));
+    onTurnStarted(w.ctx, "peer-1");
+    if (reported) w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+  };
+  const leadNotices = (w: ReturnType<typeof world>, re: RegExp) => w.paseo.sent.filter((s) => s.agentId === "lead-1" && re.test(s.text)).length;
+
+  it("tells the Lead about a commit once, and does not nudge a Peer that already reported (T21 B-5, B-7)", async () => {
+    const w = world();
+    onTurnStarted(w.ctx, "peer-1");
+    writeFileSync(join(w.wt, "a.ts"), "x");
+    reportT1(w);
+    w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    expect(leadNotices(w, /T1 committed/)).toBe(1);
+    for (let i = 0; i < 2; i++) { await turn(w); await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done }); } // the human chats with the Peer
+    await w.ctx.router.flush();
+    expect(leadNotices(w, /T1 committed/)).toBe(1);
+    expect(w.ctx.router.pending().filter((p) => p.text.includes("T1 committed"))).toHaveLength(0);
+    expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("without slp_report"))).toBe(false);
+    expect(w.store.all().filter((e) => e.kind === "ops" && e.data.type === "report_notified")).toHaveLength(1);
+  });
+  it("nudges a Peer that keeps changing files after its report without reporting, then escalates to the Lead", async () => {
+    const w = world();
+    onTurnStarted(w.ctx, "peer-1");
+    writeFileSync(join(w.wt, "a.ts"), "x");
+    reportT1(w);
+    w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    const limit = w.ctx.config.limits.noReportNudges;
+    for (let i = 0; i <= limit; i++) { // the Lead asked for a fix; the Peer edits but never calls slp_report
+      await turn(w);
+      writeFileSync(join(w.wt, "a.ts"), `y${i}`);
+      await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    }
+    await w.ctx.router.flush();
+    expect(w.paseo.sent.filter((s) => s.agentId === "peer-1" && s.text.includes("without slp_report"))).toHaveLength(limit);
+    expect(leadNotices(w, /stopped without reporting/)).toBe(1);
+  });
+  it("does not count files the plugin deliberately left uncommitted as new work", async () => {
+    const w = world();
+    onTurnStarted(w.ctx, "peer-1");
+    writeFileSync(join(w.wt, "a.ts"), "x");
+    writeFileSync(join(w.wt, ".env"), "TOKEN=fake");
+    reportT1(w);
+    w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    await turn(w); // a chat turn with no edits; .env is still there, excluded by the plugin
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    await w.ctx.router.flush();
+    expect(w.paseo.sent.some((s) => s.agentId === "peer-1" && s.text.includes("without slp_report"))).toBe(false);
+  });
+  it("tells the Lead again on a new report of an unchanged commit (it carries the Peer's answer)", async () => {
+    const w = world();
+    onTurnStarted(w.ctx, "peer-1");
+    writeFileSync(join(w.wt, "a.ts"), "x");
+    reportT1(w);
+    w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    await turn(w, true);
+    reportT1(w, { report: "edge case 2d checked, no change needed" });
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    await w.ctx.router.flush();
+    expect(leadNotices(w, /T1 committed/)).toBe(2);
+  });
+  it("tells the Lead about a blocked report once", async () => {
+    const w = world();
+    onTurnStarted(w.ctx, "peer-1");
+    reportT1(w, { status: "blocked", report: "needs the Redis contract" });
+    w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    for (let i = 0; i < 2; i++) { await turn(w); await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done }); }
+    await w.ctx.router.flush();
+    expect(leadNotices(w, /T1 is blocked/)).toBe(1);
+  });
+  it("records no notice key while the router queue is not on disk, so the notice is sent again", async () => {
+    const w = world();
+    const file = join(w.home, "router.json");
+    rmSync(file, { force: true }); mkdirSync(file); // every write of router.json now fails
+    onTurnStarted(w.ctx, "peer-1");
+    writeFileSync(join(w.wt, "a.ts"), "x");
+    reportT1(w);
+    w.ctx.toolCalls.set("peer-1", Date.now() + 1);
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    expect(w.store.all().some((e) => e.kind === "ops" && e.data.type === "report_notified")).toBe(false);
+    await turn(w);
+    await onTurnEnded(w.ctx, { agent: { id: "peer-1" }, outcome: done });
+    await w.ctx.router.flush();
+    expect(leadNotices(w, /T1 committed/)).toBe(2);
+  });
+  it("does not nudge a reviewer whose review already counted", async () => {
+    const w = world();
+    const rwt = join(w.home, "rev4"); sh(w.repo, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "--detach", rwt, "main"]);
+    bound(w.ctx, { role: "peer-review", project: "demo", feature: "cache", task: "T1", worktree: rwt, reviewCommit: "abc", parentAgentId: "lead-1" }, "rev-4");
+    w.store.append({ feature: "cache", kind: "review", by_role: "peer-review", by_agent: "rev-4", data: { task: "T1", commit: "abc", verdict: "pass", blocking: 0, findings: [] } });
+    w.ctx.toolCalls.set("rev-4", Date.now() + 1);
+    await onTurnEnded(w.ctx, { agent: { id: "rev-4" }, outcome: done });
+    await new Promise((r) => setTimeout(r, 5));
+    onTurnStarted(w.ctx, "rev-4");
+    await onTurnEnded(w.ctx, { agent: { id: "rev-4" }, outcome: done });
+    expect(w.paseo.sent.some((s) => s.agentId === "rev-4" && s.text.includes("without slp_report"))).toBe(false);
+  });
+});

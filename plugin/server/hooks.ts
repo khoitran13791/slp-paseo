@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { appendPlugin, featuresTouching, leadAddress, notify, supervisorAddress, syncHumanMessages, type Ctx } from "./context";
 import { processChallengeEvidence } from "./evidence";
-import { trackedChanges } from "./git";
+import { changedFiles, trackedChanges } from "./git";
 import type { TimelineItemLike } from "./human";
 import type { Identity } from "./identity";
 import { decidePermission, type PermissionLike } from "./permissions";
@@ -75,6 +75,20 @@ async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean)
       if (ev) notify(ctx, leadAddress(ident.project, feature), `Evidence for ${challenge.id}: ${ev.commit ? `commit ${ev.commit.slice(0, 7)}, ` : ""}repro exit ${ev.exitCode ?? "n/a"} (sandboxed).`);
     }
   }
+  // One notice per report and result: a report seen again on a later turn (the human talked to the Peer, a reconcile replay) is not news (T21 B-5).
+  const report = out ? [...events].reverse().find((e) => e.kind === "report" && e.by_agent === ident.agentId) : undefined;
+  const result = !out ? null : out.outcome === "committed" ? (out.runnerError ? "runner" : out.evidenceOk === null ? "skipped" : out.evidenceOk ? "ok" : "fail") : out.outcome;
+  if (out && events.some((e) => e.kind === "ops" && e.data.type === "report_notified" && e.data.reportSeq === (report?.seq ?? null) && e.data.result === result)) {
+    // Checked before nudges.reset, so repeated dirty turns still reach noReportNudges and escalate.
+    // Files the plugin left out on purpose (sensitive, protected) are not new work.
+    const leftOut = new Set(out.outcome === "committed" ? [...out.flags.excludedSensitive, ...out.flags.excludedProtected] : []);
+    if (!calledTool && ident.worktree && changedFiles(ident.worktree).some((f) => !leftOut.has(f))) await nudgeOrEscalate(ctx, ident);
+    return;
+  }
+  const told = () => {
+    if (!ctx.router.durable) { ctx.log(`router queue not on disk; ${ident.task}'s notice will be sent again`); return; }
+    appendPlugin(ctx, ident.project, feature, { kind: "ops", data: { type: "report_notified", task: ident.task, reportSeq: report?.seq ?? null, result, commit: out?.outcome === "committed" ? out.commit : null, summary: `${ident.task}: report ${report?.seq ?? "?"} notified (${result})` } });
+  };
   if (out?.outcome === "committed") {
     ctx.nudges.reset(ident.agentId!);
     const flags = out.flags.outsideTouchSet.length ? ` Outside touch set: ${out.flags.outsideTouchSet.join(", ")}.` : "";
@@ -83,6 +97,7 @@ async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean)
     if (out.runnerError) {
       notify(ctx, supervisorAddress(ident.project, feature), `The sandbox runner is broken, so ${feature} ${ident.task} @${out.commit.slice(0, 7)} cannot be verified: ${out.runnerError}. Fix sandbox.runner in ~/.slp/config.json; the plugin re-verifies on the Peer's next turn or on restart.`);
       notify(ctx, leadAddress(ident.project, feature), `${ident.task} committed ${out.commit.slice(0, 7)}; verification waits on the sandbox runner (the Supervisor has been told).${flags}${excluded}${protectedFiles}${said}`);
+      told();
       alertTouchingSupervisors(ctx, ident, out.commit);
       return;
     }
@@ -91,16 +106,19 @@ async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean)
       const ev = [...ctx.stores.feature(ident.project, feature).all()].reverse().find((e) => e.kind === "evidence" && e.data.commit === out.commit);
       notify(ctx, addressOf(ident), `Verify failed on ${out.commit.slice(0, 7)} (exit ${String(ev?.data.exitCode)}):\n${String(ev?.data.stderrTail ?? "").slice(-1500)}\nFix it and slp_report again.`);
     }
+    told();
     alertTouchingSupervisors(ctx, ident, out.commit);
     return;
   }
   if (out?.outcome === "blocked") {
     ctx.nudges.reset(ident.agentId!);
     notify(ctx, leadAddress(ident.project, feature), `${ident.task} is blocked; the Peer changed no files.${said}\nAnswer with slp_send {to: "${ident.task}"}, or slp_release the task.`);
+    told();
     return;
   }
   if (out?.outcome === "rejected") {
     notify(ctx, addressOf(ident), `Your report was not committed: ${out.reason}. Fix it and slp_report again.`);
+    told();
     return;
   }
   if (!calledTool) await nudgeOrEscalate(ctx, ident);
@@ -122,7 +140,9 @@ async function afterReviewTurn(ctx: Ctx, ident: Identity, calledTool: boolean): 
     return;
   }
   finalizeReview(ctx, ident); // the review counts, and reaches the Lead, only now
-  if (!calledTool) await nudgeOrEscalate(ctx, ident);
+  // A reviewer reviews one commit; once its review counted, a later turn (a question from the human or the Lead) needs no tool (T21 B-7).
+  const counted = ctx.stores.feature(ident.project, ident.feature!).all().some((e) => e.kind === "ops" && e.data.type === "review_checked" && e.data.agentId === ident.agentId);
+  if (!calledTool && !counted) await nudgeOrEscalate(ctx, ident);
 }
 
 async function maybeAskForCheckpoint(ctx: Ctx, ident: Identity): Promise<void> {

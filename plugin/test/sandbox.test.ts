@@ -40,6 +40,19 @@ describe("sandbox runner", () => {
     expect(r.stdoutTail).toContain("started");
     expect(r.durationMs).toBeLessThan(3000);
   });
+  it("runs the command with a minimal environment, not the plugin's own", async () => {
+    process.env.SLP_SECRET_TEST = "x";
+    try {
+      const r = await runSandboxed(FAKE_RUNNER, tmpDir(), "printenv SLP_SECRET_TEST || true; echo done", 10);
+      expect(r.exitCode).toBe(0);
+      expect(r.stdoutTail).toBe("done\n");
+      const env = await runSandboxed(FAKE_RUNNER, tmpDir(), "env", 10);
+      const keys = env.stdoutTail.split("\n").filter(Boolean).map((l) => l.slice(0, l.indexOf("=")));
+      expect(keys).toContain("PATH");
+      expect(keys).toContain("CI");
+      expect(keys.filter((k) => !["PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM", "CI", "PWD", "SHLVL", "_", "OLDPWD"].includes(k))).toEqual([]);
+    } finally { delete process.env.SLP_SECRET_TEST; }
+  });
   it("reports a missing runner binary as a failure, not a pass", async () => {
     const r = await runSandboxed(["/nonexistent/runner"], tmpDir(), "true", 5);
     expect(r.exitCode).toBeNull();

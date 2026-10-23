@@ -4,6 +4,9 @@ export interface SandboxResult { exitCode: number | null; timedOut: boolean; std
 export type RunFn = (runner: readonly string[], worktree: string, command: string, timeoutSec: number) => Promise<SandboxResult>;
 
 const TAIL = 4000;
+/** The runner and the command get these and nothing else: the plugin's own environment can hold tokens, and stderr goes back to a Peer. */
+const ENV_KEYS = ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM"];
+const minimalEnv = (): NodeJS.ProcessEnv => ({ ...Object.fromEntries(ENV_KEYS.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]])), CI: "1" });
 const tail = (s: string) => (s.length > TAIL ? s.slice(-TAIL) : s);
 
 export function runnerArgv(runner: readonly string[], worktree: string, command: string): string[] {
@@ -24,7 +27,7 @@ export const runSandboxed: RunFn = (runner, worktree, command, timeoutSec) => {
       child.stdout.destroy(); child.stderr.destroy();
       resolve({ exitCode, timedOut, stdoutTail: out, stderrTail: err, durationMs: Date.now() - started });
     };
-    const child = spawn(argv[0]!, argv.slice(1), { cwd: worktree, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    const child = spawn(argv[0]!, argv.slice(1), { cwd: worktree, stdio: ["ignore", "pipe", "pipe"], detached: true, env: minimalEnv() });
     const killGroup = (sig: NodeJS.Signals) => { try { process.kill(-child.pid!, sig); } catch { /* already gone */ } };
     after(timeoutSec * 1000, () => {
       timedOut = true; killGroup("SIGTERM");

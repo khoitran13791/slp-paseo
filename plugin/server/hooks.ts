@@ -229,15 +229,18 @@ async function tickOnce(ctx: Ctx): Promise<void> {
   }
   for (const project of Object.keys(ctx.config.projects)) {
     for (const feature of ctx.stores.features(project)) {
-      const st = deriveFeature(feature, ctx.stores.feature(project, feature).all());
-      for (const c of st.challenges.values()) {
-        if (!c.open || c.byRole === "supervisor") continue;
-        const age = (ctx.now().getTime() - Date.parse(c.ts)) / 60_000;
-        const limit = ctx.config.limits.challengeAnswerMinutes;
-        const key = `${project}/${feature}/${c.id}`; // C1 exists in every feature (review Codex 2026-10-22)
-        if (age > 2 * limit && !ctx.flags.challengeNudged.has(`${key}:sup`)) { ctx.flags.challengeNudged.add(`${key}:sup`); notify(ctx, supervisorAddress(project, feature), `${feature}: challenge ${c.id} on ${c.target} has waited ${Math.round(age)} min without an answer from the Lead.`); }
-        else if (age > limit && !ctx.flags.challengeNudged.has(`${key}:lead`)) { ctx.flags.challengeNudged.add(`${key}:lead`); notify(ctx, leadAddress(project, feature), `${c.id} has waited ${Math.round(age)} min. Resolve it (slp_resolve / slp_rule) or escalate it.`); }
-      }
+      // One feature's unreadable log must not stop the other features' nudges, the watch tick or the router flush.
+      try {
+        const st = deriveFeature(feature, ctx.stores.feature(project, feature).all());
+        for (const c of st.challenges.values()) {
+          if (!c.open || c.byRole === "supervisor") continue;
+          const age = (ctx.now().getTime() - Date.parse(c.ts)) / 60_000;
+          const limit = ctx.config.limits.challengeAnswerMinutes;
+          const key = `${project}/${feature}/${c.id}`; // C1 exists in every feature (review Codex 2026-10-22)
+          if (age > 2 * limit && !ctx.flags.challengeNudged.has(`${key}:sup`)) { ctx.flags.challengeNudged.add(`${key}:sup`); notify(ctx, supervisorAddress(project, feature), `${feature}: challenge ${c.id} on ${c.target} has waited ${Math.round(age)} min without an answer from the Lead.`); }
+          else if (age > limit && !ctx.flags.challengeNudged.has(`${key}:lead`)) { ctx.flags.challengeNudged.add(`${key}:lead`); notify(ctx, leadAddress(project, feature), `${c.id} has waited ${Math.round(age)} min. Resolve it (slp_resolve / slp_rule) or escalate it.`); }
+        }
+      } catch (error) { ctx.log(`challenge scan of ${project}/${feature} failed`, error); }
     }
   }
   await watchTick(ctx).catch((error) => ctx.log("watch tick failed", error));

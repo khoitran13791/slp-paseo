@@ -161,7 +161,8 @@ export async function watchTick(ctx: Ctx): Promise<void> {
     const file = ctx.stores.file(project, "watch.json");
     const state = readJson<WatchState>(file, {});
     for (const feature of ctx.stores.features(project)) {
-      const events = ctx.stores.feature(project, feature).all();
+      let events: readonly SlpEvent[];
+      try { events = ctx.stores.feature(project, feature).all(); } catch (error) { ctx.log(`watch skipped ${project}/${feature}: its log is unreadable`, error); continue; }
       const live = ctx.identities.current("lead", project, feature) && ctx.identities.current("supervisor", project, feature);
       if (!live || deriveFeature(feature, events).halted || events.some((e) => e.kind === "shipped")) { delete state[feature]; continue; }
       const agents = watchedAgents(ctx, project, feature);

@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Identity } from "../server/identity";
@@ -46,6 +46,18 @@ describe("pack lines", () => {
 });
 
 describe("watchTick", () => {
+  it("still sends the pack of a healthy feature when another feature's log is corrupt", async () => {
+    const w = world();
+    const logs: string[] = []; w.ctx.log = (m) => { logs.push(m); };
+    const bad = w.ctx.stores.featureDir("demo", "aaa"); mkdirSync(bad, { recursive: true }); // sorts before "cache"
+    writeFileSync(join(bad, "events.jsonl"), "not json\n");
+    await watchTick(w.ctx);
+    w.advance(16);
+    w.paseo.statuses.set("peer-1", "running");
+    await watchTick(w.ctx);
+    expect(w.packs()[0]!.text).toContain("[SLP watch #1 · cache]");
+    expect(logs.some((m) => m.includes("demo/aaa"))).toBe(true);
+  });
   it("starts with the Lead, sends a pack after the interval, and skips an interval where nothing happened", async () => {
     const w = world();
     await watchTick(w.ctx);

@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, truncateSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, truncateSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Role } from "../roles";
 
@@ -67,7 +67,14 @@ export class EventStore {
       data: e.data ?? {},
     };
     mkdirSync(dirname(this.file), { recursive: true });
-    appendFileSync(this.file, JSON.stringify(event) + "\n", { mode: 0o600 });
+    const size = existsSync(this.file) ? statSync(this.file).size : 0;
+    try {
+      appendFileSync(this.file, JSON.stringify(event) + "\n", { mode: 0o600 });
+    } catch (error) {
+      // A partial write (disk full) must not stay: the next append would join it and the next load would fail closed on a corrupt middle line.
+      try { truncateSync(this.file, size); } catch { /* nothing more to do; the load drops an unterminated tail anyway */ }
+      throw error;
+    }
     this.events.push(event);
     return event;
   }
@@ -88,8 +95,9 @@ function load(file: string): { events: SlpEvent[]; truncatedTail: string | null 
   const end = buf.lastIndexOf(0x0a) + 1;
   const tail = buf.subarray(end).toString("utf8");
   const cut = tail.trim() !== "";
+  const events = parseLines(file, buf.subarray(0, end).toString("utf8")); // parse first: a fail-closed open must not change the file
   if (cut) truncateSync(file, end);
-  return { events: parseLines(file, buf.subarray(0, end).toString("utf8")), truncatedTail: cut ? tail : null };
+  return { events, truncatedTail: cut ? tail : null };
 }
 
 function parseLines(file: string, text: string): SlpEvent[] {

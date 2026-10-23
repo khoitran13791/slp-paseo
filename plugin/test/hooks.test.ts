@@ -281,6 +281,19 @@ describe("permissions, archive, tick", () => {
   });
 });
 
+describe("tick with a corrupt feature log", () => {
+  it("still nudges the other features and flushes the router", async () => {
+    const w = world();
+    const logs: string[] = []; w.ctx.log = (m) => { logs.push(m); };
+    const bad = w.ctx.stores.featureDir("demo", "aaa"); mkdirSync(bad, { recursive: true }); // sorts before "cache"
+    writeFileSync(join(bad, "events.jsonl"), "not json\n");
+    w.store.append({ feature: "cache", kind: "challenge", by_role: "peer-impl", by_agent: "peer-1", idPrefix: "C", data: { target: "T1", level: "plan" } }, new Date(Date.now() - 31 * 60_000));
+    await tick(w.ctx);
+    expect(w.paseo.sent.some((s) => s.agentId === "lead-1" && s.text.includes("C1 has waited"))).toBe(true);
+    expect(logs.some((m) => m.includes("demo/aaa"))).toBe(true);
+  });
+});
+
 describe("reconcile after a restart", () => {
   it("opens every feature store, so a torn last line is logged even when no agent is left", async () => {
     const w = makeCtx();

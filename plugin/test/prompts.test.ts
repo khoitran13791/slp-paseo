@@ -72,6 +72,8 @@ describe("role prompts", () => {
     expect(b).not.toContain("## Outcome");
     expect(taskBrief("cache", { ...task, outcome: "A repeated lookup returns the cached value" }, premises, "x")).toContain("## Outcome\nA repeated lookup returns the cached value");
     expect(reviewBrief("cache", task, "abc1234", "Keep retries consistent.")).toContain("Review commit abc1234");
+    expect(reviewBrief("cache", task, "abc1234", "Keep retries consistent.")).not.toContain("## Outcome");
+    expect(reviewBrief("cache", { ...task, outcome: "A repeated lookup returns the cached value" }, "abc1234", "Keep retries consistent.")).toContain("## Brief from the Lead\nKeep retries consistent.\n\n## Outcome\nA repeated lookup returns the cached value\n\n## Touch set");
     expect(leadKickoff("cache", "# Brief", "start")).toContain("# Brief");
   });
 });

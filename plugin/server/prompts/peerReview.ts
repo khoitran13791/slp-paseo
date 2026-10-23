@@ -19,7 +19,7 @@ Feature: ${feature}
 
 ## Brief from the Lead
 ${leadBrief}
-
+${task.outcome ? `\n## Outcome\n${task.outcome}\n` : ""}
 ## Touch set
 ${task.touchSet.map((t) => `- ${t}`).join("\n") || "- not specified"}
 

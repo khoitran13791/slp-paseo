@@ -337,11 +337,12 @@ export function workTools(ctx: Ctx): ToolDef[] {
           const pkg = [...events].reverse().find((e) => e.kind === "ship_package")!;
           const title = String(events.find((e) => e.kind === "brief")?.data.title ?? feature);
           // A retry after a crash between "gh pr create" and the shipped event finds the PR instead of failing on it (review Codex 2026-10-22).
-          const existing = spawnSync("gh", ["pr", "view", branch, "--json", "url,state", "--jq", 'select(.state == "OPEN") | .url'], { cwd: ctx.config.projects[who.project]!.repo, encoding: "utf8" });
+          const existing = spawnSync("gh", ["pr", "view", branch, "--json", "url,state", "--jq", 'select(.state == "OPEN") | .url'], { cwd: ctx.config.projects[who.project]!.repo, encoding: "utf8", timeout: 120_000 });
           if (existing.status === 0 && existing.stdout.trim()) pr = existing.stdout.trim();
           else {
-            const r = spawnSync("gh", ["pr", "create", "--head", branch, "--base", ctx.config.projects[who.project]!.baseBranch.replace(/^origin\//, ""), "--title", title, "--body", String(pkg.data.text)], { cwd: ctx.config.projects[who.project]!.repo, encoding: "utf8" });
-            if (r.status !== 0) throw new ToolError(`pushed ${branch}, but gh pr create failed: ${r.stderr.trim()}`);
+            const r = spawnSync("gh", ["pr", "create", "--head", branch, "--base", ctx.config.projects[who.project]!.baseBranch.replace(/^origin\//, ""), "--title", title, "--body", String(pkg.data.text)], { cwd: ctx.config.projects[who.project]!.repo, encoding: "utf8", timeout: 120_000 });
+            // A missing or hung gh has no exit status and no stderr: say why instead of throwing a TypeError.
+            if (r.status !== 0) throw new ToolError(`pushed ${branch}, but gh pr create failed: ${(r.stderr ?? "").trim() || r.error?.message || `exit ${r.status}`}`);
             pr = r.stdout.trim();
           }
         }

@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { releaseContracts } from "../server/context";
@@ -323,6 +323,24 @@ describe("ship", () => {
     expect(shipped.isError).toBeFalsy();
     expect(sh(bare, "git", ["rev-parse", "feat/cache"])).toBe(headOf(r.lead.worktree!));
     expect(r.events().at(-1)!.kind).toBe("shipped");
+  });
+  it("pushes and then reports a missing gh as a failed PR step, not a TypeError", async () => {
+    const r = await withLeadAndPlan();
+    r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "ruling", by_role: "lead", by_agent: r.lead.agentId, idPrefix: "R", data: { decision: "skip", reason: "r", cost_if_wrong: "c", drop: ["T1", "T2"] } });
+    expect((await r.call(r.sup, "slp_ship_package", { feature: "cache", summary: "s" })).isError).toBeFalsy();
+    const bare = join(r.home, "origin.git"); sh(r.home, "git", ["init", "-q", "--bare", bare]); sh(r.lead.worktree!, "git", ["remote", "add", "origin", bare]);
+    r.ctx.config.ship.openPr = true;
+    await r.human("ship đi");
+    // A PATH with git and sh but no gh: the test never reaches GitHub, whatever is installed on this machine.
+    const bin = join(r.home, "bin"); mkdirSync(bin);
+    for (const tool of ["git", "sh"]) symlinkSync(sh(r.home, "sh", ["-c", `command -v ${tool}`]), join(bin, tool));
+    const savedPath = process.env.PATH;
+    let res;
+    try { process.env.PATH = bin; res = await r.call(r.sup, "slp_ship", { feature: "cache", quote: "ship đi" }); } finally { process.env.PATH = savedPath; }
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/pushed feat\/cache, but gh pr create failed: .*ENOENT/);
+    expect(res.text).not.toMatch(/TypeError|Cannot read/);
+    expect(sh(bare, "git", ["rev-parse", "feat/cache"])).toBe(headOf(r.lead.worktree!));
   });
   it("counts a message typed while the package was verifying as older than the package, so it cannot approve it", async () => {
     const r = await withLeadAndPlan();

@@ -1,10 +1,13 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { onAgentArchived, onAgentClosed, onPermissionRequested, onPermissionResolved, onTurnEnded, onTurnStarted } from "./server/hooks";
 import { createRuntime } from "./server/runtime";
+import { WAKE } from "./shared/rpc";
 
 export default function contribute(server: PluginServerContext) {
   const rt = createRuntime();
   const guard = (label: string, fn: () => Promise<void> | void) => Promise.resolve().then(fn).catch((e) => console.error(`[slp] ${label} failed`, e));
+  // handle() returns no cleanup, so it stays out of offs; the plugin session ends its RPCs on stop.
+  server.handle(WAKE, async (_input, { paseo }) => { await rt.wake(paseo); return { ok: true }; });
   const offs = [
     server.before("agent.create", async ({ request }, { paseo }) => { await rt.capture(paseo); return (await rt.transformCreate(request as never)) as never; }),
     server.before("agent.session_open", async ({ request }, { paseo }) => { await rt.capture(paseo); rt.bindSession(request); return undefined; }),

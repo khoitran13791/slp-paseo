@@ -17,7 +17,7 @@ import { StoreRegistry } from "./store/registry";
 import { buildTools } from "./tools";
 import { NudgeTracker, ResumeQueue } from "./watchdog";
 
-export interface Runtime { ctx: Ctx; capture(paseo: unknown): Promise<void>; transformCreate(req: CreateRequest): Promise<CreateRequest>; bindSession(req: { agentId: string; env: Record<string, string> }): void; close(): Promise<void> }
+export interface Runtime { ctx: Ctx; capture(paseo: unknown): Promise<void>; wake(paseo: unknown): Promise<void>; transformCreate(req: CreateRequest): Promise<CreateRequest>; bindSession(req: { agentId: string; env: Record<string, string> }): void; close(): Promise<void> }
 
 export function createRuntime(): Runtime {
   const home = slpHome();
@@ -97,6 +97,9 @@ export function createRuntime(): Runtime {
         codexHome: () => ensureCodexHome(join(home, "codex-home"), process.env.CODEX_HOME ?? join(homedir(), ".codex"), denyRead),
       });
     },
+    // The timer only ticks once a Paseo client exists; a plugin reload leaves none until the first hook (T21 row 24).
+    // Wake hands one over and nothing else: ticking here too would space resumes closer than the timer does (review Codex 2026-10-23).
+    async wake(p) { await capture(p); },
     bindSession: (req) => bindSession(req, identities),
     async close() { clearInterval(timer); await (await mcp).close(); },
   };

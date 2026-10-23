@@ -2,7 +2,7 @@
   "name": "slp-paseo-plugin",
   "private": true,
   "version": "0.1.0",
-  "files": ["paseo-plugin.json", "index.server.ts", "server/"],
+  "files": ["paseo-plugin.json", "index.server.ts", "index.client.ts", "server/", "shared/"],
   "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
   "dependencies": { "zod": "^4.4.3" },
   "devDependencies": {

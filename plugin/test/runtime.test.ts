@@ -49,4 +49,26 @@ describe("runtime", () => {
     expect((out as { config: { modeId?: string } }).config.modeId).toBe("default");
     await rt.close();
   });
+  it("wakes without any agent hook: the plugin gets its Paseo client, and a broken setup does not throw", async () => {
+    const home = tmpDir(); process.env.SLP_HOME = home;
+    writeFileSync(join(home, "config.json"), JSON.stringify({ projects: {}, sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
+    const rt = createRuntime();
+    const paseo = new FakePaseo();
+    paseo.daemonConfig = { agents: { providers: {} } }; // setup fails
+    await expect(rt.wake(paseo)).resolves.toBeUndefined();
+    expect(rt.ctx.paseo()).toBe(paseo);
+    await rt.close();
+  });
+  it("does not tick on wake: the 30 s timer alone paces ticks and resumes, however many clients wake it", async () => {
+    const home = tmpDir(); process.env.SLP_HOME = home;
+    writeFileSync(join(home, "config.json"), JSON.stringify({ projects: {}, sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
+    const rt = createRuntime();
+    const paseo = new FakePaseo();
+    await rt.wake(paseo);
+    rt.ctx.resumes.schedule({ agentId: "agent-x", vendor: "claude", at: new Date(0).toISOString(), attempt: 1 }); // a due resume job
+    for (let i = 0; i < 3; i++) await rt.wake(paseo);
+    expect(paseo.sent).toEqual([]); // no resume sent outside the timer
+    expect(rt.ctx.resumes.jobs()).toHaveLength(1);
+    await rt.close();
+  });
 });

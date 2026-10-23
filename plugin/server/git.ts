@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, posix } from "node:path";
 import { matchTouch } from "./touch";
 
 const HARDEN = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"];
@@ -10,8 +10,12 @@ export class UntrustedGitDirError extends Error {}
 const trusted = new Set<string>(); // realpath of each registered repo's common dir
 
 function spawnGit(cwd: string, args: string[], allowFail: boolean): GitResult {
-  const r = spawnSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_DIR: undefined, GIT_WORK_TREE: undefined } });
-  const out = { code: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+  // maxBuffer: a big repo's `ls-files` passes Node's 1 MiB default; timeout: a hung credential helper must not stall the plugin.
+  const r = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28, timeout: 300_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_DIR: undefined, GIT_WORK_TREE: undefined } });
+  // A spawn error (ENOBUFS, ETIMEDOUT, ENOENT) is a failed call, never a success with truncated output.
+  const out = r.error
+    ? { code: r.status || 1, stdout: r.stdout ?? "", stderr: String(r.error.message) }
+    : { code: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
   if (!allowFail && out.code !== 0) throw new Error(`git ${args.join(" ")} failed (${out.code}): ${out.stderr.trim()}`);
   return out;
 }
@@ -83,7 +87,7 @@ export const isSensitivePath = (p: string): boolean => SENSITIVE.some((re) => re
 /** Repo-relative core.hooksPath (husky: ".husky"); null when unset or absolute. Read without the hooksPath override. */
 export function hooksDir(cwd: string): string | null {
   const v = run(cwd, ["config", "--get", "core.hooksPath"], true, ["-c", "core.fsmonitor=false"]).stdout.trim();
-  return v && !isAbsolute(v) ? v.replace(/^\.\//, "").replace(/\/$/, "") : null;
+  return v && !isAbsolute(v) ? posix.normalize(v).replace(/\/$/, "") || "." : null; // "." / "./" = the repo root
 }
 
 /**
@@ -92,9 +96,15 @@ export function hooksDir(cwd: string): string | null {
  */
 export function isProtectedPath(p: string, hookDir: string | null): boolean {
   const fold = (s: string) => s.toUpperCase().toLowerCase().replace(/\/+$/, "");
-  const q = fold(p);
-  if (q === "paseo.json" || q === ".mcp.json") return true;
-  return [".husky", ".githooks", ".claude", ".codex", ...(hookDir ? [fold(hookDir)] : [])].some((d) => q === d || q.startsWith(`${d}/`));
+  const segments = fold(p).split("/");
+  // Settings and hook directories count at any depth (a package's own .claude/, a husky install in a subfolder); so do paseo.json and .mcp.json.
+  if (segments.some((s) => [".husky", ".githooks", ".claude", ".codex"].includes(s))) return true;
+  if (["paseo.json", ".mcp.json"].includes(segments[segments.length - 1]!)) return true;
+  if (hookDir === null) return false;
+  const h = posix.normalize(fold(hookDir)).replace(/\/$/, "");
+  if (h === "" || h === ".") return true; // hooks path = the repo root: fail closed, nothing is committed
+  const q = segments.join("/");
+  return [h, ...(h.endsWith("/_") ? [h.slice(0, -2)] : [])].some((d) => q === d || q.startsWith(`${d}/`)); // husky v9 hooks live in <dir>/_
 }
 
 /**

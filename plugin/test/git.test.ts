@@ -105,7 +105,7 @@ describe("git helpers", () => {
     expect(["a/.env", ".env.local", "k.pem", "x.key", "id_rsa", "id_ed25519.pub", "c.p12", "credentials.json"].every(isSensitivePath)).toBe(true);
     expect(isSensitivePath("src/env.ts")).toBe(false);
     expect(["paseo.json", ".husky/pre-commit", ".githooks/x", "hooks/pre-push", ".claude/settings.json", ".codex/config.toml", ".mcp.json"].map((p) => isProtectedPath(p, "hooks"))).toEqual([true, true, true, true, true, true, true]);
-    expect(["src/paseo.json", "src/hooks/a.ts", "src/.mcp.json", "docs/.claude/x.md"].map((p) => isProtectedPath(p, "hooks"))).toEqual([false, false, false, false]);
+    expect(["src/paseo.json", "src/hooks/a.ts", "src/.mcp.json", "docs/.claude/x.md"].map((p) => isProtectedPath(p, "hooks"))).toEqual([true, false, true, true]);
     expect(filesOutside(["src/a.ts", "test/a.test.ts", "package.json"], ["src/", "test/**"])).toEqual(["package.json"]);
     const r = repo(); const marker = join(tmpDir(), "h.log"); withHusky(r, marker);
     expect(hooksDir(r)).toBe(".husky");
@@ -156,7 +156,7 @@ describe("git helpers", () => {
   it("treats case variants, bare names and similar names of protected paths correctly", () => {
     expect([".claude", ".husky", ".CLAUDE/x", ".Codex/config.toml", "Paseo.json", ".MCP.json"].map((p) => isProtectedPath(p, "hooks"))).toEqual([true, true, true, true, true, true]);
     expect(isProtectedPath("hooks", "hooks")).toBe(true);
-    expect(["src/.mcp.json", "docs/.claude/x.md", ".claudeignore"].map((p) => isProtectedPath(p, "hooks"))).toEqual([false, false, false]);
+    expect(["src/.mcp.json", "docs/.claude/x.md", ".claudeignore"].map((p) => isProtectedPath(p, "hooks"))).toEqual([true, true, false]);
   });
   it("never stages a nested repo, and reports it", () => {
     const r = repo(); const wt = worktree(r, "slp/f/T9-3"); const vendor = join(wt, "vendor");
@@ -208,5 +208,43 @@ describe("git helpers", () => {
     const { r, marker } = conflictingGitlinkRepo();
     expect(mergeNoHooks(r, "other", "Merge other")).toEqual({ ok: false, conflicts: ["README.md"] });
     expect(existsSync(marker)).toBe(false);
+  });
+  it("handles a repo whose ls-files output exceeds Node's default 1 MiB buffer", () => {
+    const r = repo(); const dir = join(r, "src");
+    mkdirSync(dir);
+    for (let i = 0; i < 15000; i++) writeFileSync(join(dir, `module-with-a-long-name-${String(i).padStart(6, "0")}.ts`), "x\n");
+    sh(r, "git", ["add", "-A"]); sh(r, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "many files"]);
+    expect(git(r, ["ls-files", "-s", "-z"]).stdout.length).toBeGreaterThan(1 << 20);
+    expect(nestedRepos(r)).toEqual([]);
+    writeFileSync(join(r, "one-more.ts"), "y\n");
+    expect(commitAll(r, { message: "T1: one more", trailers: {}, exclude: [] })).toBe(headOf(r));
+  }, 60_000);
+  it("reports a git that cannot start as a failed call instead of a TypeError, honouring allowFail", () => {
+    const r = repo(); const saved = process.env.PATH;
+    try {
+      process.env.PATH = join(tmpDir(), "no-git-here");
+      const res = git(r, ["status"], true);
+      expect(res.code).not.toBe(0);
+      expect(res.stderr).toMatch(/ENOENT/);
+      expect(() => git(r, ["status"])).toThrow(/ENOENT/);
+    } finally { process.env.PATH = saved; }
+  });
+  it("protects settings, hooks and tool config at any depth, and the whole repo when hooksPath is the root", () => {
+    expect(["pkg/.claude/settings.json", "a/b/.codex/config.toml", "pkg/.mcp.json", "docs/paseo.json", "pkg/.husky/x", "sub/.githooks"].map((p) => isProtectedPath(p, null))).toEqual([true, true, true, true, true, true]);
+    expect(isProtectedPath("frontend/.husky/pre-commit", "frontend/.husky/_")).toBe(true);
+    expect(isProtectedPath("frontend/.husky/_/h", "frontend/.husky/_")).toBe(true);
+    expect(isProtectedPath("tools/hooks/pre-commit", "tools/hooks/_")).toBe(true);
+    expect(isProtectedPath("tools/hooks/_/h", "tools/hooks/_")).toBe(true);
+    expect(["src/a.ts", "README.md", "x/y/z.txt"].map((p) => isProtectedPath(p, "."))).toEqual([true, true, true]);
+    expect(["src/a.ts", "README.md"].map((p) => isProtectedPath(p, "./"))).toEqual([true, true]);
+    expect([".claudeignore", "src/claude/x.ts", "src/my.mcp.json.bak", "src/paseo.json.bak"].map((p) => isProtectedPath(p, "hooks"))).toEqual([false, false, false, false]);
+  });
+  it("reads core.hooksPath of . or ./ as the repo root, and keeps null for unset or absolute", () => {
+    const r = repo();
+    expect(hooksDir(r)).toBeNull();
+    sh(r, "git", ["config", "core.hooksPath", "."]); expect(hooksDir(r)).toBe(".");
+    sh(r, "git", ["config", "core.hooksPath", "./"]); expect(hooksDir(r)).toBe(".");
+    sh(r, "git", ["config", "core.hooksPath", "./frontend/.husky/_/"]); expect(hooksDir(r)).toBe("frontend/.husky/_");
+    sh(r, "git", ["config", "core.hooksPath", "/abs/hooks"]); expect(hooksDir(r)).toBeNull();
   });
 });

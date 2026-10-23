@@ -79,6 +79,8 @@ function activeWriters(ctx: Ctx, project: string): Identity[] {
 export async function retireAgent(ctx: Ctx, i: Identity, repo: string): Promise<void> {
   ctx.identities.retire(i.tokenHash);
   if (i.agentId) ctx.resumes.clear(i.agentId);
+  // Messages are addressed by role: a "Verify failed" left for this Peer would reach the next Peer of the same task.
+  if (i.role === "peer-impl" || i.role === "peer-review") ctx.router.drop((to) => to.role === i.role && to.project === i.project && to.feature === i.feature && (to.task ?? null) === (i.task ?? null));
   const stopped = i.agentId ? await ctx.paseo().agents.ref(i.agentId).archive().then(() => true, () => false) : true;
   if (i.workspaceId) await ctx.paseo().workspaces.ref(i.workspaceId).archive().catch(() => undefined); // a directory workspace: Paseo only drops the record
   if (i.worktree && (i.role === "peer-impl" || i.role === "peer-review")) {

@@ -180,6 +180,21 @@ describe("slp_spawn", () => {
     expect(existsSync(peer.worktree!)).toBe(false);
     expect(sh(r.repo, "git", ["branch", "--list", peer.branch!])).toContain(peer.branch!);
   });
+  it("drops the messages queued for a Peer when it retires, so the next Peer of the task never sees them", async () => {
+    const r = await withLeadAndPlan();
+    await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" });
+    const peer = r.ctx.identities.byAgent(r.paseo.created[1]!.id)!;
+    r.paseo.statuses.set(peer.agentId!, "running"); // the Peer is mid-turn, so the plugin's notices wait in the queue
+    const to = { project: "demo", feature: "cache" };
+    r.ctx.router.enqueue({ role: "peer-impl", ...to, task: "T1" }, "Verify failed: old");
+    r.ctx.router.enqueue({ role: "peer-impl", ...to, task: "T2" }, "for another task");
+    r.ctx.router.enqueue({ role: "lead", ...to }, "for the lead");
+    await retireAgent(r.ctx, peer, r.repo);
+    expect(r.ctx.router.pending().map((d) => d.text)).toEqual(["for another task", "for the lead"]);
+    bound(r.ctx, { role: "peer-impl", ...to, task: "T1", worktree: null, reviewCommit: null, parentAgentId: r.lead.agentId }, "peer-next");
+    await r.ctx.router.flush();
+    expect(r.paseo.sent.filter((s) => s.agentId === "peer-next")).toEqual([]);
+  });
   it("refuses Peers once a newer spec waits for the human's approval", async () => {
     const r = await withLeadAndPlan();
     expect((await r.call(r.lead, "slp_spec", { markdown: "# Spec v2" })).isError).toBeFalsy();

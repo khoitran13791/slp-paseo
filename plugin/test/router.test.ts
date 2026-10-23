@@ -64,6 +64,18 @@ describe("Router", () => {
     expect(await r.flush()).toBe(0);
     expect(r.pending()[0]).toMatchObject({ attempts: 1, lastError: "Error: boom" });
   });
+  it("drops the undelivered messages whose address matches, and keeps the drop across a restart", () => {
+    const file = join(tmpDir(), "router.json");
+    const r = make(file, new Map(), []);
+    r.enqueue({ role: "peer-impl", project: "p", feature: "a", task: "T1" }, "old notice");
+    r.enqueue({ role: "peer-impl", project: "p", feature: "a", task: "T1" }, "another old notice");
+    r.enqueue({ role: "peer-impl", project: "p", feature: "a", task: "T2" }, "other task");
+    r.enqueue({ role: "lead", project: "p", feature: "a" }, "for the lead");
+    expect(r.drop((to) => to.role === "peer-impl" && to.task === "T1")).toBe(2);
+    expect(r.pending().map((d) => d.text)).toEqual(["other task", "for the lead"]);
+    expect(r.drop((to) => to.role === "peer-review")).toBe(0);
+    expect(make(file, new Map(), []).pending().map((d) => d.text)).toEqual(["other task", "for the lead"]);
+  });
   it("issues ids with the slp- prefix", () => {
     expect(make(join(tmpDir(), "r.json"), new Map(), []).issue()).toMatch(/^slp-/);
   });

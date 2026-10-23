@@ -56,6 +56,15 @@ export class Router {
     return d;
   }
 
+  /** Removes the undelivered messages whose address matches (a retired Peer's notices must not reach the next Peer of the task). Returns how many. */
+  drop(match: (to: Address) => boolean): number {
+    const before = this.state.queue.length;
+    this.state.queue = this.state.queue.filter((d) => !match(d.to));
+    const dropped = before - this.state.queue.length;
+    if (dropped) this.save();
+    return dropped;
+  }
+
   isPluginMessageId(id: string | null | undefined): boolean {
     return !!id && id.startsWith(PLUGIN_ID_PREFIX);
   }

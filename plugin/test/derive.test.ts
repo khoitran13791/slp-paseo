@@ -191,6 +191,12 @@ describe("deriveFeature", () => {
     expect(deriveFeature("f", [s1, ok1, s2]).approvedVerify).toEqual(["npm test"]);
     expect(deriveFeature("f", [s1, ok1, s2, ok2]).approvedVerify).toEqual(["make check"]);
   });
+  it("keeps the feature's base branch from the first Lead assign that names one (rev 5.11)", () => {
+    const a1 = ev("assign", { role: "lead", agentId: "l1", baseBranch: "origin/main" }, { by_role: "supervisor" });
+    const a2 = ev("assign", { role: "lead", agentId: "l2", baseBranch: "origin/other" }, { by_role: "supervisor" });
+    expect(deriveFeature("f", []).baseBranch).toBeNull();
+    expect(deriveFeature("f", [a1, a2]).baseBranch).toBe("origin/main");
+  });
 });
 
 describe("acceptanceBlockers", () => {

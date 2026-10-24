@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 import { appendAs, appendPlugin, claimContracts, humanMessagesFor, leadAddress, notify, refreshDigest, releaseContracts, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, type CreateOptions, type Ctx } from "../context";
 import { processReport, verifyFeature, type PipelineDeps, type ReportOutcome } from "../evidence";
-import { addWorktree, changedFiles, deleteBranch, diffStat, git, headOf, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, pushNoHooks, removeWorktree, startMerge, unsafeGitDrivers } from "../git";
+import { addWorktree, changedFiles, deleteBranch, diffStat, git, headOf, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, pushNoHooks, removeWorktree, resolveBaseBranch, startMerge, unsafeGitDrivers } from "../git";
 import type { Identity } from "../identity";
 import type { ToolDef } from "../mcp/server";
 import { contractQueues, contractsOf, holderOf, isContract } from "../planCheck";
@@ -21,6 +21,16 @@ export function pipelineDeps(ctx: Ctx, project: string, feature: string): Pipeli
   return { store: ctx.stores.feature(project, feature), config: ctx.config, project: ctx.config.projects[project]!, run: ctx.run, now: () => ctx.now() };
 }
 const stateOf = (ctx: Ctx, project: string, feature: string): FeatureState => deriveFeature(feature, ctx.stores.feature(project, feature).all());
+
+/** "origin/main" → "main" for gh's --base, whatever the remote is called (rev 5.11). */
+const stripRemote = (ref: string, remote: string): string => (ref.startsWith(`${remote}/`) ? ref.slice(remote.length + 1) : ref);
+
+/** The feature's base branch: the one its first Lead recorded (rev 5.11), else, for a feature from before, resolved now. */
+export function featureBase(ctx: Ctx, project: string, feature: string): string {
+  const recorded = stateOf(ctx, project, feature).baseBranch;
+  if (recorded) return recorded;
+  try { return resolveBaseBranch(ctx.config.projects[project]!.repo, ctx.config.ship.remote); } catch (error) { throw new ToolError(error instanceof Error ? error.message : String(error)); }
+}
 
 type Placement =
   | { kind: "worktree"; branch: string; base: string } // SLP creates the worktree off `base` (hooks off) and a directory workspace for it
@@ -177,12 +187,14 @@ export function workTools(ctx: Ctx): ToolDef[] {
           if (ctx.identities.current("lead", who.project, feature)) throw new ToolError(`feature ${feature} already has a Lead`);
           const previous = ctx.identities.last("lead", who.project, feature);
           const checkpoint = join(ctx.stores.featureDir(who.project, feature), "checkpoint-lead.md");
-          const placement: Placement = previous?.workspaceId ? { kind: "workspace", workspaceId: previous.workspaceId, worktree: previous.worktree } : { kind: "worktree", branch: `feat/${feature}`, base: project.baseBranch };
+          // A new worktree starts from the feature's base branch, fetched and resolved by the first Lead (rev 5.11).
+          const baseBranch = previous?.workspaceId ? st.baseBranch : featureBase(ctx, who.project, feature);
+          const placement: Placement = previous?.workspaceId ? { kind: "workspace", workspaceId: previous.workspaceId, worktree: previous.worktree } : { kind: "worktree", branch: `feat/${feature}`, base: baseBranch! };
           const prompt = previous
             ? `[SLP] You take over as Lead for feature ${feature}; the previous Lead stopped. Call slp_state first.\n\n${existsSync(checkpoint) ? `${readFileSync(checkpoint, "utf8")}\n\n` : ""}## Current state\n${refreshDigest(ctx, who.project, feature)}\n\n## Note from the Supervisor\n${a.prompt}`
             : leadKickoff(feature, ctx.stores.readDoc(st.brief.path), a.prompt);
           const { agentId, ident } = await createAgent(ctx, "lead", { project: who.project, feature, task: null, placement, parent: who.agentId, title: `[Lead] ${feature}`, prompt });
-          appendAs(ctx, who, feature, { kind: "assign", data: { role: "lead", agentId, worktree: ident.worktree, branch: ident.branch } });
+          appendAs(ctx, who, feature, { kind: "assign", data: { role: "lead", agentId, worktree: ident.worktree, branch: ident.branch, baseBranch: baseBranch ?? null } });
           return `Lead ${agentId} started in ${ident.worktree} on ${ident.branch}.`;
         }
         if (who.role !== "lead") throw new ToolError("only the Lead spawns Peers");
@@ -218,17 +230,19 @@ export function workTools(ctx: Ctx): ToolDef[] {
           const base = headOf(ident.worktree!);
           appendAs(ctx, who, feature, { kind: "assign", data: { task: task.id, agentId, worktree: ident.worktree, branch: ident.branch, base, attempt, model: model ?? null, mergeBase: a.merge_base === true } });
           if (a.merge_base) {
+            let mergeFrom = "the base branch";
             try {
-              git(project.repo, ["fetch", "--quiet", "origin"], true); // network git runs in the human's checkout (T9 pushNoHooks)
-              const conflicts = startMerge(ident.worktree!, project.baseBranch);
+              mergeFrom = featureBase(ctx, who.project, feature);
+              git(project.repo, ["fetch", "--quiet", ctx.config.ship.remote], true); // network git runs in the human's checkout (T9 pushNoHooks)
+              const conflicts = startMerge(ident.worktree!, mergeFrom);
               const note = conflicts.length ? `Resolve the conflict markers in: ${conflicts.join(", ")}.` : "It merged without conflicts; check that the result builds and passes.";
-              await ctx.paseo().agents.ref(agentId).send(`${prompt}\n\n## Merge in progress\nThe plugin started merging ${project.baseBranch} into your branch. ${note} Do not run git; slp_report when done and the plugin records the merge commit.`, { messageId: ctx.router.issue() });
+              await ctx.paseo().agents.ref(agentId).send(`${prompt}\n\n## Merge in progress\nThe plugin started merging ${mergeFrom} into your branch. ${note} Do not run git; slp_report when done and the plugin records the merge commit.`, { messageId: ctx.router.issue() });
             } catch (error) {
               // The Peer never got its brief: stop it and return the task, so it is not left assigned to an agent that waits for nothing.
               const message = error instanceof Error ? error.message : String(error);
               await retireAgent(ctx, ident, project.repo);
               appendAs(ctx, who, feature, { kind: "release", data: { task: task.id, outcome: "returned", reason: `merge_base setup failed: ${message}` } });
-              throw new ToolError(`merging ${project.baseBranch} into the new worktree failed: ${message}`);
+              throw new ToolError(`merging ${mergeFrom} into the new worktree failed: ${message}`);
             }
           }
           return `Peer-impl ${agentId} started on ${task.id} in ${ident.worktree}.`;
@@ -311,11 +325,12 @@ export function workTools(ctx: Ctx): ToolDef[] {
       run(who) {
         const project = ctx.config.projects[who.project]!;
         if (stateOf(ctx, who.project, who.feature!).halted) throw new ToolError(`${who.feature} is halted: the human changed the goal`);
-        git(project.repo, ["fetch", "--quiet", "origin"], true); // network git runs in the human's checkout (T9 pushNoHooks)
-        const merged = mergeNoHooks(who.worktree!, project.baseBranch, `Merge ${project.baseBranch} into ${who.branch}`);
+        const base = featureBase(ctx, who.project, who.feature!);
+        git(project.repo, ["fetch", "--quiet", ctx.config.ship.remote], true); // network git runs in the human's checkout (T9 pushNoHooks)
+        const merged = mergeNoHooks(who.worktree!, base, `Merge ${base} into ${who.branch}`);
         if (!merged.ok) return `Conflicts in: ${merged.conflicts.join(", ")}. Add a resolve task to the plan, then slp_spawn it as a peer-impl with merge_base: true.`;
-        appendPlugin(ctx, who.project, who.feature!, { kind: "merge", data: { source: project.baseBranch, target: who.branch, hash: merged.hash } });
-        return `Merged ${project.baseBranch} (${merged.hash.slice(0, 7)}). Re-run acceptance before shipping.`;
+        appendPlugin(ctx, who.project, who.feature!, { kind: "merge", data: { source: base, target: who.branch, hash: merged.hash } });
+        return `Merged ${base} (${merged.hash.slice(0, 7)}). Re-run acceptance before shipping.`;
       },
     }),
     defineTool({
@@ -340,10 +355,10 @@ export function workTools(ctx: Ctx): ToolDef[] {
         const st = deriveFeature(feature, events);
         const blockers = acceptanceBlockers(st, events, v.commit);
         if (blockers.length) throw new ToolError(`not ready to ship:\n${blockers.map((b) => `- ${b}`).join("\n")}${v.ok ? "" : `\nFull suite stderr:\n${v.stderrTail.slice(-800)}`}`);
-        const base = ctx.config.projects[who.project]!.baseBranch;
+        const base = featureBase(ctx, who.project, feature);
         const branch = lead.branch ?? `feat/${feature}`;
         // Say exactly what slp_ship will do (rev 5.10 F7): with ship.openPr off there is no PR to promise.
-        const onApproval = `slp_ship pushes ${branch} to ${ctx.config.ship.remote}${ctx.config.ship.openPr ? ` and opens a PR against ${base.replace(/^origin\//, "")}.` : ". No PR is opened (ship.openPr is false)."}`;
+        const onApproval = `slp_ship pushes ${branch} to ${ctx.config.ship.remote}${ctx.config.ship.openPr ? ` and opens a PR against ${stripRemote(base, ctx.config.ship.remote)}.` : ". No PR is opened (ship.openPr is false)."}`;
         const rulings = events.filter((e) => e.kind === "ruling").map((e) => `- ${e.id}: ${String(e.data.decision)} (cost if wrong: ${String(e.data.cost_if_wrong)})`);
         const openH = [...st.premises.values()].filter((p) => p.status === "open").map((p) => `- ${p.id}: ${p.title}`);
         const text = `# Ship package: ${feature} @ ${v.commit.slice(0, 7)}\n\n${a.summary}\n\n## Diff\n${diffStat(lead.worktree, base, v.commit)}\n\n## Evidence\n- full suite green on ${v.commit} (sandboxed)\n\n## Rulings\n${rulings.join("\n") || "- none"}\n\n## Open hypotheses\n${openH.join("\n") || "- none"}\n\n## On approval\n${onApproval}\n`;
@@ -380,7 +395,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
           const existing = spawnSync("gh", ["pr", "view", branch, "--json", "url,state", "--jq", 'select(.state == "OPEN") | .url'], { cwd: ctx.config.projects[who.project]!.repo, encoding: "utf8", timeout: 120_000 });
           if (existing.status === 0 && existing.stdout.trim()) pr = existing.stdout.trim();
           else {
-            const r = spawnSync("gh", ["pr", "create", "--head", branch, "--base", ctx.config.projects[who.project]!.baseBranch.replace(/^origin\//, ""), "--title", title, "--body", String(pkg.data.text)], { cwd: ctx.config.projects[who.project]!.repo, encoding: "utf8", timeout: 120_000 });
+            const r = spawnSync("gh", ["pr", "create", "--head", branch, "--base", stripRemote(featureBase(ctx, who.project, feature), ctx.config.ship.remote), "--title", title, "--body", String(pkg.data.text)], { cwd: ctx.config.projects[who.project]!.repo, encoding: "utf8", timeout: 120_000 });
             // A missing or hung gh has no exit status and no stderr: say why instead of throwing a TypeError.
             if (r.status !== 0) throw new ToolError(`pushed ${branch}, but gh pr create failed: ${(r.stderr ?? "").trim() || r.error?.message || `exit ${r.status}`}`);
             pr = r.stdout.trim();

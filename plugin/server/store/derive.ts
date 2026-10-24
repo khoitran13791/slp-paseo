@@ -20,6 +20,8 @@ export interface FeatureState {
   halted: boolean; waitingOnHuman: string[]; lastWatch: WatchResult | null;
   /** The full-suite commands of the latest approved spec (spec §5.3 rev 5.11). */
   approvedVerify: string[] | null;
+  /** The base branch the feature's first Lead started from (spec §7.4 rev 5.11). */
+  baseBranch: string | null;
 }
 
 const TASK_KINDS = new Set(["assign", "report", "commit", "evidence", "review", "release", "ops"]);
@@ -36,7 +38,7 @@ export const evidencePassed = (d: Record<string, unknown>, def?: ReturnType<type
 const str = (v: unknown): string | null => (v == null ? null : String(v));
 
 export function deriveFeature(slug: string, events: readonly SlpEvent[]): FeatureState {
-  const st: FeatureState = { slug, brief: null, spec: null, plan: null, premises: new Map(), tasks: new Map(), challenges: new Map(), halted: false, waitingOnHuman: [], lastWatch: null, approvedVerify: null };
+  const st: FeatureState = { slug, brief: null, spec: null, plan: null, premises: new Map(), tasks: new Map(), challenges: new Map(), halted: false, waitingOnHuman: [], lastWatch: null, approvedVerify: null, baseBranch: null };
   let planTasks: PlanTask[] = [];
   const specPremises = new Map<string, string[]>(); // spec sha256 → Lead premises that version relies on
   const dropped = new Set<string>();
@@ -101,6 +103,10 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
         break;
       case "watch_result":
         st.lastWatch = { tick: Number(e.data.tick), ts: e.ts, verdicts: (e.data.verdicts as WatchResult["verdicts"] | undefined) ?? [] };
+        break;
+      case "assign":
+        // The feature's base branch, recorded by its first Lead (rev 5.11); a later Lead keeps it.
+        if (e.data.role === "lead" && typeof e.data.baseBranch === "string" && st.baseBranch === null) st.baseBranch = e.data.baseBranch;
         break;
     }
   }

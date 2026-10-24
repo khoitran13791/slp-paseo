@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addWorktree, changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, nestedRepos, NoChangesError, removeWorktree, startMerge, trackedChanges, trustRepo, unsafeGitDrivers, UntrustedGitDirError } from "../server/git";
+import { addWorktree, changedFiles, commitAll, commitTrailer, currentBranch, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, nestedRepos, NoChangesError, removeWorktree, resolveBaseBranch, startMerge, trackedChanges, trustRepo, unsafeGitDrivers, UntrustedGitDirError } from "../server/git";
 import { initRepo, sh, tmpDir } from "./helpers";
 
 function withHusky(repo: string, marker: string): void {
@@ -248,5 +248,46 @@ describe("git helpers", () => {
     sh(r, "git", ["config", "core.hooksPath", "./"]); expect(hooksDir(r)).toBe(".");
     sh(r, "git", ["config", "core.hooksPath", "./frontend/.husky/_/"]); expect(hooksDir(r)).toBe("frontend/.husky/_");
     sh(r, "git", ["config", "core.hooksPath", "/abs/hooks"]); expect(hooksDir(r)).toBeNull();
+  });
+});
+
+describe("resolveBaseBranch (rev 5.11)", () => {
+  function withRemote(name = "origin"): { r: string; bare: string } {
+    const r = repo(); const bare = join(tmpDir(), `${name}.git`);
+    sh(r, "git", ["init", "-q", "--bare", bare]); sh(r, "git", ["remote", "add", name, bare]);
+    return { r, bare };
+  }
+  it("prefers <remote>/HEAD", () => {
+    const { r } = withRemote();
+    sh(r, "git", ["push", "-q", "origin", "main:main", "main:trunk"]); sh(r, "git", ["fetch", "-q", "origin"]); sh(r, "git", ["remote", "set-head", "origin", "trunk"]);
+    expect(resolveBaseBranch(r, "origin")).toBe("origin/trunk");
+  });
+  it("skips an origin/HEAD whose branch is gone, then uses the current branch's upstream", () => {
+    const { r } = withRemote();
+    sh(r, "git", ["push", "-q", "origin", "main:dev", "main:trunk"]); sh(r, "git", ["fetch", "-q", "origin"]); sh(r, "git", ["remote", "set-head", "origin", "trunk"]);
+    sh(r, "git", ["push", "-q", "origin", ":trunk"]); sh(r, "git", ["fetch", "-q", "--prune", "origin"]);
+    sh(r, "git", ["branch", "-q", "-u", "origin/dev"]);
+    expect(resolveBaseBranch(r, "origin")).toBe("origin/dev");
+  });
+  it("falls back to <remote>/main, then <remote>/master", () => {
+    const a = withRemote(); sh(a.r, "git", ["push", "-q", "origin", "main"]);
+    expect(resolveBaseBranch(a.r, "origin")).toBe("origin/main");
+    const b = withRemote(); sh(b.r, "git", ["push", "-q", "origin", "main:master"]);
+    expect(resolveBaseBranch(b.r, "origin")).toBe("origin/master");
+  });
+  it("fetches first, so a commit pushed from another clone is the base", () => {
+    const { r, bare } = withRemote(); sh(r, "git", ["push", "-q", "origin", "main"]);
+    const other = join(tmpDir(), "other"); sh(tmpDir(), "git", ["clone", "-q", bare, other]);
+    writeFileSync(join(other, "n.txt"), "n"); sh(other, "git", ["add", "."]); sh(other, "git", ["-c", "user.name=o", "-c", "user.email=o@o", "commit", "-qm", "remote moves"]); sh(other, "git", ["push", "-q", "origin", "HEAD:main"]);
+    expect(resolveBaseBranch(r, "origin")).toBe("origin/main");
+    expect(sh(r, "git", ["rev-parse", "origin/main"])).toBe(sh(other, "git", ["rev-parse", "HEAD"]));
+  });
+  it("works with a remote not named origin", () => {
+    const { r } = withRemote("upstream"); sh(r, "git", ["push", "-q", "upstream", "main"]);
+    expect(resolveBaseBranch(r, "upstream")).toBe("upstream/main");
+  });
+  it("names what it tried when no branch fits", () => {
+    const { r } = withRemote();
+    expect(() => resolveBaseBranch(r, "origin")).toThrow(/tried origin\/HEAD, the upstream of the current branch, origin\/main and origin\/master/);
   });
 });

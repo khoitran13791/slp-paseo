@@ -6,11 +6,11 @@ import type { Identity } from "../server/identity";
 import { headOf } from "../server/git";
 import { deriveFeature } from "../server/store/derive";
 import { buildTools } from "../server/tools";
-import { finalizeReview, processReportFor, retireAgent } from "../server/tools/work";
+import { featureBase, finalizeReview, processReportFor, retireAgent } from "../server/tools/work";
 import { bound, humanSays, makeCtx, sh, specArgs, TEST_SETUP } from "./helpers";
 
-async function ready() {
-  const w = makeCtx();
+async function ready(over: Record<string, unknown> = {}) {
+  const w = makeCtx(over);
   const sup = bound(w.ctx, { role: "supervisor", project: "demo", feature: null, task: null, reviewCommit: null, parentAgentId: null }, "sup-1");
   const tools = buildTools(w.ctx);
   const call = async (who: Identity, name: string, args: unknown) => {
@@ -25,8 +25,8 @@ async function ready() {
 
 const TASKS = [{ id: "T1", title: "add src", dependsOn: [], verifies: [], touchSet: ["src.ts"], verify: "test -f src.ts" }, { id: "T2", title: "more", dependsOn: ["T1"], verifies: [], touchSet: [], verify: "true" }];
 
-async function withLeadAndPlan(tasks: Array<Record<string, unknown>> = TASKS, before?: (r: Awaited<ReturnType<typeof ready>>) => void) {
-  const r = await ready();
+async function withLeadAndPlan(tasks: Array<Record<string, unknown>> = TASKS, before?: (r: Awaited<ReturnType<typeof ready>>) => void, over: Record<string, unknown> = {}) {
+  const r = await ready(over);
   before?.(r);
   const spawned = await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", prompt: "go" });
   expect(spawned.isError).toBeFalsy();
@@ -162,6 +162,30 @@ describe("slp_spawn", () => {
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/halted/);
     expect((await r.call(r.lead, "slp_merge_main", {})).text).toMatch(/halted/);
   });
+  it("starts the Lead from the remote's freshly fetched default branch and records it (rev 5.11)", async () => {
+    const r = await ready();
+    const other = join(r.home, "other"); sh(r.home, "git", ["clone", "-q", r.origin, other]);
+    writeFileSync(join(other, "n.txt"), "n"); sh(other, "git", ["add", "."]); sh(other, "git", ["-c", "user.name=o", "-c", "user.email=o@o", "commit", "-qm", "remote moves"]); sh(other, "git", ["push", "-q", "origin", "HEAD:main"]);
+    expect((await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", prompt: "go" })).isError).toBeFalsy();
+    const lead = r.ctx.identities.byAgent(r.paseo.created[0]!.id)!;
+    expect(headOf(lead.worktree!)).toBe(sh(other, "git", ["rev-parse", "HEAD"]));
+    expect(r.events().find((e) => e.kind === "assign" && e.data.role === "lead")!.data.baseBranch).toBe("origin/main");
+    expect(deriveFeature("cache", r.events()).baseBranch).toBe("origin/main");
+  });
+  it("refuses to start a Lead when the remote has no branch to start from, and leaves nothing behind (rev 5.11)", async () => {
+    const r = await ready();
+    const empty = join(r.home, "empty.git"); sh(r.home, "git", ["init", "-q", "--bare", empty]);
+    sh(r.repo, "git", ["remote", "set-url", "origin", empty]); sh(r.repo, "git", ["update-ref", "-d", "refs/remotes/origin/main"]);
+    expect((await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", prompt: "go" })).text).toMatch(/no base branch on origin/);
+    expect(r.paseo.created).toHaveLength(0);
+    expect(sh(r.repo, "git", ["branch", "--list", "feat/cache"])).toBe("");
+  });
+  it("falls back to resolving the base for a feature from before rev 5.11", async () => {
+    const r = await ready();
+    expect(featureBase(r.ctx, "demo", "cache")).toBe("origin/main");
+    r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "assign", by_role: "supervisor", by_agent: r.sup.agentId, data: { role: "lead", agentId: "l", baseBranch: "origin/kept" } });
+    expect(featureBase(r.ctx, "demo", "cache")).toBe("origin/kept");
+  });
   it("enforces models.allowed and the project writer cap", async () => {
     const r = await withLeadAndPlan();
     r.ctx.config.models.allowed = ["claude-opus-5-5"];
@@ -181,6 +205,7 @@ describe("slp_spawn", () => {
   it("starts a resolve task with the base branch merged in and the conflict markers left for the Peer", async () => {
     const r = await withLeadAndPlan();
     writeFileSync(join(r.repo, "README.md"), "main side\n"); sh(r.repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "main moves"]);
+    sh(r.repo, "git", ["push", "-q", "origin", "main"]);
     writeFileSync(join(r.lead.worktree!, "README.md"), "feature side\n"); sh(r.lead.worktree!, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qam", "feature moves"]);
     expect((await r.call(r.lead, "slp_merge_main", {})).text).toMatch(/Conflicts in: README.md/);
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "resolve", merge_base: true })).isError).toBeFalsy();
@@ -255,10 +280,11 @@ describe("slp_spawn", () => {
   });
   it("returns the task and retires the Peer when the base branch cannot be merged in for merge_base", async () => {
     const r = await withLeadAndPlan();
-    r.ctx.config.projects.demo!.baseBranch = "no-such-branch";
+    // The remote is unreachable and its branch is gone: the fetch fails and origin/main cannot be merged.
+    sh(r.repo, "git", ["remote", "set-url", "origin", join(r.home, "missing.git")]); sh(r.repo, "git", ["update-ref", "-d", "refs/remotes/origin/main"]);
     const res = await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "resolve", merge_base: true });
     expect(res.isError).toBe(true);
-    expect(res.text).toMatch(/merging no-such-branch into the new worktree failed: .*did not start/);
+    expect(res.text).toMatch(/merging origin\/main into the new worktree failed: .*did not start/);
     const peerCreate = r.paseo.created[1]!;
     expect(deriveFeature("cache", r.events()).tasks.get("T1")!.status).toBe("pending");
     expect(r.ctx.identities.byAgent(peerCreate.id)).toBeNull();
@@ -267,7 +293,7 @@ describe("slp_spawn", () => {
     expect(existsSync(peerCreate.cwd)).toBe(false);
     expect(r.paseo.sent.some((s) => s.agentId === peerCreate.id)).toBe(false);
     expect(r.events().filter((e) => e.kind === "release").at(-1)!).toMatchObject({ by_role: "lead", data: { task: "T1", outcome: "returned" } });
-    r.ctx.config.projects.demo!.baseBranch = "main";
+    sh(r.repo, "git", ["remote", "set-url", "origin", r.origin]); sh(r.repo, "git", ["fetch", "-q", "origin"]);
     const again = await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" });
     expect(again.isError).toBeFalsy();
     expect(sh(r.paseo.created[2]!.cwd, "git", ["branch", "--show-current"])).toBe("slp/cache/T1-2");
@@ -334,7 +360,7 @@ describe("report → review → accept", () => {
     const marker = join(r.home, "ssh-ran");
     mkdirSync(join(r.lead.worktree!, "scripts"), { recursive: true }); writeFileSync(join(r.lead.worktree!, "scripts", "ssh.sh"), `touch ${marker}\n`);
     sh(r.lead.worktree!, "git", ["add", "."]); sh(r.lead.worktree!, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "accepted peer work"]);
-    sh(r.repo, "git", ["remote", "add", "origin", "ssh://example.invalid/repo.git"]); sh(r.repo, "git", ["config", "core.sshCommand", "sh scripts/ssh.sh"]);
+    sh(r.repo, "git", ["remote", "set-url", "origin", "ssh://example.invalid/repo.git"]); sh(r.repo, "git", ["config", "core.sshCommand", "sh scripts/ssh.sh"]);
     await r.call(r.lead, "slp_merge_main", {});
     expect(existsSync(marker)).toBe(false);
   });
@@ -389,7 +415,7 @@ describe("ship", () => {
     const pkg = await r.call(r.sup, "slp_ship_package", { feature: "cache", summary: "Cache for retries." });
     expect(pkg.isError).toBeFalsy();
     expect(pkg.text).toContain("Rulings");
-    const bare = join(r.home, "origin.git"); sh(r.home, "git", ["init", "-q", "--bare", bare]); sh(r.lead.worktree!, "git", ["remote", "add", "origin", bare]);
+    const bare = r.origin;
     r.ctx.config.ship.openPr = false;
     expect((await r.call(r.sup, "slp_ship", { feature: "cache", quote: "ship" })).isError).toBe(true);
     await r.human("ship đi");
@@ -405,7 +431,7 @@ describe("ship", () => {
     const r = await withLeadAndPlan();
     r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "ruling", by_role: "lead", by_agent: r.lead.agentId, idPrefix: "R", data: { decision: "skip", reason: "r", cost_if_wrong: "c", drop: ["T1", "T2"] } });
     expect((await r.call(r.sup, "slp_ship_package", { feature: "cache", summary: "s" })).isError).toBeFalsy();
-    const bare = join(r.home, "origin.git"); sh(r.home, "git", ["init", "-q", "--bare", bare]); sh(r.lead.worktree!, "git", ["remote", "add", "origin", bare]);
+    const bare = r.origin;
     r.ctx.config.ship.openPr = true;
     await r.human("ship đi");
     // A PATH with git and sh but no gh: the test never reaches GitHub, whatever is installed on this machine.
@@ -422,7 +448,7 @@ describe("ship", () => {
   it("counts a message typed while the package was verifying as older than the package, so it cannot approve it", async () => {
     const r = await withLeadAndPlan();
     r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "ruling", by_role: "lead", by_agent: r.lead.agentId, idPrefix: "R", data: { decision: "skip", reason: "r", cost_if_wrong: "c", drop: ["T1", "T2"] } });
-    const bare = join(r.home, "origin.git"); sh(r.home, "git", ["init", "-q", "--bare", bare]); sh(r.lead.worktree!, "git", ["remote", "add", "origin", bare]);
+    const bare = r.origin;
     r.ctx.config.ship.openPr = false;
     const real = r.ctx.run;
     r.ctx.run = async (runner, worktree, command, timeoutSec) => { await r.human("ok"); return real(runner, worktree, command, timeoutSec); };
@@ -450,6 +476,13 @@ describe("ship", () => {
     store.append({ feature: "cache", kind: "spec", by_role: "lead", by_agent: r.lead.agentId, data: { version: 3, sha256: "old", path: "p", premises: [] } });
     store.append({ feature: "cache", kind: "human_decision", by_role: "supervisor", by_agent: r.sup.agentId, data: { decides: "approve_spec", target: "old", quote: "x" } });
     expect((await r.call(r.sup, "slp_ship_package", { feature: "cache", summary: "s" })).text).toMatch(/spec v3 names no verify command/);
+  });
+  it("strips the remote name from the PR base, whatever the remote is called (rev 5.11)", async () => {
+    const r = await withLeadAndPlan(TASKS, undefined, { ship: { remote: "upstream", openPr: true } });
+    r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "ruling", by_role: "lead", by_agent: r.lead.agentId, idPrefix: "R", data: { decision: "skip", reason: "r", cost_if_wrong: "c", drop: ["T1", "T2"] } });
+    const pkg = await r.call(r.sup, "slp_ship_package", { feature: "cache", summary: "s" });
+    expect(pkg.text).toContain("slp_ship pushes feat/cache to upstream and opens a PR against main.");
+    expect(deriveFeature("cache", r.events()).baseBranch).toBe("upstream/main");
   });
 });
 

@@ -123,10 +123,13 @@ export const TEST_SETUP: RoleSetup = {
   profile: { supervisor: { model: "claude-opus-5-5" }, lead: { model: "claude-opus-5-5" }, "peer-impl": { model: "claude-sonnet-5" }, "peer-review": { model: "gpt-6-astra" } },
 };
 
-export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: FakePaseo; repo: string; home: string; config: SlpConfig } {
+export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: FakePaseo; repo: string; home: string; config: SlpConfig; origin: string } {
   const repo = initRepo(); trustRepo(repo);
   const home = tmpDir("slp-home-");
   const config = parseSlpConfig({ projects: { demo: { repo, baseBranch: "main", verify: ["true"] } }, sandbox: { runner: FAKE_RUNNER }, ...over });
+  // Since rev 5.11 every project has a remote: features start from it and ship pushes to it.
+  const origin = pjoin(home, "origin.git"); sh(home, "git", ["init", "-q", "--bare", origin]);
+  sh(repo, "git", ["remote", "add", config.ship.remote, origin]); sh(repo, "git", ["push", "-q", config.ship.remote, "main"]);
   const paseo = new FakePaseo();
   paseo.projectsList = [{ projectId: "prj-demo", projectRootPath: repo }];
   const identities = new IdentityRegistry(pjoin(home, "identities.json"));
@@ -139,7 +142,7 @@ export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: 
   };
   paseo.beforeCreate = (req) => transformCreate(req, { identities, config, setup: () => TEST_SETUP, mcpUrl: () => "http://127.0.0.1:1/mcp", promptFor: (i) => `PROMPT ${i.role}`, toolNames: () => [], stateDirs: [], claudePluginDir: null, codexHome: () => pjoin(home, "codex-home") });
   paseo.onSessionOpen = (agentId, env) => bindSession({ agentId, env }, identities);
-  return { ctx, paseo, repo, home, config };
+  return { ctx, paseo, repo, home, config, origin };
 }
 
 export function bound(ctx: Ctx, meta: IdentityMeta & { worktree?: string | null }, agentId: string): Identity {

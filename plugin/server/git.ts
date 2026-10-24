@@ -193,6 +193,21 @@ export function pushNoHooks(repo: string, remote: string, branch: string): void 
   git(repo, ["push", "--no-verify", remote, `${branch}:${branch}`]);
 }
 
+/**
+ * A feature's base branch (spec §7.4 rev 5.11): fetch, then <remote>/HEAD, the upstream of the branch checked out in the main
+ * checkout, <remote>/main, <remote>/master. Network git runs in the human's checkout, like pushNoHooks.
+ */
+export function resolveBaseBranch(repo: string, remote: string): string {
+  git(repo, ["fetch", "--quiet", remote], true);
+  const exists = (ref: string) => git(repo, ["rev-parse", "--verify", "--quiet", `refs/remotes/${ref}`], true).code === 0;
+  const head = git(repo, ["symbolic-ref", "--quiet", "--short", `refs/remotes/${remote}/HEAD`], true).stdout.trim();
+  if (head && exists(head)) return head; // a HEAD left pointing at a deleted branch is skipped
+  const upstream = git(repo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], true).stdout.trim();
+  if (upstream.startsWith(`${remote}/`) && exists(upstream)) return upstream;
+  for (const b of ["main", "master"]) if (exists(`${remote}/${b}`)) return `${remote}/${b}`;
+  throw new Error(`no base branch on ${remote}: tried ${remote}/HEAD, the upstream of the current branch, ${remote}/main and ${remote}/master; push the default branch to ${remote}`);
+}
+
 export function filesOutside(files: string[], touchSet: string[]): string[] {
   return files.filter((f) => !touchSet.some((t) => matchTouch(t, f)));
 }

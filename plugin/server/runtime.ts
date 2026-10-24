@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { bindSession, ensureCodexHome, ensureRunnerHome, findSuperpowersDir, transformCreate, type CreateRequest } from "./agentConfig";
+import { ensureCodexHome, ensureRunnerHome, findSuperpowersDir, sessionOpen, transformCreate, type CreateRequest, type SessionOpenRequest } from "./agentConfig";
 import { expandHome, loadSlpConfig, slpHome, type SlpConfig } from "./config";
 import type { Ctx, PaseoLike } from "./context";
 import { trustRepo, unsafeGitDrivers } from "./git";
@@ -17,7 +17,7 @@ import { StoreRegistry } from "./store/registry";
 import { buildTools } from "./tools";
 import { NudgeTracker, ResumeQueue } from "./watchdog";
 
-export interface Runtime { ctx: Ctx; capture(paseo: unknown): Promise<void>; wake(paseo: unknown): Promise<void>; transformCreate(req: CreateRequest): Promise<CreateRequest>; bindSession(req: { agentId: string; env: Record<string, string> }): void; close(): Promise<void> }
+export interface Runtime { ctx: Ctx; capture(paseo: unknown): Promise<void>; wake(paseo: unknown): Promise<void>; transformCreate(req: CreateRequest): Promise<CreateRequest>; openSession(req: SessionOpenRequest): Promise<SessionOpenRequest | undefined>; close(): Promise<void> }
 
 export function createRuntime(): Runtime {
   const home = slpHome();
@@ -83,6 +83,8 @@ export function createRuntime(): Runtime {
     void setupPromise.then(() => { if (!reconciled) { reconciled = true; return reconcile(ctx); } }).catch((e) => console.error("[slp] reconcile failed", e));
   }
 
+  const codexHome = () => ensureCodexHome(join(home, "codex-home"), process.env.CODEX_HOME ?? join(homedir(), ".codex"), denyRead);
+
   return {
     ctx, capture,
     async transformCreate(req) {
@@ -94,13 +96,17 @@ export function createRuntime(): Runtime {
         promptFor: (ident) => promptFor(ident, { task: ident.feature && ident.task ? deriveFeature(ident.feature, ctx.stores.feature(ident.project, ident.feature).all()).tasks.get(ident.task) ?? null : null }),
         toolNames: (role) => tools.filter((t) => t.roles.includes(role)).map((t) => t.name),
         stateDirs, claudePluginDir,
-        codexHome: () => ensureCodexHome(join(home, "codex-home"), process.env.CODEX_HOME ?? join(homedir(), ".codex"), denyRead),
+        codexHome,
       });
     },
     // The timer only ticks once a Paseo client exists; a plugin reload leaves none until the first hook (T21 row 24).
     // Wake hands one over and nothing else: ticking here too would space resumes closer than the timer does (review Codex 2026-10-23).
     async wake(p) { await capture(p); },
-    bindSession: (req) => bindSession(req, identities),
+    // An SLP session needs its vendor: a broken setup fails the open (fail closed); other agents never wait for SLP's setup.
+    async openSession(req) {
+      if (roleOfProvider(req.provider)) await refreshSetup();
+      return sessionOpen(req, { identities, setup: () => ctx.setup(), codexHome });
+    },
     async close() { clearInterval(timer); await (await mcp).close(); },
   };
 }

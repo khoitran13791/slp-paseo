@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { expandHome, projectForCwd, type SlpConfig } from "./config";
 import { currentBranch, gitCommonDir, headOf } from "./git";
 import type { Identity, IdentityRegistry } from "./identity";
-import { ROLE_PROVIDER, roleOfProvider, type Role, type RoleSetup } from "./roles";
+import { ROLE_PROVIDER, roleOfProvider, type Role, type RoleSetup, type Vendor } from "./roles";
 
 interface McpToolRef { kind: "mcp"; server: string; tool: string }
 export interface CreateRequest {
@@ -48,6 +48,11 @@ export function claudeIsolation(cwd: string, pluginDir: string | null, extraArgs
 export const CLAUDE_ISOLATION_ENV = { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" } as const;
 /** One command chain: SLP roles get help only through slp_spawn, never through Claude Code's own subagents. */
 export const CLAUDE_DISALLOWED_TOOLS = ["Agent", "Task"];
+
+/** A role's process env. Paseo saves agent config but not env overrides, so this runs at create and at every session open (spec §7.1 rev 5.10). */
+export function roleEnv(vendor: Vendor, codexHome: () => string): Record<string, string> {
+  return vendor === "claude" ? { ...CLAUDE_ISOLATION_ENV } : { CODEX_HOME: codexHome() };
+}
 
 const CODEX_CONFIG = "# Written by the SLP plugin before each Codex role starts. No MCP servers and no trusted projects:\n# the agent gets only what Paseo passes for its session.\n";
 
@@ -131,7 +136,7 @@ export function transformCreate(req: CreateRequest, deps: AgentConfigDeps): Crea
         disallowedTools: [...new Set([...(Array.isArray(base.disallowedTools) ? (base.disallowedTools as string[]) : []), ...CLAUDE_DISALLOWED_TOOLS])],
       }
     : { ...stripCodexSandbox(base), approval_policy: "on-request", sandbox_workspace_write: { network_access: false } };
-  const runtimeEnv: Record<string, string> = vendor === "claude" ? { ...CLAUDE_ISOLATION_ENV } : { CODEX_HOME: deps.codexHome() };
+  const runtimeEnv = roleEnv(vendor, deps.codexHome);
   const preapproved: McpToolRef[] = deps.toolNames(role).map((tool) => ({ kind: "mcp", server: "slp", tool }));
   return {
     ...req,
@@ -152,4 +157,15 @@ export function transformCreate(req: CreateRequest, deps: AgentConfigDeps): Crea
 export function bindSession(req: { agentId: string; env: Record<string, string> }, identities: IdentityRegistry): void {
   const token = req.env?.SLP_TOKEN;
   if (token && identities.byToken(token)) identities.bind(token, req.agentId);
+}
+
+/** `before agent.session_open` request (plugin SDK 0.12 PluginSessionOpenRequest); the hook may change only env. */
+export interface SessionOpenRequest { agentId: string; workspaceId: string | null; provider: string; cwd: string; reason: "create" | "resume" | "refresh" | "import"; purpose: "interactive" | "history"; env: Record<string, string> }
+
+/** Binds the session's token, then gives an SLP role its env back: a reload opens the session without it (smoke rerun F6: the Codex reviewer resumed from ~/.codex and was lost). */
+export function sessionOpen(req: SessionOpenRequest, deps: { identities: IdentityRegistry; setup: () => RoleSetup; codexHome: () => string }): SessionOpenRequest | undefined {
+  bindSession(req, deps.identities);
+  const role = roleOfProvider(req.provider);
+  if (!role) return undefined;
+  return { ...req, env: { ...req.env, ...roleEnv(deps.setup().vendor[role], deps.codexHome) } };
 }

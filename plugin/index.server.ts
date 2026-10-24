@@ -10,7 +10,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(WAKE, async (_input, { paseo }) => { await rt.wake(paseo); return { ok: true }; });
   const offs = [
     server.before("agent.create", async ({ request }, { paseo }) => { await rt.capture(paseo); return (await rt.transformCreate(request as never)) as never; }),
-    server.before("agent.session_open", async ({ request }, { paseo }) => { await rt.capture(paseo); rt.bindSession(request); return undefined; }),
+    server.before("agent.session_open", async ({ request }, { paseo }) => { await rt.capture(paseo); return (await rt.openSession(request as never)) as never; }),
     server.on("agent.turn_started", async ({ agent }, { paseo }) => { await rt.capture(paseo); void guard("turn_started", () => onTurnStarted(rt.ctx, agent.id)); }),
     // turn_ended may run verify for up to verifyTimeoutSeconds: return at once; onTurnEnded serializes per agent.
     server.on("agent.turn_ended", async (ev, { paseo }) => { await rt.capture(paseo); void guard("turn_ended", () => onTurnEnded(rt.ctx, ev)); }),

@@ -2,7 +2,7 @@ import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, symlink
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bindSession, claudeSandbox, ensureCodexHome, ensureRunnerHome, findSuperpowersDir, stripCodexSandbox, transformCreate } from "../server/agentConfig";
+import { bindSession, claudeSandbox, ensureCodexHome, ensureRunnerHome, findSuperpowersDir, sessionOpen, stripCodexSandbox, transformCreate } from "../server/agentConfig";
 import { parseSlpConfig } from "../server/config";
 import { headOf, trustRepo } from "../server/git";
 import { IdentityRegistry, type Identity } from "../server/identity";
@@ -175,5 +175,25 @@ describe("bindSession", () => {
     bindSession({ agentId: "lead-1", env: { SLP_TOKEN: lead.token } }, identities);
     expect(identities.byAgent("lead-1")?.tokenHash).toBe(lead.tokenHash);
     expect(() => bindSession({ agentId: "x", env: {} }, identities)).not.toThrow();
+  });
+});
+
+describe("sessionOpen (rev 5.10 F6)", () => {
+  const base = { workspaceId: null, cwd: "/w", purpose: "interactive" as const };
+  it("gives an SLP role its env back at every session open, refresh included, and binds the token at create", () => {
+    const { identities, d } = deps();
+    const rev = identities.mint({ role: "peer-review", project: "demo", feature: "f", task: "T1", reviewCommit: "abc", parentAgentId: "lead-1" });
+    expect(sessionOpen({ ...base, agentId: "rev-1", provider: "slp-peer-review", reason: "create", env: { SLP_TOKEN: rev.token } }, d)?.env).toEqual({ SLP_TOKEN: rev.token, CODEX_HOME });
+    expect(identities.byAgent("rev-1")?.tokenHash).toBe(rev.tokenHash);
+    expect(sessionOpen({ ...base, agentId: "rev-1", provider: "slp-peer-review", reason: "refresh", env: {} }, d)?.env).toEqual({ CODEX_HOME });
+    expect(sessionOpen({ ...base, agentId: "lead-1", provider: "slp-lead/claude-opus-5-5", reason: "resume", env: { KEEP: "1" } }, d)?.env).toEqual({ KEEP: "1", CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" });
+  });
+  it("leaves a non-SLP session alone, and still restores env for a retired SLP agent (Review Focus)", () => {
+    const { identities, d } = deps();
+    expect(sessionOpen({ ...base, agentId: "x", provider: "codex/gpt-5.5", reason: "refresh", env: { A: "1" } }, d)).toBeUndefined();
+    const rev = identities.mint({ role: "peer-review", project: "demo", feature: "f", task: "T1", reviewCommit: "abc", parentAgentId: "lead-1" });
+    identities.bind(rev.token, "rev-2");
+    identities.retire(rev.tokenHash);
+    expect(sessionOpen({ ...base, agentId: "rev-2", provider: "slp-peer-review", reason: "refresh", env: {} }, d)?.env).toEqual({ CODEX_HOME });
   });
 });

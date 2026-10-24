@@ -49,6 +49,19 @@ describe("runtime", () => {
     expect((out as { config: { modeId?: string } }).config.modeId).toBe("default");
     await rt.close();
   });
+  it("gives an SLP agent its role env back when Paseo reopens its session, and leaves other agents alone (rev 5.10 F6)", async () => {
+    const home = tmpDir(); process.env.SLP_HOME = home;
+    writeFileSync(join(home, "config.json"), JSON.stringify({ projects: {}, sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
+    const rt = createRuntime();
+    const paseo = new FakePaseo();
+    const off = { enabled: false };
+    paseo.daemonConfig = { providers: { "slp-supervisor": { extends: "claude", paseoTools: off }, "slp-lead": { extends: "claude", paseoTools: off }, "slp-peer-impl": { extends: "claude", paseoTools: off }, "slp-peer-review": { extends: "codex", paseoTools: off } }, agentProfiles: [] };
+    await rt.capture(paseo);
+    const open = { agentId: "sup-1", workspaceId: null, cwd: "/x", reason: "refresh" as const, purpose: "interactive" as const };
+    expect((await rt.openSession({ ...open, provider: "slp-supervisor", env: { KEEP: "1" } }))?.env).toEqual({ KEEP: "1", CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" });
+    expect(await rt.openSession({ ...open, provider: "claude", env: {} })).toBeUndefined();
+    await rt.close();
+  });
   it("wakes without any agent hook: the plugin gets its Paseo client, and a broken setup does not throw", async () => {
     const home = tmpDir(); process.env.SLP_HOME = home;
     writeFileSync(join(home, "config.json"), JSON.stringify({ projects: {}, sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));

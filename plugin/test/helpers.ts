@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,8 +9,9 @@ export function tmpDir(prefix = "slp-"): string {
 export function sh(cwd: string, cmd: string, args: string[]): string {
   return execFileSync(cmd, args, { cwd, encoding: "utf8" }).trim();
 }
-export function initRepo(): string {
-  const dir = tmpDir("slp-repo-");
+export function initRepo(name?: string): string {
+  const dir = name ? join(tmpDir("slp-repo-"), name) : tmpDir("slp-repo-");
+  if (name) mkdirSync(dir);
   sh(dir, "git", ["init", "-q", "-b", "main"]);
   sh(dir, "git", ["config", "user.name", "SLP Test"]);
   sh(dir, "git", ["config", "user.email", "slp@test.local"]);

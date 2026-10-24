@@ -14,6 +14,8 @@ const SLUG = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
 const Premise = z.object({ kind: z.enum(["decision", "hypothesis"]), title: z.string().min(1), verify_by: z.string().min(1).optional(), source: z.enum(["human", "self"]).optional() });
 /** slp_brief premises carry the id the last slp_brief result gave them (spec §5.2 rev 5.10). */
 const BriefPremise = Premise.extend({ id: z.string().optional() });
+/** Only the Supervisor, who asks the human, can say the human chose a premise; a Lead's premise is its own (smoke G1 H2). */
+const SpecPremise = Premise.omit({ source: true });
 const normTitle = (s: string): string => s.toLowerCase().replace(/\s+/g, " ").trim();
 
 /** A brief lists every premise the record holds: a resent one keeps its id, matched by id, else by kind and title (the Supervisor's labels can drift, smoke rerun F1). */
@@ -157,7 +159,7 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
     defineTool({
       name: "slp_spec", description: "Save a new spec version (contracts only) with any new premises.",
       roles: ["lead"],
-      input: z.object({ markdown: z.string().min(1), premises: z.array(Premise).default([]) }),
+      input: z.object({ markdown: z.string().min(1), premises: z.array(SpecPremise).default([]) }),
       run(who, a) {
         const feature = who.feature!;
         const before = deriveFeature(feature, ctx.stores.feature(who.project, feature).all());

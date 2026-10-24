@@ -49,6 +49,12 @@ describe("brief and human decisions", () => {
     expect(premises).toEqual(["human", "supervisor"]);
     expect(deriveFeature("cache", w.events()).premises.get("D1")).toMatchObject({ status: "proposed", source: "human" });
   });
+  it("stores a Lead's spec premise as the Lead's, even when it claims the human chose it (smoke G1 H2)", async () => {
+    const w = await world();
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec\n## Decisions added by the Lead\n- D1 lowercase", premises: [{ kind: "decision", title: "Output is lowercase (confirmed by human)", source: "human" }] });
+    expect(w.events().filter((e) => e.kind === "premise").map((e) => e.data.source)).toEqual(["lead"]);
+    expect(deriveFeature("cache", w.events()).premises.get("D1")).toMatchObject({ status: "proposed", source: "lead" });
+  });
   it("lets no premise govern a plan until an approved spec lists it, Supervisor premises included (spec §5.2)", async () => {
     const w = await world();
     await w.call(w.sup, "slp_brief", { feature: "cache", title: "Cache", markdown: "# Brief", premises: [{ kind: "decision", title: "Redis", source: "human" }] });

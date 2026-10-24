@@ -18,15 +18,20 @@ const BriefPremise = Premise.extend({ id: z.string().optional() });
 const SpecPremise = Premise.omit({ source: true });
 const normTitle = (s: string): string => s.toLowerCase().replace(/\s+/g, " ").trim();
 
-/** The spec's "## Verify" section must name every full-suite command slp_spec records (spec §6.2 rev 5.11). */
+/**
+ * The spec's "## Verify" section must show every full-suite command slp_spec records (spec §6.2 rev 5.11), each as a line of its own
+ * (a leading "$ " is fine) or a whole `code` span, so the command the human approves is the one ship runs (final review I1).
+ */
 function verifySectionProblem(markdown: string, verify: readonly string[]): string | null {
   const head = /^##\s+Verify\b.*$/m.exec(markdown);
   if (!head) return 'the spec needs a "## Verify" section: the command(s) that run the whole test suite, and the result of running them once before the spec (rev 5.11)';
   const rest = markdown.slice(head.index + head[0].length);
   const next = /^##\s/m.exec(rest); // "### sub" headings stay inside the section
   const section = next ? rest.slice(0, next.index) : rest;
-  const absent = verify.filter((c) => !section.includes(c));
-  return absent.length ? `these verify commands are not in the "## Verify" section: ${absent.join("; ")}` : null;
+  const lines = section.split("\n").map((l) => l.trim().replace(/^\$\s+/, ""));
+  const spans = [...section.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]!.trim());
+  const absent = verify.filter((c) => !lines.includes(c) && !spans.includes(c));
+  return absent.length ? `these verify commands are not in the "## Verify" section: ${absent.join("; ")} (write each as a line of its own or a \`code\` span)` : null;
 }
 
 /** A brief lists every premise the record holds: a resent one keeps its id, matched by id, else by kind and title (the Supervisor's labels can drift, smoke rerun F1). */
@@ -168,7 +173,7 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
       },
     }),
     defineTool({
-      name: "slp_spec", description: 'Save a new spec version (contracts only) with any new premises, and verify: the command(s) that run the repo\'s whole test suite, also written in its "## Verify" section with their baseline result.',
+      name: "slp_spec", description: 'Save a new spec version (contracts only) with any new premises, and verify: the command(s) that run the repo\'s whole test suite, also written in its "## Verify" section (each as a line of its own or a `code` span) with their baseline result.',
       roles: ["lead"],
       input: z.object({ markdown: z.string().min(1), premises: z.array(SpecPremise).default([]), verify: z.array(z.string().trim().min(1)).min(1) }),
       run(who, a) {
@@ -182,7 +187,7 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
         const ids = addPremises(ctx, who, feature, a.premises, doc.sha256);
         const carried = [...before.premises.values()].filter((p) => p.status === "proposed" && new RegExp(`\\b${p.id}\\b`).test(a.markdown)).map((p) => p.id);
         appendAs(ctx, who, feature, { kind: "spec", data: { ...doc, premises: [...carried, ...ids], verify: a.verify } });
-        routeFrom(ctx, who, supervisorAddress(who.project, feature), `Spec v${doc.version} for ${feature} is ready at ${doc.path}${ids.length ? ` (new premises ${ids.join(", ")}, active once the human approves)` : ""}. Check it against the brainstorm record, walk the human through it in their language (what it does, a table of example inputs and results, the Lead's added decisions, the verify command and its baseline, the path), then ask them to approve the spec.`);
+        routeFrom(ctx, who, supervisorAddress(who.project, feature), `Spec v${doc.version} for ${feature} is ready at ${doc.path}${ids.length ? ` (new premises ${ids.join(", ")}, active once the human approves)` : ""}. The verify command(s) it recorded, which ship runs: ${a.verify.map((c) => `\`${c}\``).join("; ")}. Check it against the brainstorm record, walk the human through it in their language (what it does, a table of example inputs and results, the Lead's added decisions, the verify command and its baseline, the path), then ask them to approve the spec.`);
         return `Saved spec v${doc.version}. Wait for the human's approval before planning.`;
       },
     }),

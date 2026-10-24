@@ -198,7 +198,9 @@ export function pushNoHooks(repo: string, remote: string, branch: string): void 
  * checkout, <remote>/main, <remote>/master. Network git runs in the human's checkout, like pushNoHooks.
  */
 export function resolveBaseBranch(repo: string, remote: string): string {
-  git(repo, ["fetch", "--quiet", remote], true);
+  // A failed fetch would leave a stale ref to start from, the bug the fetch is there to fix (final review I5): fail and say why.
+  const fetched = git(repo, ["fetch", "--quiet", remote], true);
+  if (fetched.code !== 0) throw new Error(`fetch from ${remote} failed: ${fetched.stderr.trim().split("\n").slice(-2).join(" ") || `exit ${fetched.code}`}; check the network and access to ${remote}, then retry`);
   const exists = (ref: string) => git(repo, ["rev-parse", "--verify", "--quiet", `refs/remotes/${ref}`], true).code === 0;
   const head = git(repo, ["symbolic-ref", "--quiet", "--short", `refs/remotes/${remote}/HEAD`], true).stdout.trim();
   if (head && exists(head)) return head; // a HEAD left pointing at a deleted branch is skipped

@@ -72,4 +72,37 @@ describe("ProjectRegistry.register (rev 5.11)", () => {
     expect(existsSync(`${file}.bad`)).toBe(true);
     expect(readFileSync(`${file}.bad`, "utf8")).toBe("{ not json");
   });
+  it("refuses the home folder, or a folder above it, as a project (final review I2)", () => {
+    const saved = process.env.HOME;
+    try {
+      const home = withOrigin("home"); mkdirSync(join(home, "scratch"));
+      process.env.HOME = home;
+      expect(() => registry().register(join(home, "scratch"), "origin")).toThrow(/is your home folder or a folder above it/);
+      const top = withOrigin("top"); mkdirSync(join(top, "u", "me"), { recursive: true });
+      process.env.HOME = join(top, "u", "me");
+      expect(() => registry().register(top, "origin")).toThrow(/is your home folder or a folder above it/);
+    } finally { process.env.HOME = saved; }
+  });
+  it("treats a projects.json that is valid JSON but not a map of repos as corrupt (final review I3)", () => {
+    for (const bad of ["null", "[]", '{"x": null}', '{"x": {"repo": 3}}']) {
+      const file = join(tmpDir(), "projects.json"); writeFileSync(file, bad);
+      const logs: string[] = [];
+      const reg = registry(file, (m) => logs.push(m));
+      expect(reg.names()).toEqual([]);
+      expect(() => reg.trustAll()).not.toThrow();
+      expect(logs.join("\n")).toMatch(/projects\.json is not a map of project names to \{ repo \}/);
+      expect(reg.register(withOrigin("fresh"), "origin").name).toBe("fresh");
+      expect(readFileSync(`${file}.bad`, "utf8")).toBe(bad);
+      expect(Object.keys(JSON.parse(readFileSync(file, "utf8")))).toEqual(["fresh"]);
+    }
+  });
+  it("does not bring back an entry the human deleted while the plugin runs (final review I4)", () => {
+    const file = join(tmpDir(), "projects.json"); const reg = registry(file);
+    const a = withOrigin("a"); const b = withOrigin("b"); const c = withOrigin("c");
+    reg.register(a, "origin"); reg.register(b, "origin");
+    writeFileSync(file, JSON.stringify({ a: { repo: a } }));
+    reg.register(c, "origin");
+    expect(Object.keys(JSON.parse(readFileSync(file, "utf8"))).sort()).toEqual(["a", "c"]);
+    expect(reg.names().sort()).toEqual(["a", "c"]);
+  });
 });

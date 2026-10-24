@@ -105,6 +105,15 @@ describe("brief and human decisions", () => {
     expect(ok.isError).toBeFalsy();
     expect(w.events().filter((e) => e.kind === "spec").at(-1)!.data.verify).toEqual(["npm test -- --run"]);
   });
+  it("takes a verify command only as a whole line or code span of ## Verify, and tells the Supervisor the recorded commands (final review I1)", async () => {
+    const w = world();
+    const md = "# Spec\n## Decisions added by the Lead\nNone.\n## Verify\nRun `npm run lint && npm test`. Baseline: 3 pass, it is true.";
+    expect((await w.call(w.lead, "slp_spec", { markdown: md, verify: ["npm test"] })).text).toMatch(/not in the "## Verify" section: npm test/);
+    expect((await w.call(w.lead, "slp_spec", { markdown: md, verify: [":"] })).text).toMatch(/not in the "## Verify" section: :/);
+    expect((await w.call(w.lead, "slp_spec", { markdown: md, verify: ["true"] })).isError).toBe(true);
+    expect((await w.call(w.lead, "slp_spec", { markdown: `${md}\n$ make check`, verify: ["npm run lint && npm test", "make check"] })).isError).toBeFalsy();
+    expect(w.ctx.router.pending().some((p) => p.to.role === "supervisor" && p.text.includes("`npm run lint && npm test`; `make check`"))).toBe(true);
+  });
 });
 
 describe("brief premises are a snapshot (rev 5.10 F1)", () => {

@@ -286,6 +286,11 @@ describe("resolveBaseBranch (rev 5.11)", () => {
     const { r } = withRemote("upstream"); sh(r, "git", ["push", "-q", "upstream", "main"]);
     expect(resolveBaseBranch(r, "upstream")).toBe("upstream/main");
   });
+  it("fails with the fetch error instead of starting from a stale ref (final review I5)", () => {
+    const { r } = withRemote(); sh(r, "git", ["push", "-q", "origin", "main"]); sh(r, "git", ["fetch", "-q", "origin"]);
+    sh(r, "git", ["remote", "set-url", "origin", join(tmpDir(), "gone.git")]);
+    expect(() => resolveBaseBranch(r, "origin")).toThrow(/fetch from origin failed: .+; check the network and access to origin/);
+  });
   it("names what it tried when no branch fits", () => {
     const { r } = withRemote();
     expect(() => resolveBaseBranch(r, "origin")).toThrow(/tried origin\/HEAD, the upstream of the current branch, origin\/main and origin\/master/);

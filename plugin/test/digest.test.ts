@@ -20,6 +20,28 @@ describe("renderDigest", () => {
     expect(lines[1]).toBe("Waiting on human: approve spec v1");
     expect(lines.slice(1).some((l) => /: —$/.test(l) || l.includes("Parked: —"))).toBe(false);
   });
+  it("leaves out an empty Stale or Parked side instead of printing — (final review #2)", () => {
+    const events = [
+      ev("premise", { kind: "decision", title: "d" }, { id: "D1", by_role: "supervisor" }),
+      ev("spec", { version: 1, sha256: "s", path: "p", premises: ["D1"] }), ev("human_decision", { decides: "approve_spec", target: "s" }, { by_role: "supervisor" }),
+      ev("plan", { version: 1, sha256: "p1", path: "p", tasks: [{ ...task("T1"), dependsOn: ["D1"] }] }), ev("plan_approved", { sha256: "p1" }),
+      ev("assign", { task: "T1", agentId: "a", worktree: "/w", branch: "b", base: "base", attempt: 1 }),
+      ev("report", { task: "T1", status: "done", message: "m" }, { by_role: "peer-impl" }),
+      ev("commit", { task: "T1", hash: "c1" }, { by_role: "plugin" }),
+      ev("evidence", { scope: "task", task: "T1", commit: "c1", exitCode: 0, timedOut: false }, { by_role: "plugin" }),
+      ev("review", { task: "T1", commit: "c1", blocking: 0, verdict: "pass" }, { by_role: "peer-review", by_agent: "r" }),
+      ev("ops", { type: "review_checked", task: "T1", commit: "c1", agentId: "r" }, { by_role: "plugin" }),
+      ev("release", { task: "T1", outcome: "accepted" }),
+      ev("premise", { kind: "decision", title: "d2" }, { id: "D2", by_role: "supervisor" }),
+      ev("supersede", {}, { supersedes: "D1", refs: ["D2"], by_role: "supervisor" }),
+    ];
+    const st = deriveFeature("f", events);
+    expect(st.tasks.get("T1")?.status).toBe("stale");
+    const text = renderDigest(st, [], new Date());
+    expect(text).toContain("\nStale: T1\n");
+    expect(text).not.toContain("Parked");
+    expect(text).not.toContain(": —");
+  });
   it("shows at most 8 pending premises, and none once the spec is approved or the feature halted (Review Focus)", () => {
     const ps = Array.from({ length: 10 }, (_, i) => ev("premise", { kind: "decision", title: `d${i + 1}`, source: "human" }, { id: `D${i + 1}`, by_role: "supervisor" }));
     const b = ev("brief", { version: 1, sha256: "b", path: "p" }, { by_role: "supervisor" });

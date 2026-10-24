@@ -125,6 +125,15 @@ describe("brief premises are a snapshot (rev 5.10 F1)", () => {
     await w.call(w.lead, "slp_spec", { markdown: "# Spec\nD1 and D2\n## Decisions added by the Lead\nNone." });
     expect(w.events().filter((e) => e.kind === "spec").at(-1)!.data.premises).toEqual(["D2"]);
   });
+  it("keeps a hypothesis resent by id without verify_by; a new hypothesis still needs one (final review #1)", async () => {
+    const w = world();
+    await brief(w, "v1", [{ kind: "hypothesis", title: "p95 under 50ms", verify_by: "bench" }]);
+    const r = await brief(w, "v2", [{ id: "H1", kind: "hypothesis", title: "p95 under 50ms" }]);
+    expect(r.isError).toBeFalsy();
+    expect(premiseIds(w)).toEqual(["H1"]);
+    expect((await brief(w, "v3", [{ id: "H1", kind: "hypothesis", title: "p95 under 50ms" }, { kind: "hypothesis", title: "cold start under 1s" }])).text).toMatch(/needs verify_by/);
+    expect(premiseIds(w)).toEqual(["H1"]);
+  });
   it("records a renamed premise as new and drops the old one", async () => {
     const w = world();
     await brief(w, "v1", [{ kind: "decision", title: "TTL 60s" }]);

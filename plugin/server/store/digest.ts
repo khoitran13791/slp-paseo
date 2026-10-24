@@ -13,7 +13,6 @@ export function phaseOf(st: FeatureState): string {
 }
 
 const minutes = (ts: string, now: Date) => Math.max(0, Math.round((now.getTime() - Date.parse(ts)) / 60000));
-const list = (xs: string[]) => (xs.length ? xs.join("; ") : "—");
 const one = (s: unknown, n = 160): string => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 
 export function renderDigest(st: FeatureState, ops: readonly SlpEvent[], now: Date): string {
@@ -33,7 +32,8 @@ export function renderDigest(st: FeatureState, ops: readonly SlpEvent[], now: Da
   bullets("Open challenges", [...st.challenges.values()].filter((c) => c.open).map((c) => `${c.id} (${c.level}, ${one(c.target)}, ${minutes(c.ts, now)} min)`), 5);
   const stale = tasks.filter((t) => t.status === "stale").map((t) => one(t.id));
   const parked = tasks.filter((t) => t.status === "parked").map((t) => one(t.id));
-  if (stale.length || parked.length) lines.push(`Stale: ${list(stale)} | Parked: ${list(parked)}`);
+  field("Stale", stale);
+  field("Parked", parked);
   bullets("Open hypotheses", [...st.premises.values()].filter((p) => p.status === "open").map((p) => `${p.id} ${one(p.title)}`), 5);
   if (phase === "brainstorm" || phase === "spec-review") bullets("Awaiting spec approval", [...st.premises.values()].filter((p) => p.status === "proposed").map((p) => `${p.id} ${one(p.title, 120)} [${p.source ?? p.byRole}]`), 8);
   const contracts = [...new Set(tasks.flatMap((t) => t.touchSet.filter((e) => e.startsWith("contract:")).map((e) => one(e))))];

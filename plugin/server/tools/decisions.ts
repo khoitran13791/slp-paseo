@@ -77,17 +77,18 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
       input: z.object({ feature: SLUG.optional(), title: z.string().min(1), markdown: z.string().min(1), premises: z.array(BriefPremise).default([]) }),
       async run(who, a) {
         await syncHumanMessages(ctx, who); // a reply the human already sent belongs before this version
-        for (const p of a.premises) if (p.kind === "hypothesis" && !p.verify_by) throw new ToolError(`hypothesis "${p.title}" needs verify_by: a measurement that can fail`);
         if (who.feature && a.feature && a.feature !== who.feature) throw new ToolError(`you belong to feature ${who.feature}; another idea needs its own Supervisor`);
         const feature = who.feature ?? a.feature;
         if (!feature) throw new ToolError("name the feature: a new slug for this idea");
+        if (!who.feature && ctx.stores.features(who.project).includes(feature)) throw new ToolError(`feature ${feature} already exists; pick a new slug`);
+        const known = [...deriveFeature(feature, ctx.stores.feature(who.project, feature).all()).premises.values()];
+        const { kept, fresh } = matchBriefPremises(known, a.premises);
+        // Only a new hypothesis needs verify_by: a kept one already has it, and a resend by id may leave it out (final review 2026-10-24).
+        for (const p of fresh) if (p.kind === "hypothesis" && !p.verify_by) throw new ToolError(`hypothesis "${p.title}" needs verify_by: a measurement that can fail`);
         if (!who.feature) {
-          if (ctx.stores.features(who.project).includes(feature)) throw new ToolError(`feature ${feature} already exists; pick a new slug`);
           ctx.identities.setFeature(who.tokenHash, feature);
           who.feature = feature;
         }
-        const known = [...deriveFeature(feature, ctx.stores.feature(who.project, feature).all()).premises.values()];
-        const { kept, fresh } = matchBriefPremises(known, a.premises);
         const doc = ctx.stores.writeDoc(who.project, feature, "brief", a.markdown);
         const ids = addPremises(ctx, who, feature, fresh, undefined, "brief");
         const listed = [...kept, ...ids];

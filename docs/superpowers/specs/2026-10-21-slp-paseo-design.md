@@ -1,7 +1,7 @@
 # SLP trên Paseo — Design spec
 
 - Ngày: 2026-10-21 (rev 2: 2026-10-22, gộp kết quả spike; rev 3: 2026-10-22, sửa theo review độc lập; rev 4: 2026-10-22, mỗi feature một Supervisor + nhịp kiểm)
-- Trạng thái: draft rev 5.10, chờ anh duyệt
+- Trạng thái: draft rev 5.11, chờ anh duyệt
 - Paseo đã kiểm: 0.12.0 đang chạy (source v0.10.3 + v0.12.0, CLI, và probe live — xem [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md))
 - Superpowers đang cài: 6.4.1
 - Nền: báo cáo "Tinh túy Superpowers và SLP" (2026-10-09), spec SLP cũ `~/.agents/skills/slp/docs/spec.md` (không có Supervisor), mining transcript + git 2026-09-21 → 10-20, ghi chú [`docs/research/paseo-capabilities-verified.md`](../../research/paseo-capabilities-verified.md).
@@ -65,6 +65,11 @@
   - Câu nhắc báo cáo nêu đúng tool của vai (F4); `ship.openPr: false` thì Supervisor không hứa mở PR (F7) (§6.7, §7.1).
   - Vai Claude không có tool `AskUserQuestion` (thẻ câu hỏi của Paseo): câu trả lời trên thẻ không thành tin nhắn nên plugin không ghi được lời anh (G1, smoke rev 5.10) (§4).
   - Premise Lead thêm qua `slp_spec` luôn ghi nguồn `lead`; chỉ Supervisor gắn được `human` (H2, smoke G1) (§5.2).
+- Rev 5.11 (2026-10-24, anh chốt: "sao phải đăng kí theo từng project", "lúc làm 1 feature là phải có cách test, verify chứ"):
+  - Không còn khai project: plugin tự nhận repo lúc anh tạo Supervisor trong đó, và nhớ ở `~/.slp/projects.json` (§7.4, §8).
+  - Base branch thuộc về feature: plugin `fetch` rồi tự tìm nhánh mặc định của remote lúc tạo Lead, và ghi vào event `assign` của Lead. Không có cách khai nhánh khác (anh chốt) (§7.4).
+  - Lệnh kiểm trước ship thuộc về feature: Lead đọc repo để tìm lệnh chạy **toàn bộ** test, ghi vào spec (mục `## Verify` và trường `verify` của `slp_spec`), anh duyệt cùng spec; ship chạy lệnh của spec đã duyệt mới nhất (§5.3, §6.2, §6.7).
+  - `~/.slp/config.json` không còn bắt buộc và bỏ mục `projects`; trần writer thành `limits.maxWriters` (§8).
 
 **Core mechanism:** mỗi ý tưởng anh mở một Supervisor → Supervisor brainstorm với anh (câu khó thì gọi Lead vào tham vấn; hai agent và anh tranh luận) → Lead viết spec từ bản ghi brainstorm (anh duyệt) và plan (Supervisor duyệt) → Lead giao từng task cho Peer-impl trong worktree riêng, trong sandbox → mọi tin nhắn, báo cáo, challenge đi qua tool MCP của plugin `slp`; plugin kiểm quyền, ghi log append-only ngoài repo, commit thay Peer, chạy verify trong sandbox, tự resume khi dính limit, mỗi 15 phút gửi Supervisor một gói kiểm → Supervisor gom ship, anh duyệt đúng commit hash → push + PR → anh merge.
 
@@ -89,6 +94,7 @@
 - Daemon Paseo bật `pluginsEnabled` (code không sandbox chạy trên máy anh) — chỉ bật khi anh đồng ý ở bước triển khai.
 - `~/.paseo/config.json` thêm 4 provider ID theo vai, cả bốn tắt hẳn Paseo tools (`paseoTools.enabled: false`). Nếu provider `slp-*` nào còn bật thì plugin không tạo agent SLP (rev 5.9).
 - Thêm thư mục `~/.slp/`. Repo của project không chứa file SLP nào.
+- Rev 5.11: không phải khai project. Tạo Supervisor trong checkout chính của một repo có remote là SLP nhận repo đó; lệnh kiểm trước ship nằm trong spec anh duyệt.
 - Agent SLP không tự push được; push/PR chỉ qua cổng ship.
 - Commit trên branch task do plugin tạo (author = identity git của anh, trailer `SLP-Task`, `SLP-Agent`); git hook của repo không chạy lúc commit mà chạy trong sandbox như một phần của verify.
 
@@ -214,7 +220,8 @@ Vai Claude chạy mode `default`. `autoAllowBashIfSandboxed` chỉ tự cho lệ
 
 ```
 ~/.slp/
-  config.json                    # §8
+  config.json                    # §8, không bắt buộc (rev 5.11)
+  projects.json                  # repo plugin đã nhận, plugin ghi (rev 5.11, §7.4)
   <project>/
     project.jsonl                # sự kiện cấp project: contract_claim / contract_release, ngân sách, feature_record
     watch.json                   # trạng thái nhịp kiểm từng feature (§7.7)
@@ -248,13 +255,13 @@ Mỗi dòng JSONL:
 | `premise` (D#/H# mới) | Supervisor (từ bản ghi brainstorm), Lead (từ spec) | H# phải có `verify_by` là phép đo có thể fail. Rev 5.9: `source` = `human` (anh chọn) / `supervisor` / `lead` (tự chọn), để lúc trình spec phần tự chọn hiện riêng. Chỉ Supervisor gắn được `human` (nó là vai hỏi anh); premise Lead thêm qua `slp_spec` luôn là `lead`, kể cả khi Lead ghi là anh đã xác nhận (rev 5.10, H2 smoke G1). Mọi premise chỉ ràng buộc Peer sau khi anh duyệt spec. Rev 5.10: `slp_brief` nhận **toàn bộ** premise bản ghi còn giữ, mỗi cái kèm `id` đã có (lấy từ kết quả `slp_brief` trước). Plugin giữ premise cũ khi `id` trỏ tới premise còn sống (chưa bị gạch) cùng loại và cùng tiêu đề; nếu không, plugin giữ premise còn sống có cùng loại và tiêu đề (so tiêu đề không phân biệt hoa thường, gộp khoảng trắng), kể cả khi `id` thiếu hay trỏ sai (smoke lại: nhãn D# trong brief lệch id của plugin). Mọi premise khác, kể cả premise đổi tiêu đề, thành D#/H# mới; premise cũ đó bị gạch theo §5.3. Hai mục trùng nhau trong cùng một lần gọi chỉ thành một premise. Event `brief` ghi danh sách id của version đó. Kết quả tool liệt kê id và tiêu đề của từng premise, cùng các id bị bỏ |
 | `human_decision` | Supervisor (hoặc Lead nếu anh nói thẳng với Lead; plugin báo Supervisor) | `quote`: nguyên văn lời anh; `decides`: approve spec/ship (kèm sha256 hoặc commit), supersede ID, keep ID, change goal (rev 5.9: bỏ approve brief). Plugin kiểm `quote` trong tin anh gửi (§7.6) |
 | `supersede` D#/H# | Chỉ đi kèm `human_decision` | ID bị thay phải đang hiệu lực |
-| `spec`, `plan` (version + sha256 + touch set) | Lead | plan: mỗi task có `Depends on`, task kiểm chứng có `Verifies` |
+| `spec`, `plan` (version + sha256 + touch set) | Lead | plan: mỗi task có `Depends on`, task kiểm chứng có `Verifies`. Rev 5.11: `spec` mang `verify` (lệnh full suite, §6.2) |
 | `plan_approved` | Supervisor | sha256 của plan |
-| `assign` / `release` | Lead (qua `slp_spawn` / `slp_accept`) | task, agent, worktree, BASE commit, model |
+| `assign` / `release` | Lead (qua `slp_spawn` / `slp_accept`); `assign` của Lead do Supervisor ghi | task, agent, worktree, BASE commit, model. Rev 5.11: `assign` của Lead mang `baseBranch` của feature (§7.4) |
 | `report` | Peer-impl | status (`done` / `done_with_concerns` / `blocked`), commit message đề xuất, nội dung báo cáo (mẫu ở §6.5). Plugin chuyển status và nội dung báo cáo cho Lead cùng thông báo commit; `blocked` mà không đổi file thì chỉ báo Lead, không trả lại Peer |
 | `commit` | Plugin | hash, BASE, danh sách file, cờ: file ngoài touch set / file nhạy cảm bị loại |
 | `merge` | Plugin (khi Lead `slp_accept`, hoặc Lead yêu cầu merge main) | nguồn, đích, hash kết quả, conflict? |
-| `evidence` | Plugin | commit, lệnh (lấy từ plan hoặc config, không lấy từ Peer), chạy trong sandbox, exit code, thời gian |
+| `evidence` | Plugin | commit, lệnh (lấy từ plan hoặc spec đã duyệt, không lấy từ Peer), chạy trong sandbox, exit code, thời gian |
 | `review` | Peer-review | commit được review, phát hiện (`file:line`, lệnh, mức) |
 | `challenge` C# | Peer-impl, Peer-review, Lead (lên Supervisor), Supervisor (lên anh) | target (T#/D#/H#/contract), claim, evidence (lệnh + output / test commit), impact, smallest_correction |
 | `challenge_resolved` | Lead (mức plan) hoặc đi kèm `human_decision` (mức brief/spec) | accepted / rejected + lý do |
@@ -276,7 +283,7 @@ Mỗi dòng JSONL:
 - Task: `pending` → `assigned` → `reported` → `accepted`; hoặc `parked` (tiền đề đang bị challenge mức spec), `stale` (đã accepted nhưng `Depends on` — trực tiếp hoặc qua T# — một ID đã bị supersede), `reopened`, `dropped`. `slp_accept` chỉ nhận task đang `reported`; task `parked` không accept được.
 - Task chạm `contract:<tên>` chỉ spawn được khi feature của nó đang giữ contract đó (§6.4). `**Waits on:** <slug>` là chỗ plan khai feature đang giữ lúc duyệt.
 - Task chỉ `accepted` khi có `commit` do plugin tạo từ `report` mới nhất, `evidence` exit code 0 trên đúng commit đó — lệnh là lệnh verify của task trong plan đã duyệt, chạy trong sandbox — và review trên đúng commit đó không còn phát hiện chặn.
-- Feature chỉ nghiệm thu khi: không task `stale`/`parked`, không challenge mở, `evidence` xanh của lệnh `verify` của project (full suite) trên HEAD của `feat/<slug>`.
+- Feature chỉ nghiệm thu khi: không task `stale`/`parked`, không challenge mở, `evidence` xanh của lệnh `verify` trong spec đã duyệt mới nhất (full suite; rev 5.11, trước đó là lệnh của project) trên HEAD của `feat/<slug>`.
 
 ### 5.4 Digest
 
@@ -380,6 +387,14 @@ Rev 5.9. Brainstorm là bước kỹ nhất, làm cùng anh. Từ spec trở đi
   - Một quyết định trái với lời anh trong bản ghi thì không được vào spec: Lead phải challenge, Supervisor hỏi anh.
   - Duyệt spec là cổng đầu tiên và duy nhất trước khi code. Anh trả lời ngay trong buổi brainstorm.
 - Rev 5.10 (F2: anh duyệt spec v1 rồi mới thấy "spec khó đọc"): spec viết tiếng Anh, nhưng trước khi xin duyệt, Supervisor trình nó bằng ngôn ngữ của anh, trong tab của mình, theo thứ tự: hàm hay tính năng làm gì (2–3 câu); bảng ví dụ input → kết quả, gồm ca thường, ca biên và ca lỗi; các quyết định Lead thêm; cuối cùng là đường dẫn tới file spec. Anh duyệt dựa trên bản trình đó; spec là bản ràng buộc.
+- Rev 5.11, lệnh kiểm của feature (anh chốt: kiểm **toàn bộ** test, không chỉ test của feature):
+  - Lead đọc repo để tìm lệnh chạy cả bộ test: lệnh CI chạy (`.github/workflows/…`), script trong `package.json`, `Makefile`, `pyproject.toml`/`tox.ini`… Có lệnh CI thì lấy lệnh CI.
+  - Lead chạy lệnh đó một lần trong sandbox của mình trước khi viết spec, để biết trạng thái ban đầu.
+  - Spec có mục `## Verify` ghi từng lệnh và kết quả lần chạy đó, ví dụ "baseline at `abc1234`: 120 pass, 0 fail", hoặc "repo has no tests yet". `slp_spec` nhận trường bắt buộc `verify: string[]` và từ chối nếu thiếu mục `## Verify`, hoặc một lệnh trong `verify` không có nguyên văn trong mục đó.
+  - Repo trống hay chưa có test: Lead ghi lệnh mà feature sẽ dựng ra (ví dụ `npm test` sau khi task đầu tạo `package.json`). Lệnh đó chỉ phải chạy được lúc ship.
+  - Bộ test đã đỏ từ trước: Lead ghi các test fail vào `## Verify`; Supervisor nêu rõ lúc trình spec, và anh chọn: sửa luôn trong feature (thêm task), hoặc duyệt một lệnh hẹp hơn có ghi lý do. Nếu không, cổng ship chặn mãi.
+  - Bản trình spec của Supervisor (rev 5.10) thêm lệnh kiểm và kết quả lần chạy ban đầu, ngay trước đường dẫn file. Anh duyệt lệnh cùng lúc duyệt spec.
+  - Spec bản mới đổi `verify` thì phải duyệt lại như mọi version mới. Lệnh `verify` của từng task trong plan không đổi.
 
 ### 6.3 Plan (Lead viết, Supervisor duyệt)
 
@@ -399,7 +414,7 @@ Rev 5.9. Brainstorm là bước kỹ nhất, làm cùng anh. Từ spec trở đi
 - Trước khi duyệt plan, Supervisor đọc digest của các feature đang chạy (chỉ đọc) để thấy chỗ chạm nhau mà luật trên không bắt (ví dụ cùng sửa một module nhưng không khai contract) và hỏi anh nếu cần.
 - Trong lúc chạy: plugin canh touch set (§7).
 - Sau khi một feature ship: plugin báo Lead và Supervisor của các feature còn lại; mỗi Lead yêu cầu plugin merge main vào branch (hook tắt). Conflict → Lead giao một task resolve cho Peer-impl như task thường; sau đó plugin chạy lại verify, ghi `evidence` mới.
-- Trần writer: tối đa `maxWriters` Peer-impl đang chạy trên toàn project (mặc định 2); `slp_spawn` vượt trần thì xếp hàng.
+- Trần writer: tối đa `limits.maxWriters` Peer-impl đang chạy trên toàn project (mặc định 2; rev 5.11, trước là `projects.<name>.maxWriters`); `slp_spawn` vượt trần thì xếp hàng.
 
 ### 6.5 Feedback ngược lên
 
@@ -449,6 +464,7 @@ Agent chờ permission của anh cũng hiện trong gói kiểm, và Supervisor 
 - Gói ship: diff tóm tắt (file, dòng), success criteria từng cái → bằng chứng, `evidence` của plugin trên commit ship, danh sách rulings kèm `cost_if_wrong`, giả thuyết còn open, những gì khác với brief.
 - Anh duyệt bằng một câu trả lời rõ (ví dụ "ship"); không cần gõ hash. Supervisor ghi `human_decision` kèm quote và commit hash của `ship_package` vừa trình; plugin kiểm (§7.6).
 - `slp_ship` push `feat/<slug>` và mở PR (gh). Merge luôn do anh.
+- Rev 5.11: `slp_ship_package` chạy `verify` của spec đã duyệt mới nhất trên HEAD của `feat/<slug>` trong sandbox; Diff và PR tính theo `baseBranch` của feature (§7.4).
 - Rev 5.10 (F7): `ship.openPr: false` thì `slp_ship` chỉ push. Gói ship và câu xin duyệt nói đúng điều sẽ xảy ra ("push `feat/<slug>` lên `<remote>`"), không hứa mở PR.
 
 ## 7. Plugin `slp`
@@ -463,7 +479,7 @@ Phần server (`index.server.ts`) chạy trên daemon kể cả khi app đóng, 
   - Plugin từ chối tạo agent SLP nếu provider `slp-*` nào còn bật Paseo tools, và `permissions.ts` từ chối `mcp__paseo__*` như lớp thứ hai.
 - **Plugin là actor duy nhất chạy ngoài sandbox, và không bao giờ chạy code của repo ngoài sandbox.** Lý do: hook (husky…), test và cả file `<worktree>/.git` nằm trong worktree, Peer sửa được. Cụ thể:
   - Mọi lệnh git của plugin chạy với `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, commit/merge thêm `--no-verify`.
-  - `--git-dir` lấy từ common dir của repo trong `~/.slp/config.json`; file `<worktree>/.git` không được tin.
+  - `--git-dir` lấy từ common dir của repo plugin đã nhận (`~/.slp/projects.json`, rev 5.11; trước đó là `~/.slp/config.json`); file `<worktree>/.git` không được tin.
   - Mọi lệnh verify và hook của repo chạy qua `codex sandbox -P slp-verify -C <worktree> -- <cmd>` (S10b với `:workspace`: chặn ghi `$HOME`, chặn localhost, exit code giữ nguyên; rev 5.9: `slp-verify` kế thừa `:workspace` và chặn thêm đọc `sandbox.denyRead`, `CODEX_HOME` riêng của runner).
 - **Paseo cũng chạy code của repo ngoài sandbox khi tạo worktree**: hook `post-checkout` và `worktree.setup` trong `paseo.json` của branch gốc. Vì vậy plugin không bao giờ đưa thay đổi ở thư mục hook hay `paseo.json` vào commit (loại như file nhạy cảm, báo Lead). Chừng đó chưa đủ: lệnh setup gọi file khác của repo (`npm ci` chạy `postinstall`), hook có thể nằm sau symlink, và `teardown` được đọc từ chính worktree lúc archive. Ba vòng review cho thấy chặn theo đường dẫn không kín, nên rev 5.2 bỏ hẳn vòng đời worktree của Paseo cho agent SLP: **plugin tự tạo worktree** với hook tắt và gắn agent vào workspace `directory`; Paseo không chạy setup cho loại này và không chạy teardown cho thư mục ngoài `~/.paseo/worktrees`. Cài dependency do Peer làm trong sandbox hoặc nằm trong lệnh verify. Rev 5.3: hook tắt không tắt git filter; repo có filter, merge driver hay `textconv` chạy lệnh (trừ `git-lfs`) thì SLP từ chối project (fail closed), vì `.gitattributes` trong cây chọn chúng và lệnh có thể là script Peer sửa được. Cái giá: filter vô hại như `nbstripout` cũng bị chặn; anh gỡ khỏi config của repo nếu muốn dùng SLP ở đó.
 
@@ -517,7 +533,21 @@ Mọi cạnh khác chiều (Lead → Supervisor, Peer → Lead): chỉ queue
 
 ### 7.4 Vòng đời agent
 
-- Supervisor: mỗi ý tưởng anh tạo một agent Paseo bằng profile `slp-supervisor` trong workspace thư mục gốc của project (không phải workspace worktree). Nó gắn với feature ở `slp_brief` v1; trước đó chưa có state nào và `slp_checkpoint` bị từ chối. Không tự tạo heartbeat định kỳ: nhịp kiểm do plugin gửi (§7.7).
+- Supervisor: mỗi ý tưởng anh tạo một agent Paseo bằng profile `slp-supervisor` trong workspace của checkout chính của repo, hay một thư mục con của nó (không phải workspace worktree; rev 5.11: repo được nhận ngay lúc này, xem dưới). Nó gắn với feature ở `slp_brief` v1; trước đó chưa có state nào và `slp_checkpoint` bị từ chối. Không tự tạo heartbeat định kỳ: nhịp kiểm do plugin gửi (§7.7).
+- Rev 5.11, nhận repo lúc tạo Supervisor (không còn khai project):
+  1. Plugin đi ngược từ thư mục của agent lên tới thư mục đầu tiên có `.git`, chỉ bằng đọc file: không chạy git trong một thư mục chưa tin.
+  2. `.git` phải là thư mục có `HEAD`, tức checkout chính. Không thấy `.git` → từ chối "not inside a git repo". `.git` là file (worktree, submodule) → từ chối "open the repo's main checkout".
+  3. Repo có git driver chạy lệnh (rev 5.3 ở đầu spec: filter, merge driver, `textconv`, trừ `git-lfs`) → từ chối, nêu driver, như trước.
+  4. Remote `ship.remote` phải có (`git remote get-url`, chạy với cờ chặn hook và fsmonitor như mọi lệnh git của plugin). Không có → từ chối "push the repo to a remote first", vì feature tách từ remote và ship push lên đó.
+  5. Tên project: tên thư mục gốc dạng slug (chữ thường, ký tự khác `a-z0-9` thành `-`). Trùng tên một repo khác đã nhận → thêm `-` và 4 ký tự đầu sha256 của realpath (`my-app-3f2a`). Repo đã nhận thì dùng lại tên cũ.
+  6. Plugin ghi `{ "<name>": { "repo": "<realpath>" } }` vào `~/.slp/projects.json`. Lúc khởi động, plugin tin lại mọi repo trong file (trustRepo + kiểm driver); repo đã mất thì ghi log và bỏ qua. Mục `projects` cũ trong `config.json` bị bỏ qua, kèm một dòng log.
+  - Mỗi lần từ chối, Supervisor không được tạo, và lỗi nói cách sửa.
+  - Anh chọn profile Supervisor trong một repo là anh bật SLP cho repo đó. Điều kiện "repo không có nội dung từ bên ngoài" (§13) từ giờ anh tự giữ.
+- Rev 5.11, base branch của feature (lúc `slp_spawn` Lead lần đầu):
+  - Plugin `fetch` remote trong checkout của anh (sửa lỗi cũ: trước đây tạo worktree Lead không fetch, nên feature có thể tách từ một bản remote cũ).
+  - Thứ tự tìm: `<remote>/HEAD` → upstream của nhánh đang checkout ở checkout chính → `<remote>/main` → `<remote>/master`. Không có nhánh nào → `slp_spawn` báo lỗi.
+  - Kết quả ghi vào `assign` của Lead (`baseBranch`). Lead thay thế dùng lại giá trị đó. Merge base cho Peer, `slp_merge_main`, Diff của gói ship và PR đều dùng `baseBranch` của feature.
+  - Feature tách từ bản trên remote: commit chưa push của anh không có trong feature.
 - Supervisor nhận sự kiện qua router (plugin `agent.send`), không qua thông báo cha-con.
 - Feature `shipped` hoặc dừng: Supervisor ghi `feature_record`; plugin dừng nhịp kiểm và nhả contract; tab Supervisor để anh archive.
 - Lead/Peer do `slp_spawn` tạo với `parent`, nên hiện trong Subagents track của agent cha; tên dạng `[Lead] <slug>`, `[Peer T4] <slug>`.
@@ -615,18 +645,10 @@ Agent profile mặc định (rev 5.6):
   - Khi nào đổi: lúc chạy SLP trên repo có nội dung từ bên ngoài, hoặc khi lượt smoke lại thấy chặn đọc không có tác dụng qua app-server.
   - Cách đổi: profile `slp-peer-review` đổi `extends` sang `claude`, model `claude-opus-5-5` `xhigh` (khác model với Peer-impl dù cùng vendor), và tắt `flags.crossVendorReview`.
 
-`~/.slp/config.json`:
+`~/.slp/config.json` (rev 5.11: không bắt buộc; thiếu file thì mọi giá trị lấy mặc định dưới đây; không còn mục `projects`):
 
 ```json
 {
-  "projects": {
-    "<project>": {
-      "repo": "/abs/path/to/repo",
-      "baseBranch": "origin/main",
-      "verify": ["<lệnh test full suite>"],
-      "maxWriters": 2
-    }
-  },
   "flags": {
     "ask": true, "evidenceCheck": true, "touchSetGuard": true,
     "crossVendorReview": true, "supervisorPlanApproval": true, "autoResume": true,
@@ -635,7 +657,7 @@ Agent profile mặc định (rev 5.6):
   "limits": {
     "resumeMaxAttempts": 6, "challengeAnswerMinutes": 30,
     "noReportNudges": 1, "verifyTimeoutSeconds": 900,
-    "humanReminderMinutes": 30
+    "humanReminderMinutes": 30, "maxWriters": 2
   },
   "models": {
     "allowed": ["claude-sonnet-5-5", "claude-opus-5-5"]
@@ -652,6 +674,9 @@ Agent profile mặc định (rev 5.6):
 ```
 
 - `watch.intervalMinutes`: khoảng giữa hai lần kiểm (§7.7); anh đặt 10 nếu muốn dày hơn.
+- `limits.maxWriters` (rev 5.11, trước là `projects.<name>.maxWriters`): số writer chạy cùng lúc tối đa trong một project; giá trị chung cho mọi project.
+- `~/.slp/projects.json` (rev 5.11): plugin ghi, anh không cần sửa. Mỗi mục là tên project → `repo` (realpath của checkout chính). Xoá một mục là bỏ nhận repo đó; state cũ trong `~/.slp/<project>/` vẫn còn.
+- Base branch và lệnh kiểm không còn nằm trong config: base branch plugin tự tìm cho từng feature (§7.4), lệnh kiểm nằm trong spec (§6.2).
 
 - `models.allowed`: model Lead được ghi cho từng task (`**Model:**`, §6.3). Mặc định Sonnet 5.5 và Opus 5.5; Lead nâng task khó lên Opus (contract chung, concurrency, migration, security). Bỏ trống `**Model:**` = model của profile `slp-peer-impl`.
 - `sandbox.runner`: lệnh plugin dùng để chạy verify/hook trong sandbox (đã kiểm với `codex-cli 0.163.0`). Cần Codex CLI trên máy.
@@ -698,6 +723,10 @@ Tắt một cờ → cơ chế đó không chạy, hệ thống quay về hành 
 | Challenge không ai trả lời | Quá `challengeAnswerMinutes` → nhắc Lead; quá gấp đôi → báo Supervisor |
 | Anh vắng ở cổng | Việc độc lập chạy tiếp; Supervisor nhắc sau `limits.humanReminderMinutes` (rev 5.9, thay heartbeat); không gì được push |
 | Vượt ngân sách brief | Supervisor hỏi anh (đổi cost là quyền của anh) |
+| Tạo Supervisor ngoài git repo, trong worktree/submodule, trong repo có git driver chạy lệnh, hoặc repo không có remote `ship.remote` | Rev 5.11: Paseo không tạo agent; lỗi nêu lý do và cách sửa (§7.4) |
+| Không tìm được base branch lúc tạo Lead | Rev 5.11: `slp_spawn` báo lỗi kèm các nhánh đã thử; feature chưa có worktree nên không có gì phải dọn |
+| `slp_spec` thiếu `verify` hoặc mục `## Verify` | Rev 5.11: từ chối, nêu điều còn thiếu (§6.2) |
+| Bộ test đã đỏ trước feature | Rev 5.11: Lead ghi vào `## Verify`, Supervisor hỏi anh lúc trình spec: sửa trong feature hay duyệt lệnh hẹp hơn (§6.2) |
 | Reviewer sửa file | Review vô hiệu; Lead spawn reviewer mới |
 | Kiểm bằng chứng fail (verify hoặc hook của repo trong sandbox) | Task không accepted; output gửi về Peer để sửa (tính là một fix round); report kế tiếp tạo commit mới nối lên trên |
 | `slp_report` mà worktree không có thay đổi | Từ chối report, báo Peer |
@@ -797,10 +826,18 @@ Kết quả đầy đủ: [`docs/research/spikes-2026-10-21.md`](../../research/
   - Supervisor trả lời theo ngôn ngữ của anh và trình spec bằng bảng ví dụ;
   - `agent reload` reviewer Codex: phiên mở lại được, `cat` file mồi trong `~/.paseo` vẫn bị chặn (R10 lần 2);
   - cổng ship live: "ok ship" → push lên origin, không có PR khi `openPr: false`.
+- **Smoke sau rev 5.11:** repo mới chưa từng được nhận, có remote (bare repo dưới `$HOME`), `~/.slp/config.json` **không có**. Đo:
+  - tạo Supervisor → `~/.slp/projects.json` có mục mới; không phải sửa config nào;
+  - spec có `## Verify` với lệnh full suite và kết quả lần chạy ban đầu; Supervisor trình lệnh đó trước khi xin duyệt;
+  - `assign` của Lead có `baseBranch`; worktree Lead tách từ bản remote vừa `fetch`;
+  - ship chạy đúng lệnh của spec đã duyệt, rồi push `feat/<slug>`;
+  - `plugin reload` giữa chừng: repo vẫn được tin, feature chạy tiếp.
 
 ### 11.2 Unit test plugin
 
 Git dir tin cậy (`.git` giả không làm chạy fsmonitor; thư mục lạ → từ chối); file hook/`paseo.json`/`.claude`/`.codex`/`.mcp.json` không vào commit; vai Claude khởi động với `setting-sources` rỗng và `strict-mcp-config`, vai Codex với `CODEX_HOME` riêng chỉ chia sẻ `auth.json`; `onTurnEnded` chồng nhau chỉ commit một lần; runner hỏng → báo Supervisor, không nhắn Peer; phục hồi commit sau crash; câu duyệt gõ trong cùng turn được tính, câu cũ không duyệt version mới; agent không phải SLP không bị ảnh hưởng khi setup SLP hỏng; Lead/Peer không bao giờ chạy trong checkout chính. Ma trận quyền §5.2 (mỗi ô được/không được); cạnh router §7.3; suy ra trạng thái §5.3 (supersede → stale, kể cả qua T#; confirms; park/unpark); kiểm quote §7.6; watchdog limit (số lần resume giữ qua các lần resume, hết lượt → báo Supervisor); đối soát sau restart; trần writer; reviewer sửa file → review vô hiệu; commit thay Peer (không thay đổi → từ chối; file nhạy cảm bị loại; hook husky trong worktree **không chạy** khi plugin commit/merge); verify chạy qua `sandbox.runner` (runner hỏng → fail closed, không chạy ngoài sandbox); `Write`/`Edit` ngoài worktree → bị từ chối; model ngoài `models.allowed` → `slp_spawn` bị từ chối.
+
+Rev 5.11: nhận repo (thư mục con của repo; không phải git; `.git` là file; repo có driver; không có remote; trùng tên thì thêm hash; nhận lại repo cũ ra đúng tên cũ; khởi động lại tin lại repo trong `projects.json`, bỏ qua repo đã mất); thứ tự tìm base branch và `fetch` trước khi tạo worktree Lead; `slp_spec` bắt buộc `verify` và mục `## Verify` chứa nguyên văn từng lệnh; `slp_ship_package` chạy `verify` của spec đã duyệt mới nhất, không phải của spec chưa duyệt; config thiếu file vẫn chạy.
 
 Rev 4: Supervisor chỉ một feature (brief v1 tạo feature; brief cho slug khác bị từ chối; không ghi được feature khác; đọc được digest feature khác); tối đa một Lead sống mỗi feature; contract (duyệt trước giữ; chạm contract đang bị giữ mà không `Waits on` → từ chối duyệt; task `Waits on` không spawn được tới khi nhả; ship nhả và báo); steer / interrupt chỉ ở hai cạnh Supervisor → Lead của mình, Lead → Peer của mình; nhịp kiểm (bỏ qua khi không có hoạt động; gói mới thay gói chưa giao; gói đúng cấu trúc và giới hạn dòng; `slp_activity` chỉ trong feature mình; dừng khi ship); `slp_state` không tính là báo cáo, turn `canceled` không bị nhắc; dòng cuối JSONL cắt dở bị bỏ, dòng giữa hỏng → fail closed; `slp_accept` task `parked` bị từ chối; lỗi ghi hàng đợi không làm sập plugin; agent đã mất được retire và nhả slot writer khi đối soát; "disk quota exceeded" không bị coi là limit.
 

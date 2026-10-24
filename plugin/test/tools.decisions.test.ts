@@ -85,6 +85,51 @@ describe("brief and human decisions", () => {
   });
 });
 
+describe("brief premises are a snapshot (rev 5.10 F1)", () => {
+  const brief = (w: ReturnType<typeof world>, markdown: string, premises: unknown[]) => w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown, premises });
+  const premiseIds = (w: ReturnType<typeof world>) => w.events().filter((e) => e.kind === "premise").map((e) => e.id);
+  it("keeps a resent premise, by id or by title, instead of recording it again", async () => {
+    const w = world();
+    expect((await brief(w, "v1", [{ kind: "decision", title: "Redis", source: "human" }])).text).toContain("Premises in this version: D1 Redis");
+    await brief(w, "v2", [{ id: "D1", kind: "decision", title: "Redis", source: "human" }, { kind: "decision", title: "TTL 60s", source: "human" }]);
+    await brief(w, "v3", [{ kind: "decision", title: "  redis ", source: "human" }, { id: "D2", kind: "decision", title: "TTL 60s", source: "human" }]);
+    expect(premiseIds(w)).toEqual(["D1", "D2"]);
+    expect(w.events().filter((e) => e.kind === "brief").map((e) => e.data.premises)).toEqual([["D1"], ["D1", "D2"], ["D1", "D2"]]);
+  });
+  it("keeps both premises when the Supervisor's own labels drift from the plugin's ids (Review Focus)", async () => {
+    const w = world();
+    await brief(w, "v1", [{ kind: "decision", title: "purpose: config" }, { kind: "decision", title: "invalid input throws" }]);
+    await brief(w, "v2", [{ id: "D2", kind: "decision", title: "purpose: config" }, { id: "D1", kind: "decision", title: "invalid input throws" }]);
+    expect(premiseIds(w)).toEqual(["D1", "D2"]);
+    expect(deriveFeature("cache", w.events()).premises.get("D1")?.status).toBe("proposed");
+  });
+  it("records one premise for a repeated title in one call, and a new one for an unknown id (Review Focus)", async () => {
+    const w = world();
+    await brief(w, "v1", [{ id: "D99", kind: "decision", title: "Use Redis" }, { kind: "decision", title: "use  REDIS" }]);
+    const ps = w.events().filter((e) => e.kind === "premise");
+    expect(ps.map((e) => e.id)).toEqual(["D1"]);
+    expect(ps[0]!.data).not.toHaveProperty("id");
+    expect(ps[0]!.data.origin).toBe("brief");
+  });
+  it("drops a premise the latest brief leaves out, so the spec cannot carry it", async () => {
+    const w = world();
+    await brief(w, "v1", [{ kind: "decision", title: "memory cache" }, { kind: "decision", title: "TTL 60s" }]);
+    const r = await brief(w, "v2", [{ id: "D2", kind: "decision", title: "TTL 60s" }]);
+    expect(r.text).toContain("Dropped: D1.");
+    expect(deriveFeature("cache", w.events()).premises.get("D1")?.status).toBe("superseded");
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec\nD1 and D2\n## Decisions added by the Lead\nNone." });
+    expect(w.events().filter((e) => e.kind === "spec").at(-1)!.data.premises).toEqual(["D2"]);
+  });
+  it("records a renamed premise as new and drops the old one", async () => {
+    const w = world();
+    await brief(w, "v1", [{ kind: "decision", title: "TTL 60s" }]);
+    await brief(w, "v2", [{ id: "D1", kind: "decision", title: "TTL 90s" }]);
+    const st = deriveFeature("cache", w.events());
+    expect(st.premises.get("D1")?.status).toBe("superseded");
+    expect(st.premises.get("D2")).toMatchObject({ title: "TTL 90s", status: "proposed" });
+  });
+});
+
 describe("spec and plan", () => {
   async function approvedSpec(w: ReturnType<typeof world>) {
     await w.call(w.sup, "slp_brief", { feature: "cache", title: "C", markdown: "x", premises: [{ kind: "hypothesis", title: "h", verify_by: "bench" }] });

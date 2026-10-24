@@ -29,6 +29,7 @@ describe("role prompts", () => {
   it("supervisor prompt keeps to one feature, answers the watch pack, and never approves for the human", () => {
     const p = promptFor(ident("supervisor", { feature: null }), {});
     expect(p).toContain("Speak Vietnamese with the human");
+    expect(p).toContain("a premise you leave out is dropped");
     expect(p).toContain("exactly one feature");
     expect(p).toContain("[SLP watch #n]");
     expect(p).toContain("slp_watch_result");

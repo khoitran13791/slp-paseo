@@ -6,18 +6,36 @@ import { checkPlan, contractsOf } from "../planCheck";
 import { findHumanQuote, messageUsed } from "../quote";
 import type { Address } from "../router";
 import type { Role } from "../roles";
-import { deriveFeature, type PlanTask } from "../store/derive";
+import { deriveFeature, type PlanTask, type PremiseState } from "../store/derive";
 import { defineTool, ToolError } from "./define";
 
 const haltedMessage = (feature: string): string => `feature ${feature} is halted: the human changed the goal; start a new feature`;
 const SLUG = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
 const Premise = z.object({ kind: z.enum(["decision", "hypothesis"]), title: z.string().min(1), verify_by: z.string().min(1).optional(), source: z.enum(["human", "self"]).optional() });
+/** slp_brief premises carry the id the last slp_brief result gave them (spec §5.2 rev 5.10). */
+const BriefPremise = Premise.extend({ id: z.string().optional() });
+const normTitle = (s: string): string => s.toLowerCase().replace(/\s+/g, " ").trim();
+
+/** A brief lists every premise the record holds: a resent one keeps its id, matched by id, else by kind and title (the Supervisor's labels can drift, smoke rerun F1). */
+function matchBriefPremises(known: readonly PremiseState[], input: readonly z.infer<typeof BriefPremise>[]): { kept: string[]; fresh: z.infer<typeof Premise>[] } {
+  const live = known.filter((p) => p.status !== "superseded");
+  const same = (p: { kind: string; title: string }, q: { kind: string; title: string }) => p.kind === q.kind && normTitle(p.title) === normTitle(q.title);
+  const kept: string[] = [];
+  const fresh: z.infer<typeof Premise>[] = [];
+  for (const q of input) {
+    const hit = live.find((p) => p.id === q.id && same(p, q)) ?? live.find((p) => same(p, q));
+    if (hit) { if (!kept.includes(hit.id)) kept.push(hit.id); continue; }
+    if (fresh.some((f) => same(f, q))) continue; // the same new premise twice in one call
+    fresh.push({ kind: q.kind, title: q.title, ...(q.verify_by ? { verify_by: q.verify_by } : {}), ...(q.source ? { source: q.source } : {}) });
+  }
+  return { kept, fresh };
+}
 const Task = z.object({ id: z.string().regex(/^T\d+[a-z]?$/), title: z.string().min(1), outcome: z.string().min(1).optional(), dependsOn: z.array(z.string()).default([]), verifies: z.array(z.string()).default([]), touchSet: z.array(z.string()).default([]), verify: z.string(), model: z.string().optional(), waitsOn: z.array(SLUG).default([]) });
 
-function addPremises(ctx: Ctx, who: Identity, feature: string, premises: z.infer<typeof Premise>[], spec?: string): string[] {
+function addPremises(ctx: Ctx, who: Identity, feature: string, premises: z.infer<typeof Premise>[], spec?: string, origin?: "brief"): string[] {
   for (const p of premises) if (p.kind === "hypothesis" && !p.verify_by) throw new ToolError(`hypothesis "${p.title}" needs verify_by: a measurement that can fail`);
   // source: who chose it, stored with spec §5.2's values ("self" becomes the caller's role). The spec review shows the self-chosen ones apart (spec §6.1).
-  return premises.map((p) => appendAs(ctx, who, feature, { kind: "premise", idPrefix: p.kind === "decision" ? "D" : "H", data: { ...p, source: p.source === "human" ? "human" : who.role === "lead" ? "lead" : "supervisor", spec } }).id!);
+  return premises.map((p) => appendAs(ctx, who, feature, { kind: "premise", idPrefix: p.kind === "decision" ? "D" : "H", data: { ...p, source: p.source === "human" ? "human" : who.role === "lead" ? "lead" : "supervisor", spec, ...(origin ? { origin } : {}) } }).id!);
 }
 
 function otherFeatures(ctx: Ctx, project: string, feature: string) {
@@ -54,9 +72,9 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
       },
     }),
     defineTool({
-      name: "slp_brief", description: "Save a new brief version with its premises D#/H#. Your first brief names a new feature slug and binds you to that feature.",
+      name: "slp_brief", description: "Save a new brief version. List every premise D#/H# the record still holds, each with the id the last slp_brief result gave it; a premise you leave out is dropped. Your first brief names a new feature slug and binds you to that feature.",
       roles: ["supervisor"],
-      input: z.object({ feature: SLUG.optional(), title: z.string().min(1), markdown: z.string().min(1), premises: z.array(Premise).default([]) }),
+      input: z.object({ feature: SLUG.optional(), title: z.string().min(1), markdown: z.string().min(1), premises: z.array(BriefPremise).default([]) }),
       async run(who, a) {
         await syncHumanMessages(ctx, who); // a reply the human already sent belongs before this version
         for (const p of a.premises) if (p.kind === "hypothesis" && !p.verify_by) throw new ToolError(`hypothesis "${p.title}" needs verify_by: a measurement that can fail`);
@@ -68,10 +86,16 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
           ctx.identities.setFeature(who.tokenHash, feature);
           who.feature = feature;
         }
+        const known = [...deriveFeature(feature, ctx.stores.feature(who.project, feature).all()).premises.values()];
+        const { kept, fresh } = matchBriefPremises(known, a.premises);
         const doc = ctx.stores.writeDoc(who.project, feature, "brief", a.markdown);
-        appendAs(ctx, who, feature, { kind: "brief", data: { ...doc, title: a.title } });
-        const ids = addPremises(ctx, who, feature, a.premises);
-        return `Saved brief v${doc.version} (${doc.sha256.slice(0, 12)}) at ${doc.path}. Premises: ${ids.join(", ") || "none"}. This is the brainstorm record: there is no approval step. Keep brainstorming with the human; for a hard question, or once the record is complete, call the Lead in with slp_spawn {role: "lead"}.`;
+        const ids = addPremises(ctx, who, feature, fresh, undefined, "brief");
+        const listed = [...kept, ...ids];
+        const dropped = known.filter((p) => p.status === "proposed" && p.fromBrief && !listed.includes(p.id)).map((p) => p.id);
+        appendAs(ctx, who, feature, { kind: "brief", data: { ...doc, title: a.title, premises: listed } });
+        const titles = new Map<string, string>([...known.map((p) => [p.id, p.title] as const), ...fresh.map((p, i) => [ids[i]!, p.title] as const)]);
+        const shown = listed.map((id) => `${id} ${titles.get(id) ?? ""}`.trimEnd()).join("; ") || "none";
+        return `Saved brief v${doc.version} (${doc.sha256.slice(0, 12)}) at ${doc.path}. Premises in this version: ${shown}.${dropped.length ? ` Dropped: ${dropped.join(", ")}.` : ""} Use these ids in the record, and pass every premise you keep, with its id, in your next slp_brief. This is the brainstorm record: there is no approval step. Keep brainstorming with the human; for a hard question, or once the record is complete, call the Lead in with slp_spawn {role: "lead"}.`;
       },
     }),
     defineTool({

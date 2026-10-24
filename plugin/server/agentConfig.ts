@@ -46,8 +46,9 @@ export function claudeIsolation(cwd: string, pluginDir: string | null, extraArgs
   };
 }
 export const CLAUDE_ISOLATION_ENV = { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" } as const;
-/** One command chain: SLP roles get help only through slp_spawn, never through Claude Code's own subagents. */
-export const CLAUDE_DISALLOWED_TOOLS = ["Agent", "Task"];
+/** One command chain: SLP roles get help only through slp_spawn, never through Claude Code's own subagents. No question cards either:
+ * Paseo turns AskUserQuestion into a permission whose answer is no user message, so SLP would not record it as the human's words (rev 5.10 G1). */
+export const CLAUDE_DISALLOWED_TOOLS = ["Agent", "Task", "AskUserQuestion"];
 
 /** A role's process env. Paseo saves agent config but not env overrides, so this runs at create and at every session open (spec §7.1 rev 5.10). */
 export function roleEnv(vendor: Vendor, codexHome: () => string): Record<string, string> {

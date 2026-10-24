@@ -13,7 +13,7 @@ const STATE = ["/home/u/.slp", "/home/u/.paseo"];
 const DENY = [...STATE, join(homedir(), ".slp"), join(homedir(), ".paseo")];
 const PLUGIN_DIR = "/home/u/.claude/plugins/cache/claude-plugins-official/superpowers/6.4.1";
 const CODEX_HOME = "/home/u/.slp/codex-home";
-const ISOLATION = { additionalDirectories: [] as string[], extraArgs: { "setting-sources": "", "strict-mcp-config": null, "plugin-dir": PLUGIN_DIR }, disallowedTools: ["Agent", "Task"] };
+const ISOLATION = { additionalDirectories: [] as string[], extraArgs: { "setting-sources": "", "strict-mcp-config": null, "plugin-dir": PLUGIN_DIR }, disallowedTools: ["Agent", "Task", "AskUserQuestion"] };
 function deps() {
   const repo = initRepo(); trustRepo(repo);
   const config = parseSlpConfig({ projects: { demo: { repo, verify: ["npm test"] } } });
@@ -31,6 +31,11 @@ function worktree(repo: string, branch: string): string {
 const peerMeta = { role: "peer-impl" as const, project: "demo", feature: "f", task: "T1", reviewCommit: null, parentAgentId: "lead-1" };
 
 describe("transformCreate", () => {
+  it("takes AskUserQuestion away from every Claude role, so the human answers in chat where SLP records it (rev 5.10 G1)", () => {
+    const { d, repo } = deps();
+    const out = transformCreate({ config: { provider: "slp-supervisor", cwd: repo } }, d);
+    expect((out.config.providerOptions as { disallowedTools: string[] }).disallowedTools).toContain("AskUserQuestion");
+  });
   it("leaves non-SLP providers untouched", () => {
     const { d } = deps();
     const req = { config: { provider: "claude/claude-haiku-4-5", cwd: "/x" } };
@@ -57,7 +62,7 @@ describe("transformCreate", () => {
   it("keeps one command chain: no Claude subagents, no Ultra Code, the caller's other disallowed tools kept", () => {
     const { d, repo } = deps();
     const out = transformCreate({ config: { provider: "slp-supervisor", cwd: repo, providerOptions: { disallowedTools: ["WebSearch", "Task"] } } }, d);
-    expect((out.config.providerOptions as { disallowedTools: unknown }).disallowedTools).toEqual(["WebSearch", "Task", "Agent"]);
+    expect((out.config.providerOptions as { disallowedTools: unknown }).disallowedTools).toEqual(["WebSearch", "Task", "Agent", "AskUserQuestion"]);
     expect(() => transformCreate({ config: { provider: "slp-supervisor", cwd: repo, thinkingOptionId: "ultracode" } }, d)).toThrow(/ultracode/);
     expect(transformCreate({ config: { provider: "claude", cwd: repo, thinkingOptionId: "ultracode" } }, d).config.thinkingOptionId).toBe("ultracode");
   });

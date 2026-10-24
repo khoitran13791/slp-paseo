@@ -63,6 +63,7 @@
   - Ngôn ngữ (anh chốt): agent viết cho anh bằng ngôn ngữ của tin mới nhất của anh; brief, spec, plan, report và tin giữa các vai bằng tiếng Anh. Supervisor trình spec bằng ngôn ngữ của anh (F2) (§6, §6.2).
   - Digest và gói kiểm dễ đọc: bỏ dòng rỗng, việc chờ anh lên đầu, premise chờ duyệt chỉ hiện tới khi spec được duyệt, mỗi cái một dòng (§5.4, §7.7).
   - Câu nhắc báo cáo nêu đúng tool của vai (F4); `ship.openPr: false` thì Supervisor không hứa mở PR (F7) (§6.7, §7.1).
+  - Vai Claude không có tool `AskUserQuestion` (thẻ câu hỏi của Paseo): câu trả lời trên thẻ không thành tin nhắn nên plugin không ghi được lời anh (G1, smoke rev 5.10) (§4).
 
 **Core mechanism:** mỗi ý tưởng anh mở một Supervisor → Supervisor brainstorm với anh (câu khó thì gọi Lead vào tham vấn; hai agent và anh tranh luận) → Lead viết spec từ bản ghi brainstorm (anh duyệt) và plan (Supervisor duyệt) → Lead giao từng task cho Peer-impl trong worktree riêng, trong sandbox → mọi tin nhắn, báo cáo, challenge đi qua tool MCP của plugin `slp`; plugin kiểm quyền, ghi log append-only ngoài repo, commit thay Peer, chạy verify trong sandbox, tự resume khi dính limit, mỗi 15 phút gửi Supervisor một gói kiểm → Supervisor gom ship, anh duyệt đúng commit hash → push + PR → anh merge.
 
@@ -206,7 +207,7 @@ Vai Claude chạy mode `default`. `autoAllowBashIfSandboxed` chỉ tự cho lệ
 - Vai Claude: plugin thêm cờ CLI qua `providerOptions.extraArgs` (`--setting-sources=` rỗng, `--strict-mcp-config`, `--plugin-dir <Superpowers>`), `additionalDirectories: [cwd]` và env `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`. Kết quả: không hook, chỉ MCP `slp` (rev 5.9: `paseoTools.enabled: false` cho mọi vai), CLAUDE.md của repo và Superpowers vẫn có; CLAUDE.md toàn cục của anh thì không (T21 dòng 26 đạt).
 - Vai Codex: env `CODEX_HOME=~/.slp/codex-home`. Plugin ghi lại `config.toml` trước mỗi lần tạo: không MCP, không project trusted, và rev 5.9 thêm permission profile chặn đọc ở trên. `auth.json` là symlink tới file của anh. Lúc chạy, Codex hoặc Paseo tự thêm `[projects."<repo>"] trust_level = "trusted"` (T21). Ghi lại file ở lần tạo sau là xoá dòng đó.
 - `.claude/`, `.codex/`, `.mcp.json` là file được bảo vệ: `Write`/`Edit` bị từ chối và không bao giờ vào commit. Bash ghi vào `.claude/settings.json` và `.mcp.json` thì sandbox Claude đã tự chặn.
-- Một chuỗi lệnh (rev 5.8): vai Claude bị bỏ tool `Agent`/`Task` (subagent có sẵn của Claude Code), và plugin từ chối tạo agent SLP có thinking `ultracode`. Mọi trợ giúp đi qua `slp_spawn`, nên trần writer, gói kiểm và quota vẫn đúng.
+- Một chuỗi lệnh (rev 5.8): vai Claude bị bỏ tool `Agent`/`Task` (subagent có sẵn của Claude Code). Rev 5.10 (G1): bỏ thêm `AskUserQuestion`, vì Paseo biến nó thành một permission mà câu trả lời không phải tin nhắn, nên plugin không ghi được lời anh, và lời duyệt đi qua đó không qua được kiểm quote; vai hỏi anh bằng tin nhắn thường, có lựa chọn A/B/C ([smoke rev 5.10](../../research/smoke-2026-10-24-rev510.md)), và plugin từ chối tạo agent SLP có thinking `ultracode`. Mọi trợ giúp đi qua `slp_spawn`, nên trần writer, gói kiểm và quota vẫn đúng.
 
 ## 5. Shared state
 

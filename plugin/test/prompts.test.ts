@@ -34,6 +34,7 @@ describe("role prompts", () => {
     expect(p).toContain("a table of example inputs and results");
     expect(p).toContain("a premise you leave out is dropped");
     expect(p).toContain('"On approval" line');
+    expect(p).toContain("as a plain chat message");
     expect(p).toContain("exactly one feature");
     expect(p).toContain("[SLP watch #n]");
     expect(p).toContain("slp_watch_result");

@@ -9,9 +9,34 @@ const ev = (kind: SlpEvent["kind"], data: Record<string, unknown> = {}, extra: P
 const task = (id: string): PlanTask => ({ id, title: `title ${id}`, dependsOn: [], verifies: [], touchSet: [], verify: "x" });
 
 describe("renderDigest", () => {
-  it("lists premises awaiting spec approval with who chose them", () => {
+  it("lists premises awaiting spec approval with who chose them, one per line", () => {
     const d1 = ev("premise", { kind: "decision", title: "Redis", source: "human" }, { id: "D1", by_role: "supervisor" });
-    expect(renderDigest(deriveFeature("f", [d1]), [], new Date())).toContain("Awaiting spec approval: D1 Redis [human]");
+    const b = ev("brief", { version: 1, sha256: "b", path: "p" }, { by_role: "supervisor" });
+    expect(renderDigest(deriveFeature("f", [d1, b]), [], new Date())).toContain("Awaiting spec approval:\n- D1 Redis [human]\n");
+  });
+  it("leaves empty fields out and puts what waits on the human right after the phase (rev 5.10)", () => {
+    const events = [ev("brief", { version: 1, sha256: "b", path: "p" }, { by_role: "supervisor" }), ev("spec", { version: 1, sha256: "s", path: "p" })];
+    const lines = renderDigest(deriveFeature("f", events), [], new Date()).trimEnd().split("\n");
+    expect(lines[1]).toBe("Waiting on human: approve spec v1");
+    expect(lines.slice(1).some((l) => /: —$/.test(l) || l.includes("Parked: —"))).toBe(false);
+  });
+  it("shows at most 8 pending premises, and none once the spec is approved or the feature halted (Review Focus)", () => {
+    const ps = Array.from({ length: 10 }, (_, i) => ev("premise", { kind: "decision", title: `d${i + 1}`, source: "human" }, { id: `D${i + 1}`, by_role: "supervisor" }));
+    const b = ev("brief", { version: 1, sha256: "b", path: "p" }, { by_role: "supervisor" });
+    const pending = renderDigest(deriveFeature("f", [...ps, b]), [], new Date());
+    expect(pending).toContain("- D8 d8 [human]\n- … +2 more");
+    const approved = [...ps, b, ev("spec", { version: 1, sha256: "s", path: "p", premises: ["D1"] }), ev("human_decision", { decides: "approve_spec", target: "s" }, { by_role: "supervisor" })];
+    expect(renderDigest(deriveFeature("f", approved), [], new Date())).not.toContain("Awaiting spec approval");
+    const halted = [...ps, b, ev("human_decision", { decides: "change_goal" }, { by_role: "supervisor" })];
+    expect(renderDigest(deriveFeature("f", halted), [], new Date())).not.toContain("Awaiting spec approval");
+  });
+  it("keeps room for the task list when many challenges are open (Review Focus)", () => {
+    const tasks = Array.from({ length: 10 }, (_, i) => task(`T${i + 1}`));
+    const challenges = Array.from({ length: 12 }, (_, i) => ev("challenge", { target: `T${i + 1}`, level: "plan" }, { id: `C${i + 1}` }));
+    const text = renderDigest(deriveFeature("f", [ev("plan", { version: 1, sha256: "p", path: "p", tasks }), ...challenges]), [], new Date());
+    expect(text).toContain("- C5 (plan, T5,");
+    expect(text).toContain("- … +7 more");
+    expect(text).toMatch(/Tasks:\n- T1 pending/);
   });
   it("names the phase as the feature moves forward", () => {
     expect(phaseOf(deriveFeature("f", []))).toBe("intake");
@@ -29,7 +54,7 @@ describe("renderDigest", () => {
     const text = renderDigest(deriveFeature("f", events), [ev("ops", { type: "limit_hit", summary: "claude until 11:00" }, { by_role: "plugin" })], new Date("2026-10-22T10:00:00.000Z"));
     const lines = text.trimEnd().split("\n");
     expect(lines.length).toBeLessThanOrEqual(30);
-    expect(text).toContain("Open challenges: C1 (plan, T1, 12 min)");
+    expect(text).toContain("Open challenges:\n- C1 (plan, T1, 12 min)");
     expect(text).toContain("limit_hit claude until 11:00");
     expect(lines.at(-1)).toMatch(/^- … \+\d+ more$/);
   });
@@ -55,7 +80,7 @@ describe("renderDigest", () => {
       ev("spec", { version: 1, sha256: "s", path: "p", premises: ["H1"] }), ev("human_decision", { decides: "approve_spec", target: "s" })];
     const text = renderDigest(deriveFeature("f", events), [ev("ops", { type: "limit_hit", summary: "claude\nuntil 11:00" }, { by_role: "plugin" })], new Date("2026-10-22T10:00:00.000Z"));
     expect(text.trimEnd().split("\n").length).toBeLessThanOrEqual(30);
-    expect(text).toContain("Open hypotheses: H1 h1 h2");
+    expect(text).toContain("Open hypotheses:\n- H1 h1 h2");
     expect(text).toContain("- T1 pending — line one line two");
     expect(text).toContain("limit_hit claude until 11:00");
     expect(text.split("\n")).toContain(`- T2 pending — ${"x".repeat(160)}`);

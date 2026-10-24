@@ -164,7 +164,7 @@ async function agentPack(ctx: Ctx, ident: Identity, now: Date): Promise<string[]
 
 export async function buildPack(ctx: Ctx, project: string, feature: string, tick: number): Promise<string> {
   const now = ctx.now();
-  const parts = [`[SLP watch #${tick} · ${feature}]`, refreshDigest(ctx, project, feature).trimEnd()];
+  const parts = [`[SLP watch #${tick} · ${feature}] For the Supervisor; no action needed from you.`, refreshDigest(ctx, project, feature).trimEnd()];
   for (const a of watchedAgents(ctx, project, feature)) parts.push((await agentPack(ctx, a, now)).join("\n"));
   const events = ctx.stores.feature(project, feature).all();
   const waiting = waitingForLead(events, feature, now);

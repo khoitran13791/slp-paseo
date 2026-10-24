@@ -67,6 +67,7 @@ describe("watchTick", () => {
     w.paseo.timelines.set("peer-1", [shell("npm test -- retry"), shell("npm test -- retry"), shell("npm test -- retry")]);
     await watchTick(w.ctx);
     const pack = w.packs()[0]!.text;
+    expect(pack.split("\n")[0]).toBe("[SLP watch #1 · cache] For the Supervisor; no action needed from you.");
     expect(pack).toContain("[SLP watch #1 · cache]");
     expect(pack).toContain("# cache — phase:");
     expect(pack).toContain("## T1 (peer-impl, peer-1)");
@@ -87,7 +88,7 @@ describe("watchTick", () => {
     w.paseo.statuses.set("lead-1", "running");
     w.advance(16); await watchTick(w.ctx);
     w.advance(16); await watchTick(w.ctx);
-    expect(w.packs().map((p) => p.text.split("\n")[0])).toEqual(["[SLP watch #2 · cache]"]);
+    expect(w.packs().map((p) => p.text.split("\n")[0])).toEqual(["[SLP watch #2 · cache] For the Supervisor; no action needed from you."]);
     expect((await w.call(w.sup, "slp_watch_result", { tick: 9, verdicts: [] })).isError).toBe(true);
     const r = await w.call(w.sup, "slp_watch_result", { tick: 2, verdicts: [{ agent: "lead", verdict: "intervene", note: "same test five times" }] });
     expect(r.text).toMatch(/steer the Lead/);

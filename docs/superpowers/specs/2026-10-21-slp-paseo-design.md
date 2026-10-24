@@ -573,7 +573,7 @@ Tắt bằng cờ `watch: false`. Chi phí ước tính (chưa đo): ~5k token m
 
 Rev 5.9: cả 4 vai `paseoTools.enabled: false` (§7 luật chung); plugin từ chối tạo agent SLP nếu provider `slp-*` nào còn bật.
 
-Model, mode, thinking cho từng vai đặt trong Paseo agent profile cùng tên (Settings → Agent profiles). Plugin nhận profile theo `provider`, không theo tên; tạo profile sau khi plugin chạy cũng được (rev 5.9, B-1). Trong app, chọn profile ở ô model, mục **Profiles**. Mode chọn **Always Ask** (= `default`) cho vai Claude và **Default permissions** (= `auto`) cho Codex, vì plugin cũng ép đúng mode đó. Không chọn Bypass hay Full access. Đổi vendor của một vai: sửa `extends`; plugin tự áp loại sandbox tương ứng và từ chối cấu hình mà reviewer trùng vendor với implementer.
+Model, mode, thinking cho từng vai đặt trong Paseo agent profile cùng tên (Settings → Agent profiles). Plugin nhận profile theo `provider`, không theo tên; tạo profile sau khi plugin chạy cũng được (rev 5.9, B-1). Trong app, chọn profile ở ô model, mục **Profiles**. Mode chọn **Always Ask** (= `default`) cho vai Claude: plugin cũng ép `default` cho vai Claude. Với Codex, plugin bỏ `modeId` mà profile đặt và đặt `approval_policy: "on-request"` cùng permission profile trong `CODEX_HOME` (§4); mode chọn trong profile không có tác dụng. Không chọn Bypass hay Full access. Đổi vendor của một vai: sửa `extends`; plugin tự áp loại sandbox tương ứng và từ chối cấu hình mà reviewer trùng vendor với implementer.
 
 Agent profile mặc định (rev 5.6):
 

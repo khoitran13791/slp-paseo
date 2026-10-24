@@ -4,7 +4,7 @@ import type { SlpEvent } from "./events";
 export interface PlanTask { id: string; title: string; outcome?: string; dependsOn: string[]; verifies: string[]; touchSet: string[]; verify: string; model?: string; waitsOn?: string[] }
 export interface WatchResult { tick: number; ts: string; verdicts: Array<{ agent: string; verdict: string; note?: string }> }
 export type PremiseStatus = "active" | "open" | "confirmed" | "superseded" | "proposed";
-export interface PremiseState { id: string; kind: "decision" | "hypothesis"; title: string; status: PremiseStatus; supersededBy: string | null; supersededAtSeq: number | null; seq: number; byRole: string; source?: "human" | "supervisor" | "lead" }
+export interface PremiseState { id: string; kind: "decision" | "hypothesis"; title: string; status: PremiseStatus; supersededBy: string | null; supersededAtSeq: number | null; seq: number; byRole: string; source?: "human" | "supervisor" | "lead"; fromBrief?: boolean }
 export type TaskStatus = "pending" | "assigned" | "reported" | "accepted" | "parked" | "stale" | "dropped";
 export interface TaskState extends PlanTask {
   status: TaskStatus; closure: string[]; agentId: string | null; worktree: string | null; branch: string | null; base: string | null;
@@ -45,12 +45,19 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
         st[e.kind] = { version: Number(e.data.version), sha256: String(e.data.sha256), path: String(e.data.path), seq: e.seq, ts: e.ts, approved: false };
         if (e.kind === "plan") planTasks = (e.data.tasks as PlanTask[] | undefined) ?? [];
         if (e.kind === "spec") specPremises.set(String(e.data.sha256), (e.data.premises as string[] | undefined) ?? []);
+        // Rev 5.10: a brief lists every premise the record still holds; a pending one it created that a newer brief leaves out is dropped (spec §5.3).
+        if (e.kind === "brief" && Array.isArray(e.data.premises)) {
+          const listed = e.data.premises as string[];
+          for (const p of st.premises.values()) if (p.status === "proposed" && p.fromBrief && !listed.includes(p.id)) Object.assign(p, { status: "superseded", supersededAtSeq: e.seq });
+        }
         break;
       case "premise": {
         const kind = e.data.kind === "hypothesis" ? "hypothesis" : "decision";
         // Every premise waits for an approved spec that lists it (spec §5.2). With no brief gate this is the human's only look at a premise (review Codex 2026-10-23).
         const source = e.data.source === "human" || e.data.source === "supervisor" || e.data.source === "lead" ? e.data.source : undefined;
-        st.premises.set(e.id!, { id: e.id!, kind, title: String(e.data.title ?? ""), status: "proposed", supersededBy: null, supersededAtSeq: null, seq: e.seq, byRole: e.by_role, source });
+        // Before rev 5.10 brief premises carried no origin: a Supervisor premise without a spec came from a brief.
+        const fromBrief = e.data.origin === "brief" || (e.data.origin === undefined && e.by_role === "supervisor" && e.data.spec === undefined);
+        st.premises.set(e.id!, { id: e.id!, kind, title: String(e.data.title ?? ""), status: "proposed", supersededBy: null, supersededAtSeq: null, seq: e.seq, byRole: e.by_role, source, fromBrief });
         break;
       }
       case "human_decision":

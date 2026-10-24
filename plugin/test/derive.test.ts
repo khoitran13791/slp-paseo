@@ -156,6 +156,31 @@ describe("deriveFeature", () => {
     expect(st.tasks.get("T1")).toMatchObject({ status: "assigned", reopened: true, attempt: 2 });
     expect(st.waitingOnHuman).toEqual(["approve spec v1", "decide C1 on D9", "approve ship abcdef1"]);
   });
+  it("drops a brief's pending premise that a later brief leaves out, never an active or a Lead premise (rev 5.10 F1)", () => {
+    const brief = (v: number, premises?: string[]) => ev("brief", { version: v, sha256: `b${v}`, path: "p", ...(premises ? { premises } : {}) }, { by_role: "supervisor" });
+    const fromBrief = (id: string) => ev("premise", { kind: "decision", title: id, origin: "brief" }, { id, by_role: "supervisor" });
+    const events = [
+      fromBrief("D1"), fromBrief("D2"), brief(1, ["D1", "D2"]),
+      ev("premise", { kind: "decision", title: "lead pick", spec: "s1" }, { id: "D3" }), ev("spec", { version: 1, sha256: "s1", path: "p", premises: ["D1", "D3"] }),
+      ev("human_decision", { decides: "approve_spec", target: "s1" }, { by_role: "supervisor" }),
+      ev("premise", { kind: "decision", title: "lead pending", spec: "s2" }, { id: "D4" }),
+      fromBrief("D5"),
+    ];
+    const latest = brief(2, ["D5"]);
+    const st = deriveFeature("f", [...events, latest]);
+    expect(st.premises.get("D1")?.status).toBe("active"); // approved: only a human decision changes it
+    expect(st.premises.get("D2")).toMatchObject({ status: "superseded", supersededBy: null, supersededAtSeq: latest.seq });
+    expect(st.premises.get("D3")?.status).toBe("active");
+    expect(st.premises.get("D4")?.status).toBe("proposed"); // the Lead's, from a spec
+    expect(st.premises.get("D5")?.status).toBe("proposed");
+  });
+  it("leaves premises alone for a brief without a premise list, and treats a legacy Supervisor premise as from the brief", () => {
+    const legacy = premise("D1", "decision"); // supervisor, no origin, no spec
+    const old = ev("brief", { version: 1, sha256: "b1", path: "p" }, { by_role: "supervisor" });
+    expect(deriveFeature("f", [legacy, old]).premises.get("D1")?.status).toBe("proposed");
+    const listing = ev("brief", { version: 2, sha256: "b2", path: "p", premises: [] }, { by_role: "supervisor" });
+    expect(deriveFeature("f", [legacy, old, listing]).premises.get("D1")?.status).toBe("superseded");
+  });
 });
 
 describe("acceptanceBlockers", () => {

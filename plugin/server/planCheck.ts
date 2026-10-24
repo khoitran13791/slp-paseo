@@ -49,7 +49,7 @@ export function checkPlan(tasks: PlanTask[], ctx: { premises: Map<string, Premis
       const premise = ctx.premises.get(d);
       if (premise) {
         if (premise.status === "proposed") err("unapproved_premise", t.id, unapproved(t.id, d));
-        if (premise.status === "superseded") err("superseded_dependency", t.id, `${t.id} depends on ${d}, superseded by ${premise.supersededBy}`);
+        if (premise.status === "superseded") err("superseded_dependency", t.id, `${t.id} depends on ${d}, ${premise.supersededBy ? `superseded by ${premise.supersededBy}` : "dropped from the brainstorm record"}`);
         if (premise.kind === "hypothesis" && premise.status === "open" && !verifiedBefore.has(d)) err("unverified_hypothesis", t.id, `${t.id} depends on open hypothesis ${d}; put a task that verifies ${d} before it`);
       } else if (allIds.has(d)) {
         if (!seen.has(d)) err("forward_dependency", t.id, `${t.id} depends on ${d}, which runs later`);

@@ -11,6 +11,10 @@ const codes = (tasks: PlanTask[], others: Array<{ slug: string; touchSet: string
   checkPlan(tasks, { premises, others, modelsAllowed: allowed }).map((i) => `${i.severity}:${i.code}:${i.task ?? ""}`);
 
 describe("checkPlan", () => {
+  it("says a dependency was dropped from the brainstorm record when no premise replaced it", () => {
+    const issue = checkPlan([t("T1", { dependsOn: ["D0"] })], { premises, others: [], modelsAllowed: [] }).find((i) => i.code === "superseded_dependency");
+    expect(issue?.message).toBe("T1 depends on D0, dropped from the brainstorm record");
+  });
   it("accepts a clean plan", () => {
     expect(codes([t("T1", { verifies: ["H1"] }), t("T2", { dependsOn: ["D1", "H1", "T1", "H2"] })])).toEqual([]);
   });

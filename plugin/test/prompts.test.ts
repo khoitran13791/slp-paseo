@@ -12,6 +12,17 @@ const premises = new Map<string, PremiseState>([
 ]);
 
 describe("role prompts", () => {
+  it("has the Lead find the whole-suite command, run it once and record it in ## Verify (rev 5.11)", () => {
+    const p = promptFor(ident("lead"), {});
+    expect(p).toContain('"## Verify" section');
+    expect(p).toContain("the command CI runs");
+    expect(p).toContain("Run them once in your sandbox");
+    expect(p).toContain("no tests yet");
+    expect(p).toContain("a narrower command");
+  });
+  it("has the Supervisor show the verify command and its baseline before asking for spec approval (rev 5.11)", () => {
+    expect(promptFor(ident("supervisor", { feature: null }), {})).toContain('the verify command from its "## Verify" section and its baseline result');
+  });
   it("starts the Lead as a consultant to the Supervisor's brainstorm", () => {
     expect(leadKickoff("cache", "# B", "q?")).toContain("called in by the Supervisor while it brainstorms");
   });

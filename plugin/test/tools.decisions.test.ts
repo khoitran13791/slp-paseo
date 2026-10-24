@@ -39,6 +39,7 @@ describe("brief and human decisions", () => {
     const w = world();
     await w.call(w.lead, "slp_spec", specArgs("# Spec\n## Decisions added by the Lead\nNone."));
     expect(w.ctx.router.pending().some((p) => p.to.role === "supervisor" && p.text.includes("walk the human through it in their language"))).toBe(true);
+    expect(w.ctx.router.pending().some((p) => p.to.role === "supervisor" && p.text.includes("the verify command and its baseline"))).toBe(true);
   });
   it("stores a brief as the brainstorm record, with no approval step", async () => {
     const w = await world();

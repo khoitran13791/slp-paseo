@@ -182,7 +182,7 @@ export function decisionTools(ctx: Ctx): ToolDef[] {
         const ids = addPremises(ctx, who, feature, a.premises, doc.sha256);
         const carried = [...before.premises.values()].filter((p) => p.status === "proposed" && new RegExp(`\\b${p.id}\\b`).test(a.markdown)).map((p) => p.id);
         appendAs(ctx, who, feature, { kind: "spec", data: { ...doc, premises: [...carried, ...ids], verify: a.verify } });
-        routeFrom(ctx, who, supervisorAddress(who.project, feature), `Spec v${doc.version} for ${feature} is ready at ${doc.path}${ids.length ? ` (new premises ${ids.join(", ")}, active once the human approves)` : ""}. Check it against the brainstorm record, walk the human through it in their language (what it does, a table of example inputs and results, the Lead's added decisions, the path), then ask them to approve the spec.`);
+        routeFrom(ctx, who, supervisorAddress(who.project, feature), `Spec v${doc.version} for ${feature} is ready at ${doc.path}${ids.length ? ` (new premises ${ids.join(", ")}, active once the human approves)` : ""}. Check it against the brainstorm record, walk the human through it in their language (what it does, a table of example inputs and results, the Lead's added decisions, the verify command and its baseline, the path), then ask them to approve the spec.`);
         return `Saved spec v${doc.version}. Wait for the human's approval before planning.`;
       },
     }),

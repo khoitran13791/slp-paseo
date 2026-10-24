@@ -181,6 +181,16 @@ describe("deriveFeature", () => {
     const listing = ev("brief", { version: 2, sha256: "b2", path: "p", premises: [] }, { by_role: "supervisor" });
     expect(deriveFeature("f", [legacy, old, listing]).premises.get("D1")?.status).toBe("superseded");
   });
+  it("keeps the verify commands of the latest approved spec, not of a newer unapproved one (rev 5.11)", () => {
+    const s1 = ev("spec", { version: 1, sha256: "s1", path: "p1", verify: ["npm test"] });
+    const ok1 = ev("human_decision", { decides: "approve_spec", target: "s1" }, { by_role: "supervisor" });
+    const s2 = ev("spec", { version: 2, sha256: "s2", path: "p2", verify: ["make check"] });
+    const ok2 = ev("human_decision", { decides: "approve_spec", target: "s2" }, { by_role: "supervisor" });
+    expect(deriveFeature("f", [s1]).approvedVerify).toBeNull();
+    expect(deriveFeature("f", [s1, ok1]).approvedVerify).toEqual(["npm test"]);
+    expect(deriveFeature("f", [s1, ok1, s2]).approvedVerify).toEqual(["npm test"]);
+    expect(deriveFeature("f", [s1, ok1, s2, ok2]).approvedVerify).toEqual(["make check"]);
+  });
 });
 
 describe("acceptanceBlockers", () => {

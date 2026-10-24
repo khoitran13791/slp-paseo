@@ -163,9 +163,9 @@ export async function processChallengeEvidence(deps: PipelineDeps, task: TaskSta
   return { commit, exitCode: r.exitCode };
 }
 
-export async function verifyFeature(deps: PipelineDeps, feature: string, leadWorktree: string): Promise<{ commit: string; ok: boolean; stderrTail: string; runnerError?: string }> {
+export async function verifyFeature(deps: PipelineDeps, feature: string, leadWorktree: string, commands: readonly string[]): Promise<{ commit: string; ok: boolean; stderrTail: string; runnerError?: string }> {
   const commit = headOf(leadWorktree);
-  const r = await runEvidence(deps, feature, leadWorktree, deps.project.verify.join(" && "), { scope: "feature", commit });
+  const r = await runEvidence(deps, feature, leadWorktree, commands.join(" && "), { scope: "feature", commit });
   if ("runnerError" in r) return { commit, ok: false, stderrTail: "", runnerError: r.runnerError };
   return { commit, ok: r.exitCode === 0 && !r.timedOut && r.dirty.length === 0, stderrTail: r.dirty.length ? `verify changed tracked files: ${r.dirty.join(", ")}\n${r.stderrTail}` : r.stderrTail };
 }

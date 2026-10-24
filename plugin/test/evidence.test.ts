@@ -193,13 +193,13 @@ describe("challenge evidence and feature verification", () => {
       if (c === "true") { writeFileSync(join(repo, "late.txt"), "y"); sh(repo, "git", ["add", "."]); sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "c2"]); }
       return runSandboxed(r, w, c, s);
     });
-    expect(await verifyFeature({ ...deps, run }, "f", repo)).toMatchObject({ ok: false });
+    expect(await verifyFeature({ ...deps, run }, "f", repo, ["test -f src.ts"])).toMatchObject({ ok: false });
     expect(store.all().at(-1)!.data.dirty).toEqual([expect.stringMatching(/^HEAD is [0-9a-f]{7}, not [0-9a-f]{7}$/)]);
   });
-  it("runs the project's full verify on the lead worktree head", async () => {
+  it("runs the given full-suite commands, joined with &&, on the lead worktree head", async () => {
     const { repo, store, deps } = setup();
     writeFileSync(join(repo, "src.ts"), "x"); sh(repo, "git", ["add", "."]); sh(repo, "git", ["-c", "core.hooksPath=/dev/null", "commit", "-qm", "x"]);
-    expect(await verifyFeature(deps, "f", repo)).toMatchObject({ commit: headOf(repo), ok: true });
-    expect(store.all().at(-1)!.data).toMatchObject({ scope: "feature", commit: headOf(repo), exitCode: 0 });
+    expect(await verifyFeature(deps, "f", repo, ["test -f src.ts", "true"])).toMatchObject({ commit: headOf(repo), ok: true });
+    expect(store.all().at(-1)!.data).toMatchObject({ scope: "feature", commit: headOf(repo), command: "test -f src.ts && true", exitCode: 0 });
   });
 });

@@ -7,7 +7,7 @@ import { headOf } from "../server/git";
 import { deriveFeature } from "../server/store/derive";
 import { buildTools } from "../server/tools";
 import { finalizeReview, processReportFor, retireAgent } from "../server/tools/work";
-import { bound, humanSays, makeCtx, sh, TEST_SETUP } from "./helpers";
+import { bound, humanSays, makeCtx, sh, specArgs, TEST_SETUP } from "./helpers";
 
 async function ready() {
   const w = makeCtx();
@@ -31,7 +31,7 @@ async function withLeadAndPlan(tasks: Array<Record<string, unknown>> = TASKS, be
   const spawned = await r.call(r.sup, "slp_spawn", { role: "lead", feature: "cache", prompt: "go" });
   expect(spawned.isError).toBeFalsy();
   const lead = r.ctx.identities.byAgent(r.paseo.created[0]!.id)!; // bound by the fake session_open hook
-  await r.call(lead, "slp_spec", { markdown: "# Spec\n## Decisions added by the Lead\nNone." });
+  await r.call(lead, "slp_spec", specArgs("# Spec\n## Decisions added by the Lead\nNone."));
   await r.human("spec ok");
   await r.call(r.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "spec ok" });
   await r.call(lead, "slp_plan", { markdown: "# Plan", tasks });
@@ -248,7 +248,7 @@ describe("slp_spawn", () => {
   });
   it("refuses Peers once a newer spec waits for the human's approval", async () => {
     const r = await withLeadAndPlan();
-    expect((await r.call(r.lead, "slp_spec", { markdown: "# Spec v2\n## Decisions added by the Lead\nNone." })).isError).toBeFalsy();
+    expect((await r.call(r.lead, "slp_spec", specArgs("# Spec v2\n## Decisions added by the Lead\nNone."))).isError).toBeFalsy();
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/the spec is not approved by the human yet/);
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-review", task: "T1", prompt: "x" })).text).toMatch(/the spec is not approved by the human yet/);
     expect(r.paseo.created).toHaveLength(1); // the Lead only
@@ -326,7 +326,7 @@ describe("report → review → accept", () => {
   it("does not accept while a newer spec waits for the human's approval", async () => {
     const r = await reported();
     await processReportFor(r.ctx, r.peer);
-    await r.call(r.lead, "slp_spec", { markdown: "# Spec v2\n## Decisions added by the Lead\nNone." });
+    await r.call(r.lead, "slp_spec", specArgs("# Spec v2\n## Decisions added by the Lead\nNone."));
     expect((await r.call(r.lead, "slp_accept", { task: "T1" })).text).toMatch(/the spec is not approved by the human yet/);
   });
   it("runs network git in the project checkout, so a relative sshCommand cannot run a Peer's script", async () => {
@@ -434,6 +434,22 @@ describe("ship", () => {
     await r.human("ok"); // typed after the package: this one approves
     expect((await r.call(r.sup, "slp_ship", { feature: "cache", quote: "ok" })).isError).toBeFalsy();
     expect(sh(bare, "git", ["rev-parse", "feat/cache"])).toBe(headOf(r.lead.worktree!));
+  });
+  it("runs the verify of the latest approved spec, and says so when an approved spec names none (rev 5.11)", async () => {
+    const r = await withLeadAndPlan();
+    r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "ruling", by_role: "lead", by_agent: r.lead.agentId, idPrefix: "R", data: { decision: "skip", reason: "r", cost_if_wrong: "c", drop: ["T1", "T2"] } });
+    await r.call(r.lead, "slp_spec", { markdown: "# Spec v2\n## Decisions added by the Lead\nNone.\n## Verify\n`test -d .`", verify: ["test -d ."] });
+    await r.human("duyệt v2");
+    expect((await r.call(r.sup, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "duyệt v2" })).isError).toBeFalsy();
+    const ran: string[] = []; const real = r.ctx.run;
+    r.ctx.run = async (runner, wt, command, t) => { ran.push(command); return real(runner, wt, command, t); };
+    expect((await r.call(r.sup, "slp_ship_package", { feature: "cache", summary: "s" })).isError).toBeFalsy();
+    expect(ran.filter((c) => c !== "true")).toEqual(["test -d ."]); // "true" is the runner probe
+    // A spec approved before rev 5.11 carries no verify.
+    const store = r.ctx.stores.feature("demo", "cache");
+    store.append({ feature: "cache", kind: "spec", by_role: "lead", by_agent: r.lead.agentId, data: { version: 3, sha256: "old", path: "p", premises: [] } });
+    store.append({ feature: "cache", kind: "human_decision", by_role: "supervisor", by_agent: r.sup.agentId, data: { decides: "approve_spec", target: "old", quote: "x" } });
+    expect((await r.call(r.sup, "slp_ship_package", { feature: "cache", summary: "s" })).text).toMatch(/spec v3 names no verify command/);
   });
 });
 

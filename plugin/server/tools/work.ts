@@ -327,7 +327,14 @@ export function workTools(ctx: Ctx): ToolDef[] {
         const feature = requireFeature(who, a.feature);
         const lead = ctx.identities.current("lead", who.project, feature);
         if (!lead?.worktree) throw new ToolError("feature has no Lead worktree");
-        const v = await verifyFeature(pipelineDeps(ctx, who.project, feature), feature, lead.worktree);
+        // The full-suite command is the one the human approved with the spec (rev 5.11), never a project setting.
+        const approved = stateOf(ctx, who.project, feature);
+        if (!approved.approvedVerify?.length) {
+          throw new ToolError(approved.spec?.approved
+            ? `spec v${approved.spec.version} names no verify command; ask the Lead for a new spec version with a "## Verify" section and verify`
+            : `not ready to ship:\n- ${approved.spec ? `spec v${approved.spec.version} is not approved` : "no spec"}`);
+        }
+        const v = await verifyFeature(pipelineDeps(ctx, who.project, feature), feature, lead.worktree, approved.approvedVerify);
         if (v.runnerError) throw new ToolError(`cannot verify: ${v.runnerError}. Fix sandbox.runner in ~/.slp/config.json and retry.`);
         const events = ctx.stores.feature(who.project, feature).all();
         const st = deriveFeature(feature, events);

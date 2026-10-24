@@ -155,3 +155,6 @@ export function humanSays(paseo: FakePaseo, agentId: string): (text: string) => 
     paseo.timelines.set(agentId, [...(paseo.timelines.get(agentId) ?? []), { type: "user_message", text, messageId: `h-${agentId}-${Date.now()}-${Math.random()}` }]);
   };
 }
+
+/** slp_spec arguments with the "## Verify" section and verify field rev 5.11 requires; "true" is the test runner's no-op suite. */
+export const specArgs = (markdown: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ markdown: `${markdown}\n## Verify\n\`true\` (baseline: no tests)\n`, verify: ["true"], ...extra });

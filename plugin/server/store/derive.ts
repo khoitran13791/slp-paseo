@@ -13,11 +13,13 @@ export interface TaskState extends PlanTask {
   reportStatus?: "done" | "done_with_concerns" | "blocked";
 }
 export interface ChallengeState { id: string; target: string; level: "plan" | "spec"; byRole: string; byAgent: string | null; open: boolean; seq: number; ts: string; outcome: "accepted" | "rejected" | null }
-export interface DocState { version: number; sha256: string; path: string; seq: number; ts: string; approved: boolean }
+export interface DocState { version: number; sha256: string; path: string; seq: number; ts: string; approved: boolean; verify?: string[] }
 export interface FeatureState {
   slug: string; brief: DocState | null; spec: DocState | null; plan: DocState | null;
   premises: Map<string, PremiseState>; tasks: Map<string, TaskState>; challenges: Map<string, ChallengeState>;
   halted: boolean; waitingOnHuman: string[]; lastWatch: WatchResult | null;
+  /** The full-suite commands of the latest approved spec (spec §5.3 rev 5.11). */
+  approvedVerify: string[] | null;
 }
 
 const TASK_KINDS = new Set(["assign", "report", "commit", "evidence", "review", "release", "ops"]);
@@ -34,7 +36,7 @@ export const evidencePassed = (d: Record<string, unknown>, def?: ReturnType<type
 const str = (v: unknown): string | null => (v == null ? null : String(v));
 
 export function deriveFeature(slug: string, events: readonly SlpEvent[]): FeatureState {
-  const st: FeatureState = { slug, brief: null, spec: null, plan: null, premises: new Map(), tasks: new Map(), challenges: new Map(), halted: false, waitingOnHuman: [], lastWatch: null };
+  const st: FeatureState = { slug, brief: null, spec: null, plan: null, premises: new Map(), tasks: new Map(), challenges: new Map(), halted: false, waitingOnHuman: [], lastWatch: null, approvedVerify: null };
   let planTasks: PlanTask[] = [];
   const specPremises = new Map<string, string[]>(); // spec sha256 → Lead premises that version relies on
   const dropped = new Set<string>();
@@ -42,7 +44,7 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
   for (const e of events) {
     switch (e.kind) {
       case "brief": case "spec": case "plan":
-        st[e.kind] = { version: Number(e.data.version), sha256: String(e.data.sha256), path: String(e.data.path), seq: e.seq, ts: e.ts, approved: false };
+        st[e.kind] = { version: Number(e.data.version), sha256: String(e.data.sha256), path: String(e.data.path), seq: e.seq, ts: e.ts, approved: false, ...(e.kind === "spec" && Array.isArray(e.data.verify) ? { verify: e.data.verify as string[] } : {}) };
         if (e.kind === "plan") planTasks = (e.data.tasks as PlanTask[] | undefined) ?? [];
         if (e.kind === "spec") specPremises.set(String(e.data.sha256), (e.data.premises as string[] | undefined) ?? []);
         // Rev 5.10: a brief lists every premise the record still holds; a pending one it created that a newer brief leaves out is dropped (spec §5.3).
@@ -63,6 +65,7 @@ export function deriveFeature(slug: string, events: readonly SlpEvent[]): Featur
       case "human_decision":
         if (e.data.decides === "approve_spec" && st.spec && st.spec.sha256 === e.data.target) {
           st.spec.approved = true;
+          st.approvedVerify = st.spec.verify ?? null;
           // Only the premises this spec version lists; a premise proposed with an abandoned version stays proposed (review Codex 2026-10-22).
           const listed = specPremises.get(String(e.data.target)) ?? [];
           for (const p of st.premises.values()) if (p.status === "proposed" && listed.includes(p.id)) p.status = p.kind === "hypothesis" ? "open" : "active";

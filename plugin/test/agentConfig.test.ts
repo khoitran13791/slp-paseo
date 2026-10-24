@@ -6,6 +6,7 @@ import { bindSession, claudeSandbox, ensureCodexHome, ensureRunnerHome, findSupe
 import { parseSlpConfig } from "../server/config";
 import { headOf, trustRepo } from "../server/git";
 import { IdentityRegistry, type Identity } from "../server/identity";
+import { ProjectRegistry } from "../server/projects";
 import type { Role, RoleSetup } from "../server/roles";
 import { initRepo, sh, tmpDir } from "./helpers";
 
@@ -15,11 +16,12 @@ const PLUGIN_DIR = "/home/u/.claude/plugins/cache/claude-plugins-official/superp
 const CODEX_HOME = "/home/u/.slp/codex-home";
 const ISOLATION = { additionalDirectories: [] as string[], extraArgs: { "setting-sources": "", "strict-mcp-config": null, "plugin-dir": PLUGIN_DIR }, disallowedTools: ["Agent", "Task", "AskUserQuestion"] };
 function deps() {
-  const repo = initRepo(); trustRepo(repo);
-  const config = parseSlpConfig({ projects: { demo: { repo, verify: ["npm test"] } } });
+  const repo = initRepo("demo"); trustRepo(repo); sh(repo, "git", ["remote", "add", "origin", join(tmpDir(), "o.git")]);
+  const config = parseSlpConfig({});
+  const projects = new ProjectRegistry(join(tmpDir(), "projects.json"));
   const identities = new IdentityRegistry(join(tmpDir(), "ids.json"));
   const setup: RoleSetup = { vendor: { supervisor: "claude", lead: "claude", "peer-impl": "claude", "peer-review": "codex" }, profile: {} };
-  const d = { identities, config, setup: () => setup, mcpUrl: () => "http://127.0.0.1:47320/mcp", promptFor: (i: { role: string }) => `PROMPT ${i.role}`, toolNames: (r: Role) => ["slp_state", `slp_${r}`], stateDirs: STATE, claudePluginDir: PLUGIN_DIR as string | null, codexHome: () => CODEX_HOME };
+  const d = { identities, config, projects, setup: () => setup, mcpUrl: () => "http://127.0.0.1:47320/mcp", promptFor: (i: { role: string }) => `PROMPT ${i.role}`, toolNames: (r: Role) => ["slp_state", `slp_${r}`], stateDirs: STATE, claudePluginDir: PLUGIN_DIR as string | null, codexHome: () => CODEX_HOME };
   return { repo, config, identities, d };
 }
 const ident = (role: Role): Identity => ({ tokenHash: "t", role, project: "demo", feature: "f", task: null, worktree: "/w", workspaceId: null, branch: null, reviewCommit: null, agentId: "a", parentAgentId: null, createdAt: "", retiredAt: null });
@@ -41,7 +43,7 @@ describe("transformCreate", () => {
     const req = { config: { provider: "claude/claude-haiku-4-5", cwd: "/x" } };
     expect(transformCreate(req, d)).toBe(req);
   });
-  it("mints a Supervisor for a configured project and wires prompt, MCP, tool policy, mode and sandbox", () => {
+  it("registers the repo and mints a Supervisor for it, and wires prompt, MCP, tool policy, mode and sandbox", () => {
     const { d, repo, identities } = deps();
     const out = transformCreate({ config: { provider: "slp-supervisor", cwd: repo, mcpServers: { other: { type: "http", url: "u" } } } }, d);
     const token = out.env!.SLP_TOKEN!;
@@ -51,6 +53,13 @@ describe("transformCreate", () => {
     expect(out.config.toolPolicy).toEqual({ preapproved: [{ kind: "mcp", server: "slp", tool: "slp_state" }, { kind: "mcp", server: "slp", tool: "slp_supervisor" }] });
     expect(out.config.providerOptions).toEqual({ sandbox: { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [repo], denyRead: DENY }, network: { allowedDomains: [], allowLocalBinding: false } }, ...ISOLATION, additionalDirectories: [repo] });
     expect(out.env).toMatchObject({ CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" });
+  });
+  it("registers the repo of a new Supervisor's folder, and refuses a folder outside any git repo (rev 5.11)", () => {
+    const { d, identities } = deps();
+    const other = initRepo("my-app"); sh(other, "git", ["remote", "add", "origin", join(tmpDir(), "o.git")]); mkdirSync(join(other, "src"));
+    const out = transformCreate({ config: { provider: "slp-supervisor", cwd: join(other, "src") } }, d);
+    expect(identities.byToken(out.env!.SLP_TOKEN!)).toMatchObject({ role: "supervisor", project: "my-app" });
+    expect(() => transformCreate({ config: { provider: "slp-supervisor", cwd: tmpDir() } }, d)).toThrow(/not inside a git repo/);
   });
   it("keeps the operator's and the repo's settings, hooks and MCP servers out of Claude roles, whatever the caller passed", () => {
     const { d, repo } = deps();
@@ -68,7 +77,7 @@ describe("transformCreate", () => {
   });
   it("refuses a Supervisor outside any project and starts one Supervisor per idea, each without a feature yet", () => {
     const { d, repo, identities } = deps();
-    expect(() => transformCreate({ config: { provider: "slp-supervisor", cwd: tmpDir() } }, d)).toThrow(/not a project/);
+    expect(() => transformCreate({ config: { provider: "slp-supervisor", cwd: tmpDir() } }, d)).toThrow(/not inside a git repo/);
     const first = transformCreate({ config: { provider: "slp-supervisor", cwd: repo } }, d);
     identities.bind(first.env!.SLP_TOKEN!, "sup-1");
     const second = transformCreate({ config: { provider: "slp-supervisor", cwd: repo } }, d);
@@ -146,7 +155,7 @@ describe("ensureCodexHome", () => {
     expect(readFileSync(join(dir, "config.toml"), "utf8")).toContain('[permissions.slp-verify]\nextends = ":workspace"');
   });
   it("adds sandbox.denyRead to the Claude sandbox's denyRead", () => {
-    const cfg = parseSlpConfig({ projects: { demo: { repo: "/r", verify: ["true"] } }, sandbox: { denyRead: ["~/.slp", "~/.ssh"] } });
+    const cfg = parseSlpConfig({ sandbox: { denyRead: ["~/.slp", "~/.ssh"] } });
     const sb = claudeSandbox(ident("lead"), cfg, "/w", ["/state/.slp"]) as { filesystem: { denyRead: string[] } };
     expect(sb.filesystem.denyRead).toEqual(["/state/.slp", join(homedir(), ".slp"), join(homedir(), ".ssh")]);
   });

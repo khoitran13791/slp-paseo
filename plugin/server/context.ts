@@ -3,6 +3,7 @@ import type { SlpConfig } from "./config";
 import { extractHumanMessages, type SeenIds, type TimelineItemLike, type TimelineMarks } from "./human";
 import type { Identity, IdentityRegistry } from "./identity";
 import { contractQueues, holderOf } from "./planCheck";
+import type { ProjectRegistry } from "./projects";
 import { edgeAllowed, steerAllowed, type Address, type Router, type SendMode } from "./router";
 import type { RoleSetup } from "./roles";
 import type { RunFn } from "./sandbox";
@@ -45,6 +46,8 @@ export interface PaseoLike {
 
 export interface Ctx {
   config: SlpConfig;
+  /** The repos SLP took on, ~/.slp/projects.json (rev 5.11). */
+  projects: ProjectRegistry;
   setup(): RoleSetup;
   /** Reads ~/.paseo/config.json again through the daemon and updates setup(): profiles made after the plugin started count (T21 B-1). */
   refreshSetup(): Promise<RoleSetup>;
@@ -70,6 +73,13 @@ export interface Ctx {
   /** Permission requests left to the human, by agent (T20 records them; the watch pack, T19, shows them). */
   pendingPermissions: Map<string, { name: string; since: number }>;
   log(message: string, error?: unknown): void;
+}
+
+/** The main checkout of a registered project; every git step of the plugin runs there or in its worktrees. */
+export function repoOf(ctx: Ctx, project: string): string {
+  const p = ctx.projects.get(project);
+  if (!p) throw new ToolError(`unknown project ${project}: start a Supervisor in its repo first`);
+  return p.repo;
 }
 
 export const leadAddress = (project: string, feature: string): Address => ({ role: "lead", project, feature });

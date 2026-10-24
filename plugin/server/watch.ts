@@ -179,7 +179,7 @@ export async function buildPack(ctx: Ctx, project: string, feature: string, tick
 export async function watchTick(ctx: Ctx): Promise<void> {
   if (!ctx.config.flags.watch) return;
   const now = ctx.now();
-  for (const project of Object.keys(ctx.config.projects)) {
+  for (const project of ctx.projects.names()) {
     const file = ctx.stores.file(project, "watch.json");
     const state = readJson<WatchState>(file, {});
     for (const feature of ctx.stores.features(project)) {

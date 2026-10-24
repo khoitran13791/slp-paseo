@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { appendAs, appendPlugin, claimContracts, humanMessagesFor, leadAddress, notify, refreshDigest, releaseContracts, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, type CreateOptions, type Ctx } from "../context";
+import { appendAs, appendPlugin, claimContracts, humanMessagesFor, leadAddress, notify, refreshDigest, releaseContracts, repoOf, requireFeature, routeFrom, supervisorAddress, syncHumanMessages, type CreateOptions, type Ctx } from "../context";
 import { processReport, verifyFeature, type PipelineDeps, type ReportOutcome } from "../evidence";
 import { addWorktree, changedFiles, deleteBranch, diffStat, git, headOf, hooksDir, isProtectedPath, isSensitivePath, mergeNoHooks, pushNoHooks, removeWorktree, resolveBaseBranch, startMerge, unsafeGitDrivers } from "../git";
 import type { Identity } from "../identity";
@@ -18,7 +18,7 @@ import { defineTool, ToolError } from "./define";
 const SLUG = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
 
 export function pipelineDeps(ctx: Ctx, project: string, feature: string): PipelineDeps {
-  return { store: ctx.stores.feature(project, feature), config: ctx.config, project: ctx.config.projects[project]!, run: ctx.run, now: () => ctx.now() };
+  return { store: ctx.stores.feature(project, feature), config: ctx.config, run: ctx.run, now: () => ctx.now() };
 }
 const stateOf = (ctx: Ctx, project: string, feature: string): FeatureState => deriveFeature(feature, ctx.stores.feature(project, feature).all());
 
@@ -29,7 +29,7 @@ const stripRemote = (ref: string, remote: string): string => (ref.startsWith(`${
 export function featureBase(ctx: Ctx, project: string, feature: string): string {
   const recorded = stateOf(ctx, project, feature).baseBranch;
   if (recorded) return recorded;
-  try { return resolveBaseBranch(ctx.config.projects[project]!.repo, ctx.config.ship.remote); } catch (error) { throw new ToolError(error instanceof Error ? error.message : String(error)); }
+  try { return resolveBaseBranch(repoOf(ctx, project), ctx.config.ship.remote); } catch (error) { throw new ToolError(error instanceof Error ? error.message : String(error)); }
 }
 
 type Placement =
@@ -72,7 +72,7 @@ async function createAgent(ctx: Ctx, role: Role, o: { project: string; feature: 
     ...(o.deferPrompt ? {} : { prompt: o.prompt, clientMessageId: ctx.router.issue() }),
   };
   const p = o.placement;
-  const repo = ctx.config.projects[o.project]!.repo;
+  const repo = repoOf(ctx, o.project);
   if (p.kind !== "dir") {
     const drivers = unsafeGitDrivers(p.kind === "workspace" && p.worktree ? p.worktree : repo);
     if (drivers.length) { ctx.identities.retire(minted.tokenHash); throw new ToolError(`SLP will not run agents in ${o.project}: its git config runs commands on add/status/merge/diff that a Peer could change (${drivers.join("; ")}). Remove them, or keep this repo out of SLP.`); }
@@ -127,7 +127,7 @@ export async function retireAgent(ctx: Ctx, i: Identity, repo: string): Promise<
 }
 
 async function retireTaskAgents(ctx: Ctx, project: string, feature: string, task: string): Promise<void> {
-  const repo = ctx.config.projects[project]!.repo;
+  const repo = repoOf(ctx, project);
   for (const i of ctx.identities.active(project).filter((x) => x.feature === feature && x.task === task && (x.role === "peer-impl" || x.role === "peer-review"))) {
     await retireAgent(ctx, i, repo);
   }
@@ -177,7 +177,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
       run: (who, a) => serial(who.project, async () => {
         try { await ctx.refreshSetup(); } catch (error) { throw new ToolError(error instanceof Error ? error.message : String(error)); } // the Peer default and the allowlist check read the profile below
         const feature = requireFeature(who, a.feature);
-        const project = ctx.config.projects[who.project]!;
+        const repo = repoOf(ctx, who.project);
         const st = stateOf(ctx, who.project, feature);
         if (st.halted) throw new ToolError(`${feature} is halted: the human changed the goal`);
         if (a.role === "lead") {
@@ -213,7 +213,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
           const queues = contractQueues(ctx.stores.project(who.project).all());
           const held = task.touchSet.filter((e) => isContract(e) && holderOf(queues, e) !== feature);
           if (held.length) throw new ToolError(`${task.id} touches ${held.map((c) => `${c} (held by ${holderOf(queues, c)})`).join(", ")}; it can start when that feature ships or stops`);
-          if (activeWriters(ctx, who.project).length >= project.maxWriters) throw new ToolError(`project writer cap reached (${project.maxWriters}); retry after a task is accepted`);
+          if (activeWriters(ctx, who.project).length >= ctx.config.limits.maxWriters) throw new ToolError(`project writer cap reached (${ctx.config.limits.maxWriters}); retry after a task is accepted`);
           const model = task.model ?? a.model ?? ctx.setup().profile["peer-impl"]?.model;
           if (model && ctx.config.models.allowed.length && !ctx.config.models.allowed.map(normalizeModel).includes(normalizeModel(model))) throw new ToolError(`model ${model} is not in models.allowed`);
           if (lost) {
@@ -233,14 +233,14 @@ export function workTools(ctx: Ctx): ToolDef[] {
             let mergeFrom = "the base branch";
             try {
               mergeFrom = featureBase(ctx, who.project, feature);
-              git(project.repo, ["fetch", "--quiet", ctx.config.ship.remote], true); // network git runs in the human's checkout (T9 pushNoHooks)
+              git(repo, ["fetch", "--quiet", ctx.config.ship.remote], true); // network git runs in the human's checkout (T9 pushNoHooks)
               const conflicts = startMerge(ident.worktree!, mergeFrom);
               const note = conflicts.length ? `Resolve the conflict markers in: ${conflicts.join(", ")}.` : "It merged without conflicts; check that the result builds and passes.";
               await ctx.paseo().agents.ref(agentId).send(`${prompt}\n\n## Merge in progress\nThe plugin started merging ${mergeFrom} into your branch. ${note} Do not run git; slp_report when done and the plugin records the merge commit.`, { messageId: ctx.router.issue() });
             } catch (error) {
               // The Peer never got its brief: stop it and return the task, so it is not left assigned to an agent that waits for nothing.
               const message = error instanceof Error ? error.message : String(error);
-              await retireAgent(ctx, ident, project.repo);
+              await retireAgent(ctx, ident, repo);
               appendAs(ctx, who, feature, { kind: "release", data: { task: task.id, outcome: "returned", reason: `merge_base setup failed: ${message}` } });
               throw new ToolError(`merging ${mergeFrom} into the new worktree failed: ${message}`);
             }
@@ -323,10 +323,10 @@ export function workTools(ctx: Ctx): ToolDef[] {
       roles: ["lead"],
       input: z.object({}),
       run(who) {
-        const project = ctx.config.projects[who.project]!;
+        const repo = repoOf(ctx, who.project);
         if (stateOf(ctx, who.project, who.feature!).halted) throw new ToolError(`${who.feature} is halted: the human changed the goal`);
         const base = featureBase(ctx, who.project, who.feature!);
-        git(project.repo, ["fetch", "--quiet", ctx.config.ship.remote], true); // network git runs in the human's checkout (T9 pushNoHooks)
+        git(repo, ["fetch", "--quiet", ctx.config.ship.remote], true); // network git runs in the human's checkout (T9 pushNoHooks)
         const merged = mergeNoHooks(who.worktree!, base, `Merge ${base} into ${who.branch}`);
         if (!merged.ok) return `Conflicts in: ${merged.conflicts.join(", ")}. Add a resolve task to the plan, then slp_spawn it as a peer-impl with merge_base: true.`;
         appendPlugin(ctx, who.project, who.feature!, { kind: "merge", data: { source: base, target: who.branch, hash: merged.hash } });
@@ -386,16 +386,16 @@ export function workTools(ctx: Ctx): ToolDef[] {
         if (blockers.length) throw new ToolError(`ship refused, not ready any more:\n${blockers.map((b) => `- ${b}`).join("\n")}`);
         appendAs(ctx, who, feature, { kind: "human_decision", data: { decides: "approve_ship", target: head, quote: a.quote, messageSeq: ok.seq, messageId: ok.messageId } });
         const branch = lead.branch ?? `feat/${feature}`;
-        pushNoHooks(ctx.config.projects[who.project]!.repo, ctx.config.ship.remote, branch);
+        pushNoHooks(repoOf(ctx, who.project), ctx.config.ship.remote, branch);
         let pr: string | null = null;
         if (ctx.config.ship.openPr) {
           const pkg = [...events].reverse().find((e) => e.kind === "ship_package")!;
           const title = String(events.find((e) => e.kind === "brief")?.data.title ?? feature);
           // A retry after a crash between "gh pr create" and the shipped event finds the PR instead of failing on it (review Codex 2026-10-22).
-          const existing = spawnSync("gh", ["pr", "view", branch, "--json", "url,state", "--jq", 'select(.state == "OPEN") | .url'], { cwd: ctx.config.projects[who.project]!.repo, encoding: "utf8", timeout: 120_000 });
+          const existing = spawnSync("gh", ["pr", "view", branch, "--json", "url,state", "--jq", 'select(.state == "OPEN") | .url'], { cwd: repoOf(ctx, who.project), encoding: "utf8", timeout: 120_000 });
           if (existing.status === 0 && existing.stdout.trim()) pr = existing.stdout.trim();
           else {
-            const r = spawnSync("gh", ["pr", "create", "--head", branch, "--base", stripRemote(featureBase(ctx, who.project, feature), ctx.config.ship.remote), "--title", title, "--body", String(pkg.data.text)], { cwd: ctx.config.projects[who.project]!.repo, encoding: "utf8", timeout: 120_000 });
+            const r = spawnSync("gh", ["pr", "create", "--head", branch, "--base", stripRemote(featureBase(ctx, who.project, feature), ctx.config.ship.remote), "--title", title, "--body", String(pkg.data.text)], { cwd: repoOf(ctx, who.project), encoding: "utf8", timeout: 120_000 });
             // A missing or hung gh has no exit status and no stderr: say why instead of throwing a TypeError.
             if (r.status !== 0) throw new ToolError(`pushed ${branch}, but gh pr create failed: ${(r.stderr ?? "").trim() || r.error?.message || `exit ${r.status}`}`);
             pr = r.stdout.trim();
@@ -424,7 +424,7 @@ export function workTools(ctx: Ctx): ToolDef[] {
         appendAs(ctx, who, feature, { kind: "checkpoint", data: { path: file } });
         const digest = refreshDigest(ctx, who.project, feature);
         if (who.role === "lead" && !who.workspaceId) throw new ToolError("no workspace recorded for this Lead; cannot rotate in place");
-        const placement: Placement = who.role === "lead" ? { kind: "workspace", workspaceId: who.workspaceId! } : { kind: "dir", cwd: ctx.config.projects[who.project]!.repo };
+        const placement: Placement = who.role === "lead" ? { kind: "workspace", workspaceId: who.workspaceId! } : { kind: "dir", cwd: repoOf(ctx, who.project) };
         const { agentId } = await createAgent(ctx, who.role, { project: who.project, feature, task: null, placement, parent: who.parentAgentId, title: who.role === "lead" ? `[Lead] ${feature}` : `[Supervisor] ${feature}`, prompt: `[SLP] You take over the ${who.role} role for feature ${feature} from a previous agent.\n\n${body}\n\n## Current state\n${digest}` });
         ctx.identities.retire(who.tokenHash);
         if (who.agentId) await ctx.paseo().agents.ref(who.agentId).archive().catch(() => undefined);

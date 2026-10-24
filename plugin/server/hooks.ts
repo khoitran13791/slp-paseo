@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { appendPlugin, featuresTouching, leadAddress, notify, supervisorAddress, syncHumanMessages, type Ctx } from "./context";
+import { appendPlugin, featuresTouching, leadAddress, notify, repoOf, supervisorAddress, syncHumanMessages, type Ctx } from "./context";
 import { processChallengeEvidence } from "./evidence";
 import { changedFiles, trackedChanges } from "./git";
 import type { TimelineItemLike } from "./human";
@@ -137,7 +137,7 @@ async function nudgeOrEscalate(ctx: Ctx, ident: Identity): Promise<void> {
 async function afterReviewTurn(ctx: Ctx, ident: Identity, calledTool: boolean): Promise<void> {
   if (ident.worktree && trackedChanges(ident.worktree).length > 0) {
     appendPlugin(ctx, ident.project, ident.feature, { kind: "ops", data: { type: "review_invalidated", task: ident.task, commit: ident.reviewCommit, summary: `review of ${ident.task} changed tracked files` } });
-    await retireAgent(ctx, ident, ctx.config.projects[ident.project]!.repo);
+    await retireAgent(ctx, ident, repoOf(ctx, ident.project));
     notify(ctx, leadAddress(ident.project, ident.feature!), `The reviewer of ${ident.task} changed tracked files; its review is invalid and it was stopped. Spawn a new reviewer.`);
     return;
   }
@@ -195,7 +195,7 @@ export async function onPermissionRequested(ctx: Ctx, agentId: string, request: 
   const ident = ctx.identities.byAgent(agentId);
   let vendor: "claude" | "codex" | undefined;
   try { vendor = ident ? ctx.setup().vendor[ident.role] : undefined; } catch { vendor = undefined; } // setup not loaded: decide nothing new
-  const repo = ident ? ctx.config.projects[ident.project]?.repo : undefined;
+  const repo = ident ? ctx.projects.get(ident.project)?.repo : undefined;
   const readRoots = ident && repo ? [repo, join(ctx.worktreeRoot, ident.project)] : [];
   const decision = decidePermission(request, ident, { deniedRoots: ctx.stateDirs, vendor, readRoots });
   if (decision.action === "defer" && ident) ctx.pendingPermissions.set(agentId, { name: request.name ?? request.kind ?? "permission", since: ctx.now().getTime() });
@@ -254,7 +254,7 @@ async function tickOnce(ctx: Ctx): Promise<void> {
       ctx.log(`resume of ${job.agentId} failed; retrying in a minute`, error);
     }
   }
-  for (const project of Object.keys(ctx.config.projects)) {
+  for (const project of ctx.projects.names()) {
     for (const feature of ctx.stores.features(project)) {
       // One feature's unreadable log must not stop the other features' nudges, the watch tick or the router flush.
       try {
@@ -283,7 +283,7 @@ async function tickOnce(ctx: Ctx): Promise<void> {
 }
 
 export async function reconcile(ctx: Ctx): Promise<void> {
-  for (const project of Object.keys(ctx.config.projects)) {
+  for (const project of ctx.projects.names()) {
     // Opening a store is what logs a cut-off last line (store/registry.ts); after a restart nothing else opens a feature without agents.
     for (const feature of ctx.stores.features(project)) {
       try { ctx.stores.feature(project, feature); } catch (error) { ctx.log(`could not open the log of ${project}/${feature}`, error); }

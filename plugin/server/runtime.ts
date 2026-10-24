@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { ensureCodexHome, ensureRunnerHome, findSuperpowersDir, sessionOpen, transformCreate, type CreateRequest, type SessionOpenRequest } from "./agentConfig";
 import { expandHome, loadSlpConfig, slpHome, type SlpConfig } from "./config";
 import type { Ctx, PaseoLike } from "./context";
-import { trustRepo, unsafeGitDrivers } from "./git";
 import { reconcile, tick } from "./hooks";
 import { SeenIds, TimelineMarks } from "./human";
 import { IdentityRegistry } from "./identity";
 import { startMcpServer } from "./mcp/server";
+import { ProjectRegistry } from "./projects";
 import { promptFor } from "./prompts";
 import { resolveRoleSetup, roleOfProvider, type RoleSetup } from "./roles";
 import { Router } from "./router";
@@ -22,16 +22,11 @@ export interface Runtime { ctx: Ctx; capture(paseo: unknown): Promise<void>; wak
 export function createRuntime(): Runtime {
   const home = slpHome();
   const config: SlpConfig = loadSlpConfig();
+  const projects = new ProjectRegistry(join(home, "projects.json"), (m, e) => console.error(`[slp] ${m}`, e ?? ""));
+  projects.trustAll(); // rev 5.11: the repos registered by earlier Supervisors
   let paseo: PaseoLike | null = null;
   let setup: RoleSetup | null = null;
   let setupPromise: Promise<RoleSetup> | null = null;
-  for (const [name, project] of Object.entries(config.projects)) {
-    try {
-      trustRepo(project.repo);
-      const drivers = unsafeGitDrivers(project.repo);
-      if (drivers.length) console.error(`[slp] project ${name}: git config runs commands a Peer could change (${drivers.join("; ")}); SLP will refuse to start agents here until they are removed.`);
-    } catch (e) { console.error(`[slp] project ${name}: ${String(e)}`); }
-  }
   const stateDirs = [home, process.env.PASEO_HOME ?? join(homedir(), ".paseo")]; // SLP worktrees live in ~/.slp-worktrees, outside both
   const denyRead = [...new Set([...stateDirs, ...config.sandbox.denyRead.map(expandHome)])];
   const run = makeRunSandboxed({ CODEX_HOME: ensureRunnerHome(join(home, "codex-runner"), denyRead) });
@@ -47,7 +42,7 @@ export function createRuntime(): Runtime {
     onError: (e) => console.error("[slp] could not write router.json; keeping the queue in memory", e),
   });
   const ctx: Ctx = {
-    config, identities, router, stores: new StoreRegistry(home), seen: new SeenIds(join(home, "seen.json"), (e) => console.error("[slp] could not write seen.json; keeping ids in memory", e)),
+    config, projects, identities, router, stores: new StoreRegistry(home), seen: new SeenIds(join(home, "seen.json"), (e) => console.error("[slp] could not write seen.json; keeping ids in memory", e)),
     resumes: new ResumeQueue(join(home, "resume.json")), nudges: new NudgeTracker(join(home, "nudges.json")),
     marks: new TimelineMarks(join(home, "timeline-marks.json"), (e) => console.error("[slp] could not write timeline-marks.json; keeping marks in memory", e)),
     setup: () => { if (!setup) throw new Error("SLP: role setup not loaded yet"); return setup; },
@@ -92,7 +87,7 @@ export function createRuntime(): Runtime {
       // Not `await setupPromise`: once that promise rejected, a fixed config could never get through (review Codex 2026-10-23).
       await refreshSetup(); // throws the config error for an SLP agent, never for a non-SLP one
       return transformCreate(req, {
-        identities, config, setup: () => ctx.setup(), mcpUrl: () => `http://127.0.0.1:${config.mcp.port}/mcp`,
+        identities, config, projects, setup: () => ctx.setup(), mcpUrl: () => `http://127.0.0.1:${config.mcp.port}/mcp`,
         promptFor: (ident) => promptFor(ident, { task: ident.feature && ident.task ? deriveFeature(ident.feature, ctx.stores.feature(ident.project, ident.feature).all()).tasks.get(ident.task) ?? null : null }),
         toolNames: (role) => tools.filter((t) => t.roles.includes(role)).map((t) => t.name),
         stateDirs, claudePluginDir,

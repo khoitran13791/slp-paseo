@@ -1,19 +1,10 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, sep } from "node:path";
+import { join } from "node:path";
 import { z } from "zod";
-
-export const ProjectSchema = z.object({
-  repo: z.string().min(1),
-  baseBranch: z.string().default("origin/main"),
-  verify: z.array(z.string().min(1)).min(1),
-  maxWriters: z.number().int().positive().default(2),
-});
-export type ProjectConfig = z.infer<typeof ProjectSchema>;
 
 // zod 4: .prefault({}) parses the default through the inner schema so nested defaults apply.
 export const SlpConfigSchema = z.object({
-  projects: z.record(z.string().regex(/^[a-z0-9][a-z0-9-]*$/), ProjectSchema),
   flags: z.object({
     ask: z.boolean().default(true),
     evidenceCheck: z.boolean().default(true),
@@ -30,6 +21,7 @@ export const SlpConfigSchema = z.object({
     verifyTimeoutSeconds: z.number().int().positive().default(900),
     maxCommitFiles: z.number().int().positive().default(500),
     humanReminderMinutes: z.number().positive().default(30),
+    maxWriters: z.number().int().positive().default(2),
   }).prefault({}),
   models: z.object({ allowed: z.array(z.string()).default([]) }).prefault({}),
   sandbox: z.object({
@@ -65,19 +57,10 @@ export function parseSlpConfig(raw: unknown): SlpConfig {
   return parsed.data;
 }
 
-export function loadSlpConfig(file = join(slpHome(), "config.json")): SlpConfig {
-  return parseSlpConfig(JSON.parse(readFileSync(file, "utf8")));
-}
-
-function safeRealpath(p: string): string {
-  try { return realpathSync(p); } catch { return p; }
-}
-
-export function projectForCwd(config: SlpConfig, cwd: string): { name: string; project: ProjectConfig } | null {
-  const real = safeRealpath(cwd);
-  for (const [name, project] of Object.entries(config.projects)) {
-    const root = safeRealpath(project.repo);
-    if (real === root || real.startsWith(root + sep)) return { name, project };
-  }
-  return null;
+/** `~/.slp/config.json` is optional since rev 5.11: no file means every default. A leftover `projects` section is ignored. */
+export function loadSlpConfig(file = join(slpHome(), "config.json"), log: (message: string) => void = (m) => console.error(`[slp] ${m}`)): SlpConfig {
+  if (!existsSync(file)) return parseSlpConfig({});
+  const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  if (raw && typeof raw === "object" && "projects" in raw) log(`projects in ${file} is no longer used (rev 5.11): SLP registers a repo when a Supervisor starts in it; base branch and verify belong to each feature.`);
+  return parseSlpConfig(raw);
 }

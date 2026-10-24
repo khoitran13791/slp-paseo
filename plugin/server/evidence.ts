@@ -1,10 +1,10 @@
-import type { ProjectConfig, SlpConfig } from "./config";
+import type { SlpConfig } from "./config";
 import { changedFiles, commitAll, commitTrailer, filesOutside, git, headOf, hookFile, hooksDir, isProtectedPath, isSensitivePath, nestedRepos, NoChangesError, trackedChanges, unsafeGitDrivers } from "./git";
 import type { RunFn, SandboxResult } from "./sandbox";
 import { evidencePassed, taskDef, type TaskState } from "./store/derive";
 import type { EventStore, SlpEvent } from "./store/events";
 
-export interface PipelineDeps { store: EventStore; config: SlpConfig; project: ProjectConfig; run: RunFn; now(): Date }
+export interface PipelineDeps { store: EventStore; config: SlpConfig; run: RunFn; now(): Date }
 export interface CommitFlags { outsideTouchSet: string[]; excludedSensitive: string[]; excludedProtected: string[] }
 export type ReportOutcome =
   | { outcome: "committed"; commit: string; evidenceOk: boolean | null; flags: CommitFlags; runnerError?: string; recovered?: true }

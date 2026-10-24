@@ -1,15 +1,25 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { headOf } from "../server/git";
 import { createRuntime } from "../server/runtime";
 import { FAKE_RUNNER, FakePaseo, initRepo, tmpDir } from "./helpers";
 
 describe("runtime", () => {
   const saved = process.env.SLP_HOME;
   afterEach(() => { process.env.SLP_HOME = saved; });
+  it("starts without ~/.slp/config.json and trusts the repos in projects.json again (rev 5.11)", async () => {
+    const home = tmpDir(); process.env.SLP_HOME = home;
+    const repo = initRepo("demo");
+    writeFileSync(join(home, "projects.json"), JSON.stringify({ demo: { repo } }));
+    const rt = createRuntime();
+    expect(rt.ctx.projects.get("demo")).toEqual({ repo });
+    expect(() => headOf(repo)).not.toThrow();
+    await rt.close();
+  });
   it("never blocks or breaks non-SLP agents when the SLP role setup is unusable", async () => {
     const home = tmpDir(); process.env.SLP_HOME = home;
-    writeFileSync(join(home, "config.json"), JSON.stringify({ projects: { demo: { repo: initRepo(), verify: ["true"] } }, sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
+    writeFileSync(join(home, "config.json"), JSON.stringify({ sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
     const rt = createRuntime();
     const paseo = new FakePaseo();
     paseo.daemonConfig = { agents: { providers: {} } }; // file-shaped config: no top-level providers, so setup fails
@@ -21,7 +31,7 @@ describe("runtime", () => {
   });
   it("reads agent profiles again each time, so a profile made after start is used (T21 B-1)", async () => {
     const home = tmpDir(); process.env.SLP_HOME = home;
-    writeFileSync(join(home, "config.json"), JSON.stringify({ projects: { demo: { repo: initRepo(), verify: ["true"] } }, sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
+    writeFileSync(join(home, "config.json"), JSON.stringify({ sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
     const rt = createRuntime();
     const paseo = new FakePaseo();
     const off = { enabled: false };
@@ -37,7 +47,7 @@ describe("runtime", () => {
   it("recovers from a broken setup at start once the config is fixed, without a plugin reload", async () => {
     const home = tmpDir(); process.env.SLP_HOME = home;
     const repo = initRepo();
-    writeFileSync(join(home, "config.json"), JSON.stringify({ projects: { demo: { repo, verify: ["true"] } }, sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
+    writeFileSync(join(home, "config.json"), JSON.stringify({ sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
     const rt = createRuntime();
     const paseo = new FakePaseo();
     paseo.daemonConfig = { providers: {} }; // no slp-* providers yet: the setup at capture fails
@@ -51,7 +61,7 @@ describe("runtime", () => {
   });
   it("gives an SLP agent its role env back when Paseo reopens its session, and leaves other agents alone (rev 5.10 F6)", async () => {
     const home = tmpDir(); process.env.SLP_HOME = home;
-    writeFileSync(join(home, "config.json"), JSON.stringify({ projects: {}, sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
+    writeFileSync(join(home, "config.json"), JSON.stringify({ sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
     const rt = createRuntime();
     const paseo = new FakePaseo();
     const off = { enabled: false };
@@ -64,7 +74,7 @@ describe("runtime", () => {
   });
   it("wakes without any agent hook: the plugin gets its Paseo client, and a broken setup does not throw", async () => {
     const home = tmpDir(); process.env.SLP_HOME = home;
-    writeFileSync(join(home, "config.json"), JSON.stringify({ projects: {}, sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
+    writeFileSync(join(home, "config.json"), JSON.stringify({ sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
     const rt = createRuntime();
     const paseo = new FakePaseo();
     paseo.daemonConfig = { agents: { providers: {} } }; // setup fails
@@ -74,7 +84,7 @@ describe("runtime", () => {
   });
   it("does not tick on wake: the 30 s timer alone paces ticks and resumes, however many clients wake it", async () => {
     const home = tmpDir(); process.env.SLP_HOME = home;
-    writeFileSync(join(home, "config.json"), JSON.stringify({ projects: {}, sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
+    writeFileSync(join(home, "config.json"), JSON.stringify({ sandbox: { runner: FAKE_RUNNER }, mcp: { port: 0 }, runtime: { claudePluginDir: home } }));
     const rt = createRuntime();
     const paseo = new FakePaseo();
     await rt.wake(paseo);

@@ -1,8 +1,9 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expandHome, projectForCwd, type SlpConfig } from "./config";
+import { expandHome, type SlpConfig } from "./config";
 import { currentBranch, gitCommonDir, headOf } from "./git";
 import type { Identity, IdentityRegistry } from "./identity";
+import type { ProjectRegistry } from "./projects";
 import { ROLE_PROVIDER, roleOfProvider, type Role, type RoleSetup, type Vendor } from "./roles";
 
 interface McpToolRef { kind: "mcp"; server: string; tool: string }
@@ -11,7 +12,7 @@ export interface CreateRequest {
   env?: Record<string, string>;
 }
 export interface AgentConfigDeps {
-  identities: IdentityRegistry; config: SlpConfig; setup(): RoleSetup; mcpUrl(): string;
+  identities: IdentityRegistry; config: SlpConfig; projects: ProjectRegistry; setup(): RoleSetup; mcpUrl(): string;
   promptFor(ident: Identity): string; toolNames(role: Role): string[]; stateDirs: string[];
   /** Superpowers, loaded back with --plugin-dir; null runs Claude roles without it. */
   claudePluginDir: string | null;
@@ -120,8 +121,8 @@ export function transformCreate(req: CreateRequest, deps: AgentConfigDeps): Crea
   // Canonicalize once: cwd may be a symlink alias (or /tmp for /private/tmp), and every decision and sandbox path below uses the real path.
   const cwd = realpathSync(req.config.cwd);
   if (!ident) {
-    const found = projectForCwd(deps.config, cwd);
-    if (!found) throw new Error(`SLP: ${cwd} is not a project in ~/.slp/config.json.`);
+    // Rev 5.11: the Supervisor's folder decides the project; its repo is registered on first use, with checks that say how to fix it.
+    const found = deps.projects.register(cwd, deps.config.ship.remote);
     // One Supervisor per idea: it has no feature until its first slp_brief (spec §7.4).
     const minted = deps.identities.mint({ role, project: found.name, feature: null, task: null, reviewCommit: null, parentAgentId: null });
     ident = minted; token = minted.token;

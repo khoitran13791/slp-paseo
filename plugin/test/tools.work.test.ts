@@ -191,7 +191,7 @@ describe("slp_spawn", () => {
     r.ctx.config.models.allowed = ["claude-opus-5-5"];
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/not in models.allowed/);
     r.ctx.config.models.allowed = [];
-    r.ctx.config.projects.demo!.maxWriters = 0;
+    r.ctx.config.limits.maxWriters = 0;
     expect((await r.call(r.lead, "slp_spawn", { role: "peer-impl", task: "T1", prompt: "x" })).text).toMatch(/writer cap/);
   });
   it("starts a task that touches a shared contract only once its feature holds the contract", async () => {

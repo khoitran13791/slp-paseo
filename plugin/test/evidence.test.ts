@@ -11,10 +11,10 @@ import { FAKE_RUNNER, initRepo, sh, tmpDir } from "./helpers";
 
 function setup(over: Record<string, unknown> = {}) {
   const repo = initRepo(); trustRepo(repo);
-  const config = parseSlpConfig({ projects: { p: { repo, verify: ["test -f src.ts"] } }, sandbox: { runner: FAKE_RUNNER }, ...over });
+  const config = parseSlpConfig({ sandbox: { runner: FAKE_RUNNER }, ...over });
   const store = new EventStore(join(tmpDir(), "events.jsonl"));
   const run = vi.fn(runSandboxed);
-  const deps = { store, config, project: config.projects.p!, run, now: () => new Date("2026-10-22T00:00:00Z") };
+  const deps = { store, config, run, now: () => new Date("2026-10-22T00:00:00Z") };
   const task: TaskState = { id: "T1", title: "t", dependsOn: [], verifies: [], touchSet: ["src.ts"], verify: "test -f src.ts", status: "reported", closure: [], agentId: "peer-1", worktree: repo, branch: "main", base: headOf(repo), attempt: 1, lastCommit: null, evidenceOk: false, reviewOk: false, reopened: false, acceptedAtSeq: null };
   const report = store.append({ feature: "f", kind: "report", by_role: "peer-impl", by_agent: "peer-1", data: { task: "T1", status: "done", message: "add src" } });
   return { repo, store, run, deps, task, report };
@@ -65,7 +65,7 @@ describe("processReport", () => {
     const first = await processReport(deps, task, report); // commit recorded, but the broken runner leaves it without evidence
     expect(first).toMatchObject({ outcome: "committed", evidenceOk: null });
     armFilter(repo, marker); sh(repo, "touch", ["src.ts"]); // stat-dirty tracked file: `git status` would run the clean filter on it
-    const fixed = { ...deps, config: parseSlpConfig({ projects: { p: { repo, verify: ["test -f src.ts"] } }, sandbox: { runner: FAKE_RUNNER } }) };
+    const fixed = { ...deps, config: parseSlpConfig({ sandbox: { runner: FAKE_RUNNER } }) };
     expect(await processReport(fixed, task, report)).toMatchObject({ outcome: "committed", commit: (first as { commit: string }).commit, evidenceOk: null, runnerError: expect.stringMatching(/git config runs commands/) });
     expect(existsSync(marker)).toBe(false);
     expect(store.all().some((e) => e.kind === "evidence")).toBe(false);
@@ -152,7 +152,7 @@ describe("processReport", () => {
     expect(a).toMatchObject({ outcome: "committed", evidenceOk: null, runnerError: expect.stringMatching(/sandbox runner failed/) });
     expect(store.all().map((e) => e.kind)).toEqual(["report", "commit", "ops"]);
     expect(store.all()[2]!.data.type).toBe("runner_failed");
-    const fixed = { ...deps, config: parseSlpConfig({ projects: { p: { repo, verify: ["test -f src.ts"] } }, sandbox: { runner: FAKE_RUNNER } }) };
+    const fixed = { ...deps, config: parseSlpConfig({ sandbox: { runner: FAKE_RUNNER } }) };
     expect(await processReport(fixed, task, report)).toMatchObject({ outcome: "committed", commit: (a as { commit: string }).commit, evidenceOk: true });
     expect(store.all().filter((e) => e.kind === "commit")).toHaveLength(1);
   });

@@ -27,8 +27,8 @@ import { join as pjoin } from "node:path";
 import { bindSession, transformCreate, type CreateRequest } from "../server/agentConfig";
 import { parseSlpConfig, type SlpConfig } from "../server/config";
 import type { AgentRefLike, CreateOptions, Ctx, PaseoLike } from "../server/context";
-import { trustRepo } from "../server/git";
 import { SeenIds, TimelineMarks } from "../server/human";
+import { ProjectRegistry } from "../server/projects";
 import { IdentityRegistry, type Identity, type IdentityMeta } from "../server/identity";
 import { Router } from "../server/router";
 import type { RoleSetup } from "../server/roles";
@@ -125,23 +125,25 @@ export const TEST_SETUP: RoleSetup = {
 };
 
 export function makeCtx(over: Record<string, unknown> = {}): { ctx: Ctx; paseo: FakePaseo; repo: string; home: string; config: SlpConfig; origin: string } {
-  const repo = initRepo(); trustRepo(repo);
+  const repo = initRepo("demo"); // the folder name is the project name (rev 5.11)
   const home = tmpDir("slp-home-");
-  const config = parseSlpConfig({ projects: { demo: { repo, baseBranch: "main", verify: ["true"] } }, sandbox: { runner: FAKE_RUNNER }, ...over });
+  const config = parseSlpConfig({ sandbox: { runner: FAKE_RUNNER }, ...over });
   // Since rev 5.11 every project has a remote: features start from it and ship pushes to it.
   const origin = pjoin(home, "origin.git"); sh(home, "git", ["init", "-q", "--bare", origin]);
   sh(repo, "git", ["remote", "add", config.ship.remote, origin]); sh(repo, "git", ["push", "-q", config.ship.remote, "main"]);
+  const projects = new ProjectRegistry(pjoin(home, "projects.json"));
+  projects.register(repo, config.ship.remote); // trusts the repo
   const paseo = new FakePaseo();
   paseo.projectsList = [{ projectId: "prj-demo", projectRootPath: repo }];
   const identities = new IdentityRegistry(pjoin(home, "identities.json"));
   const router = new Router({ file: pjoin(home, "router.json"), now: () => new Date(), resolve: (to) => identities.current(to.role, to.project, to.feature, to.task ?? null)?.agentId ?? null, status: async (a) => paseo.agents.ref(a).status, send: (a, t, m, b) => paseo.agents.ref(a).send(t, { messageId: m, ...(b ? { activeTurnBehavior: b } : {}) }) });
   const ctx: Ctx = {
-    config, setup: () => TEST_SETUP, refreshSetup: async () => TEST_SETUP, identities, stores: new StoreRegistry(home), router,
+    config, projects, setup: () => TEST_SETUP, refreshSetup: async () => TEST_SETUP, identities, stores: new StoreRegistry(home), router,
     seen: new SeenIds(pjoin(home, "seen.json")), marks: new TimelineMarks(pjoin(home, "timeline-marks.json")), resumes: new ResumeQueue(pjoin(home, "resume.json")), nudges: new NudgeTracker(pjoin(home, "nudges.json")),
     paseo: () => paseo, run: runSandboxed, now: () => new Date(), toolCalls: new Map(), turnStarts: new Map(), flags: { checkpointAsked: new Set(), challengeNudged: new Set(), humanReminded: new Set() }, stateDirs: [home], worktreeRoot: tmpDir("slp-wts-"),
     pendingPermissions: new Map(), log: () => undefined,
   };
-  paseo.beforeCreate = (req) => transformCreate(req, { identities, config, setup: () => TEST_SETUP, mcpUrl: () => "http://127.0.0.1:1/mcp", promptFor: (i) => `PROMPT ${i.role}`, toolNames: () => [], stateDirs: [], claudePluginDir: null, codexHome: () => pjoin(home, "codex-home") });
+  paseo.beforeCreate = (req) => transformCreate(req, { identities, config, projects, setup: () => TEST_SETUP, mcpUrl: () => "http://127.0.0.1:1/mcp", promptFor: (i) => `PROMPT ${i.role}`, toolNames: () => [], stateDirs: [], claudePluginDir: null, codexHome: () => pjoin(home, "codex-home") });
   paseo.onSessionOpen = (agentId, env) => bindSession({ agentId, env }, identities);
   return { ctx, paseo, repo, home, config, origin };
 }

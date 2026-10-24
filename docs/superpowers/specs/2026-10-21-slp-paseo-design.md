@@ -1,7 +1,7 @@
 # SLP trên Paseo — Design spec
 
 - Ngày: 2026-10-21 (rev 2: 2026-10-22, gộp kết quả spike; rev 3: 2026-10-22, sửa theo review độc lập; rev 4: 2026-10-22, mỗi feature một Supervisor + nhịp kiểm)
-- Trạng thái: draft rev 5.9, chờ anh duyệt
+- Trạng thái: draft rev 5.10, chờ anh duyệt
 - Paseo đã kiểm: 0.12.0 đang chạy (source v0.10.3 + v0.12.0, CLI, và probe live — xem [`docs/research/spikes-2026-10-21.md`](../../research/spikes-2026-10-21.md))
 - Superpowers đang cài: 6.4.1
 - Nền: báo cáo "Tinh túy Superpowers và SLP" (2026-10-09), spec SLP cũ `~/.agents/skills/slp/docs/spec.md` (không có Supervisor), mining transcript + git 2026-09-21 → 10-20, ghi chú [`docs/research/paseo-capabilities-verified.md`](../../research/paseo-capabilities-verified.md).
@@ -57,6 +57,12 @@
     - mọi tin anh nhắn Lead đều báo Supervisor (§6.1, §7.1);
     - báo một lần theo (report, kết quả xử lý), cả cho report `blocked` và report bị từ chối; wake không tự chạy tick (§7.1);
     - gỡ các đoạn cũ còn ghi `-P :workspace` và cấm worktree cho repo có setup (§2, §7).
+- Rev 5.10 (2026-10-24, sau lượt smoke lại, bằng chứng ở [`docs/research/smoke-2026-10-23-rerun.md`](../../research/smoke-2026-10-23-rerun.md)):
+  - Mỗi `slp_brief` là ảnh chụp đầy đủ các premise của bản ghi: premise giữ id qua các version, premise do brief cũ tạo mà vắng ở brief mới thì bị gạch (F1: 10 brief thành 47 premise cho 11 quyết định, duyệt spec bật nhầm D1, D36) (§5.2, §5.3, §6.1).
+  - Plugin gắn lại env của vai mỗi lần Paseo mở phiên, vì Paseo không lưu env override (F6: reload làm mất reviewer Codex, vai Claude mất cờ CLAUDE.md) (§7.1).
+  - Ngôn ngữ (anh chốt): agent viết cho anh bằng ngôn ngữ của tin mới nhất của anh; brief, spec, plan, report và tin giữa các vai bằng tiếng Anh. Supervisor trình spec bằng ngôn ngữ của anh (F2) (§6, §6.2).
+  - Digest và gói kiểm dễ đọc: bỏ dòng rỗng, việc chờ anh lên đầu, premise chờ duyệt chỉ hiện tới khi spec được duyệt, mỗi cái một dòng (§5.4, §7.7).
+  - Câu nhắc báo cáo nêu đúng tool của vai (F4); `ship.openPr: false` thì Supervisor không hứa mở PR (F7) (§6.7, §7.1).
 
 **Core mechanism:** mỗi ý tưởng anh mở một Supervisor → Supervisor brainstorm với anh (câu khó thì gọi Lead vào tham vấn; hai agent và anh tranh luận) → Lead viết spec từ bản ghi brainstorm (anh duyệt) và plan (Supervisor duyệt) → Lead giao từng task cho Peer-impl trong worktree riêng, trong sandbox → mọi tin nhắn, báo cáo, challenge đi qua tool MCP của plugin `slp`; plugin kiểm quyền, ghi log append-only ngoài repo, commit thay Peer, chạy verify trong sandbox, tự resume khi dính limit, mỗi 15 phút gửi Supervisor một gói kiểm → Supervisor gom ship, anh duyệt đúng commit hash → push + PR → anh merge.
 
@@ -237,7 +243,7 @@ Mỗi dòng JSONL:
 | `kind` | Ai ghi | Bắt buộc |
 |---|---|---|
 | `brief` (version + sha256) | Supervisor | Bản ghi brainstorm, không có cổng duyệt (rev 5.9): goal, success criteria kiểm được, hard constraints, D#/H#, các hướng đã cân nhắc kèm lý do chọn, phạm vi được chất vấn, ngân sách, non-goals. Brief v1 tạo feature (slug do Supervisor đặt, chưa tồn tại) và gắn Supervisor với nó; Supervisor đã có feature không tạo được feature thứ hai. Supervisor ghi brief v1 ngay khi đặt được slug, để gọi được Lead sớm |
-| `premise` (D#/H# mới) | Supervisor (từ bản ghi brainstorm), Lead (từ spec) | H# phải có `verify_by` là phép đo có thể fail. Rev 5.9: `source` = `human` (anh chọn) / `supervisor` / `lead` (tự chọn), để lúc trình spec phần tự chọn hiện riêng. Mọi premise chỉ ràng buộc Peer sau khi anh duyệt spec |
+| `premise` (D#/H# mới) | Supervisor (từ bản ghi brainstorm), Lead (từ spec) | H# phải có `verify_by` là phép đo có thể fail. Rev 5.9: `source` = `human` (anh chọn) / `supervisor` / `lead` (tự chọn), để lúc trình spec phần tự chọn hiện riêng. Mọi premise chỉ ràng buộc Peer sau khi anh duyệt spec. Rev 5.10: `slp_brief` nhận **toàn bộ** premise bản ghi còn giữ, mỗi cái kèm `id` đã có (lấy từ kết quả `slp_brief` trước). Plugin giữ premise cũ khi `id` trỏ tới premise còn sống (chưa bị gạch) cùng loại và cùng tiêu đề, hoặc khi không có `id` mà loại và tiêu đề trùng với một premise còn sống (so tiêu đề không phân biệt hoa thường, gộp khoảng trắng). Mọi premise khác, kể cả premise có `id` nhưng đổi tiêu đề, thành D#/H# mới; premise cũ đó bị gạch theo §5.3. Event `brief` ghi danh sách id của version đó. Kết quả tool liệt kê id và tiêu đề của từng premise, cùng các id bị bỏ |
 | `human_decision` | Supervisor (hoặc Lead nếu anh nói thẳng với Lead; plugin báo Supervisor) | `quote`: nguyên văn lời anh; `decides`: approve spec/ship (kèm sha256 hoặc commit), supersede ID, keep ID, change goal (rev 5.9: bỏ approve brief). Plugin kiểm `quote` trong tin anh gửi (§7.6) |
 | `supersede` D#/H# | Chỉ đi kèm `human_decision` | ID bị thay phải đang hiệu lực |
 | `spec`, `plan` (version + sha256 + touch set) | Lead | plan: mỗi task có `Depends on`, task kiểm chứng có `Verifies` |
@@ -264,6 +270,7 @@ Mỗi dòng JSONL:
 ### 5.3 Trạng thái suy ra
 
 - D#/H# **hiệu lực** khi chưa có `supersede` trỏ tới; H# **confirmed** khi có `confirms` kèm evidence; còn lại H# **open**.
+- Rev 5.10: premise do một `brief` tạo, còn đang chờ duyệt, mà không có trong danh sách id của `brief` mới hơn → **bị gạch** (superseded bởi brief đó). Premise đã hiệu lực và premise Lead thêm qua `slp_spec` không bị brief gạch; đổi chúng vẫn đi qua `human_decision` supersede. Premise bị gạch không được `slp_spec` mang theo và không còn hiện là "chờ duyệt".
 - Task: `pending` → `assigned` → `reported` → `accepted`; hoặc `parked` (tiền đề đang bị challenge mức spec), `stale` (đã accepted nhưng `Depends on` — trực tiếp hoặc qua T# — một ID đã bị supersede), `reopened`, `dropped`. `slp_accept` chỉ nhận task đang `reported`; task `parked` không accept được.
 - Task chạm `contract:<tên>` chỉ spawn được khi feature của nó đang giữ contract đó (§6.4). `**Waits on:** <slug>` là chỗ plan khai feature đang giữ lúc duyệt.
 - Task chỉ `accepted` khi có `commit` do plugin tạo từ `report` mới nhất, `evidence` exit code 0 trên đúng commit đó — lệnh là lệnh verify của task trong plan đã duyệt, chạy trong sandbox — và review trên đúng commit đó không còn phát hiện chặn.
@@ -273,10 +280,16 @@ Mỗi dòng JSONL:
 
 Plugin sinh lại `digest.md` sau mỗi event. Đây là thứ Supervisor đọc thường xuyên, cùng với gói kiểm (§7.7):
 
+Rev 5.10: anh cũng đọc digest, vì gói kiểm hiện trong tab Supervisor (smoke lại: một dòng "Awaiting spec approval" dài hơn 30 premise). Luật trình bày:
+- Dòng không có gì thì bỏ hẳn, không in "—".
+- `Waiting on human` đứng ngay sau dòng phase.
+- Premise chờ duyệt chỉ hiện ở phase `brainstorm` và `spec-review`, mỗi premise một dòng (`- D3 <tiêu đề> [human]`), tối đa 8 dòng rồi `- … +N more`. Sau khi spec được duyệt thì không in nữa.
+- Giả thuyết open, challenge mở, task: mỗi mục một dòng.
+
 ```
 # <slug> — phase: executing (plan v2, T5/9)
+Waiting on human: permission Read for Peer T5 (6 min)
 Owners: T5 → peer-impl agent_abc (worktree …, BASE 1a2b3c)
-Waiting on human: —
 Open challenges: C3 (T4 memory cache vs retry contract) — Lead, 12 phút
 Stale: T2 (depends D2, superseded by D4)
 Open hypotheses: H1 (verify by T1) 
@@ -316,6 +329,8 @@ Anh mở Supervisor mới ─ý tưởng─► Supervisor brainstorm với anh (
   → Supervisor ghi feature_record; nhịp kiểm dừng; anh archive tab Supervisor khi muốn
 ```
 
+**Ngôn ngữ (rev 5.10, anh chốt).** Mọi vai viết cho anh bằng ngôn ngữ của tin mới nhất anh gửi: anh hỏi tiếng Việt thì trả lời tiếng Việt, anh hỏi tiếng Anh thì trả lời tiếng Anh. Brief, spec, plan, report, challenge và mọi tin giữa các vai viết bằng tiếng Anh. Câu chữ plugin tự sinh (gói kiểm, thông báo) giữ tiếng Anh.
+
 ### 6.1 Brainstorm và bản ghi brief (Supervisor dẫn, Lead tham vấn khi cần, không có cổng)
 
 Rev 5.9. Brainstorm là bước kỹ nhất, làm cùng anh. Từ spec trở đi agent chỉ làm theo cái đã chốt, nên chỗ nào không hỏi ở đây là chỗ agent tự quyết thay anh.
@@ -337,7 +352,7 @@ Rev 5.9. Brainstorm là bước kỹ nhất, làm cùng anh. Từ spec trở đi
   - Anh nhắn thẳng Lead được. Plugin ghi `human_message` và báo Supervisor.
 - Lead đã có thì cũng là Lead viết spec và plan; không tạo Lead thứ hai.
 
-**Bản ghi brief** (Supervisor ghi lại sau mỗi lần chốt bằng `slp_brief`, version mới mỗi lần; không có cổng duyệt):
+**Bản ghi brief** (Supervisor ghi lại sau mỗi lần chốt bằng `slp_brief`, version mới mỗi lần; không có cổng duyệt). Rev 5.10: mỗi version gửi kèm mọi D#/H# bản ghi còn giữ, mỗi cái với `id` mà kết quả `slp_brief` trước đã trả, và trong markdown dùng đúng các id đó (§5.2). Bỏ một premise khỏi danh sách là gạch nó. Bản ghi gồm:
 - Goal và vì sao.
 - Success criteria kiểm được bằng máy hoặc bằng một quan sát cụ thể.
 - Hard constraints **đã kiểm chứng** (mỗi cái ghi nguồn).
@@ -362,6 +377,7 @@ Rev 5.9. Brainstorm là bước kỹ nhất, làm cùng anh. Từ spec trở đi
   - Spec có mục `## Decisions added by the Lead`, liệt kê mọi quyết định không có trong bản ghi brainstorm (ca biên, hành vi lỗi, giới hạn). Supervisor trình anh mục này trước cả spec.
   - Một quyết định trái với lời anh trong bản ghi thì không được vào spec: Lead phải challenge, Supervisor hỏi anh.
   - Duyệt spec là cổng đầu tiên và duy nhất trước khi code. Anh trả lời ngay trong buổi brainstorm.
+- Rev 5.10 (F2: anh duyệt spec v1 rồi mới thấy "spec khó đọc"): spec viết tiếng Anh, nhưng trước khi xin duyệt, Supervisor trình nó bằng ngôn ngữ của anh, trong tab của mình, theo thứ tự: hàm hay tính năng làm gì (2–3 câu); bảng ví dụ input → kết quả, gồm ca thường, ca biên và ca lỗi; các quyết định Lead thêm; cuối cùng là đường dẫn tới file spec. Anh duyệt dựa trên bản trình đó; spec là bản ràng buộc.
 
 ### 6.3 Plan (Lead viết, Supervisor duyệt)
 
@@ -431,6 +447,7 @@ Agent chờ permission của anh cũng hiện trong gói kiểm, và Supervisor 
 - Gói ship: diff tóm tắt (file, dòng), success criteria từng cái → bằng chứng, `evidence` của plugin trên commit ship, danh sách rulings kèm `cost_if_wrong`, giả thuyết còn open, những gì khác với brief.
 - Anh duyệt bằng một câu trả lời rõ (ví dụ "ship"); không cần gõ hash. Supervisor ghi `human_decision` kèm quote và commit hash của `ship_package` vừa trình; plugin kiểm (§7.6).
 - `slp_ship` push `feat/<slug>` và mở PR (gh). Merge luôn do anh.
+- Rev 5.10 (F7): `ship.openPr: false` thì `slp_ship` chỉ push. Gói ship và câu xin duyệt nói đúng điều sẽ xảy ra ("push `feat/<slug>` lên `<remote>`"), không hứa mở PR.
 
 ## 7. Plugin `slp`
 
@@ -452,7 +469,7 @@ Phần server (`index.server.ts`) chạy trên daemon kể cả khi app đóng, 
 
 | Thành phần | Làm gì | Cơ chế | Chặn lỗi nào |
 |---|---|---|---|
-| Gắn vai | Theo provider ID: system prompt vai; MCP `slp` (http, `headers.Authorization` = token riêng của agent); mode `default` cho vai Claude; sandbox theo §4 (Claude: `providerOptions.sandbox`; Codex reviewer: profile `default_permissions` trong `CODEX_HOME`, không `modeId`, không `sandbox_mode`); cô lập runtime theo §4 (Claude: `extraArgs`, `additionalDirectories`, env; Codex: `CODEX_HOME`); ghi worktree + branch thật vào identity; từ chối Lead/Peer chạy trong checkout chính, reviewer không ở đúng commit. Rev 5.9: provider và agent profile được đọc lại từ `paseo.config.get()` mỗi lần tạo agent SLP, không chụp một lần lúc hook đầu tiên (B-1: profile tạo sau lúc plugin khởi động làm `slp_spawn` lỗi `Expected config.provider in "provider/model" format`); vai không có profile và cũng không có model thì báo lỗi rõ ("chưa có agent profile cho `slp-lead`") | `before agent.create` (chạy sau khi Paseo tạo worktree) | Vai trôi; Peer sửa state; agent chạy sai chỗ; lỗi khó hiểu khi thiếu profile |
+| Gắn vai | Theo provider ID: system prompt vai; MCP `slp` (http, `headers.Authorization` = token riêng của agent); mode `default` cho vai Claude; sandbox theo §4 (Claude: `providerOptions.sandbox`; Codex reviewer: profile `default_permissions` trong `CODEX_HOME`, không `modeId`, không `sandbox_mode`); cô lập runtime theo §4 (Claude: `extraArgs`, `additionalDirectories`, env; Codex: `CODEX_HOME`); ghi worktree + branch thật vào identity; từ chối Lead/Peer chạy trong checkout chính, reviewer không ở đúng commit. Rev 5.9: provider và agent profile được đọc lại từ `paseo.config.get()` mỗi lần tạo agent SLP, không chụp một lần lúc hook đầu tiên (B-1: profile tạo sau lúc plugin khởi động làm `slp_spawn` lỗi `Expected config.provider in "provider/model" format`); vai không có profile và cũng không có model thì báo lỗi rõ ("chưa có agent profile cho `slp-lead`"). Rev 5.10 (F6): Paseo lưu agent config nhưng không lưu env override, và mở lại phiên (`session_open` với `reason` create / resume / refresh / import) mà không có env đó. Vì vậy env của vai (Codex: `CODEX_HOME` của SLP, viết lại `config.toml` trước; Claude: `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`) được tính lại từ `provider` ở mọi lần mở phiên, cùng một hàm với lúc tạo. Smoke lại: reload reviewer Codex mở lại thread ở `~/.codex` → "no rollout found" → agent đóng | `before agent.create` (chạy sau khi Paseo tạo worktree) + `before agent.session_open` (env) | Vai trôi; Peer sửa state; agent chạy sai chỗ; lỗi khó hiểu khi thiếu profile |
 | Định danh agent | Token ngẫu nhiên cho từng agent, đặt vào header MCP và `env.SLP_TOKEN`; plugin chỉ lưu `sha256(token)`; `before agent.session_open` (có `agentId`) gắn token → agent + vai. Không dùng token chung kiểu Paseo (giả mạo được) | `before agent.create` + `session_open` (S1 đã kiểm) | Agent mạo danh vai khác |
 | Duyệt sẵn tool của mình | `toolPolicy.preapproved` = các tool `slp_*` của vai (Claude: `allowedTools`; Codex: `approval_mode: "approve"`); chính tool tự kiểm quyền | `before agent.create` | Permission prompt dội về anh |
 | Router | Chỉ cho các cạnh ở §7.3. Paseo không có hàng đợi và mặc định **ngắt** turn đang chạy, nên plugin tự xếp hàng và chỉ giao khi người nhận `idle` (kiểm `status`/`activeTurn`); tin plugin gửi mang `messageId` dạng `slp-<uuid>`. Ngoại lệ duy nhất: `slp_send(mode: "steer" \| "interrupt")` từ Supervisor tới Lead của feature mình, và từ Lead tới Peer của mình — chen vào (steer) hoặc huỷ (interrupt) turn đang chạy; người nhận đang rảnh thì giao như thường | MCP + SDK `agent.send({messageId})` | Supervisor lách Lead; ngắt giữa turn; agent quay vòng không bao giờ rảnh để nhận tin |
@@ -460,7 +477,7 @@ Phần server (`index.server.ts`) chạy trên daemon kể cả khi app đóng, 
 | State + digest | Kiểm quyền theo §5.2 rồi append; sinh lại digest; ghi `reports/` từ nội dung tool | MCP | Ghi vượt quyền; Supervisor tràn context |
 | Ghi tin của anh | `user_message` không mang `messageId` tiền tố `slp-` và không nằm trong vỏ `<paseo-system>` → `human_message` (S4 đã kiểm). Tin agent gửi agent qua CLI/MCP hiện là `agent_message` có `sender` (0.12). Ghi ở `turn_started`, `turn_ended`, và ở đầu mọi tool tạo thứ cần duyệt hoặc kiểm câu duyệt. Tới Lead/Peer: báo thêm Lead của feature. Tới Supervisor: chỉ ghi. Rev 5.9: tin tới Lead: báo Supervisor (§6.1; Supervisor giữ bản ghi brainstorm); Lead ghi một quyết định của anh bằng `slp_human_decision` thì Supervisor cũng được báo (smoke: anh duyệt spec ở tab Lead, Supervisor không biết, giữ plan lại); nhãn đúng vai (B-6: tin tới reviewer bị báo là "Peer T1"). B-4: `paseo agent reload` phát lại timeline thành `user_message` mới với `messageId` mới (T21: chữ "duyệt" cũ được ghi lại lần hai, kèm cả tin `[SLP from …]`), nên plugin chỉ ghi item timeline mới hơn mốc đã ghi của agent đó (dấu thời gian item và epoch timeline; Paseo tạo epoch mới mỗi lần nạp lại lịch sử), không bao giờ ghi item có vỏ `[SLP …]` do router gửi, và khi epoch đổi, hoặc agent chưa có mốc mà đã có tin của anh, thì không ghi lại item trùng nội dung một tin đã ghi (lọc thừa thì anh gõ lại; lọc thiếu thì giả được lời duyệt) | `turn_started`/`turn_ended` + `timeline.refetch` | Anh đổi hướng ở Peer, Lead không biết; anh phải gõ "duyệt" hai lần; reload agent giả lời duyệt |
 | Watchdog limit | Nhận diện limit từ text cuối turn / thông báo turn fail (Paseo không tự nhận diện, S2); giờ reset lấy từ `providers.listUsage()` (`providers[].windows[].resetsAt`); hẹn `agent.send` "tiếp tục" lúc reset, tin resume giãn 15 s; số lần resume lưu theo agent tới khi một turn kết thúc không dính limit; trần `resumeMaxAttempts`; hết lượt mới báo Supervisor. Đơn giản hoá v1: không tạm dừng cả vendor, mỗi agent tự dính rồi tự hẹn. Bộ nhận diện không được khớp lỗi đĩa (`disk quota exceeded`, `EDQUOT`, `ENOSPC`). Lần dính limit thật đầu tiên phải được ghi nguyên văn để chỉnh bộ nhận diện | `agent.turn_ended` + timer + usage API | 33 lần dừng limit, 16 "Try again" |
-| Không báo cáo | Peer kết turn mà không `slp_report`/`slp_challenge`/`slp_ask`/`slp_review` → nhắc `noReportNudges` lần, rồi báo Lead. Tool khác (`slp_state`…) không tính là báo cáo. Turn bị anh ngắt tay (`canceled`) không bị nhắc. Rev 5.9 (B-7): sau khi report đã được báo Lead, turn không đổi file nào không bị nhắc (anh hay Lead hỏi, Peer trả lời bằng chữ); turn có đổi file mà không `slp_report` thì vẫn bị nhắc. Reviewer đã có review được tính thì không bị nhắc. Prompt của Peer và reviewer nói rõ điều này (T21: tin thử của anh ép reviewer và Peer mở thêm Q2/Q3 chỉ để đóng turn) | `agent.turn_ended` | Dừng im lặng |
+| Không báo cáo | Peer kết turn mà không `slp_report`/`slp_challenge`/`slp_ask`/`slp_review` → nhắc `noReportNudges` lần, rồi báo Lead. Tool khác (`slp_state`…) không tính là báo cáo. Turn bị anh ngắt tay (`canceled`) không bị nhắc. Rev 5.9 (B-7): sau khi report đã được báo Lead, turn không đổi file nào không bị nhắc (anh hay Lead hỏi, Peer trả lời bằng chữ); turn có đổi file mà không `slp_report` thì vẫn bị nhắc. Reviewer đã có review được tính thì không bị nhắc. Prompt của Peer và reviewer nói rõ điều này (T21: tin thử của anh ép reviewer và Peer mở thêm Q2/Q3 chỉ để đóng turn). Rev 5.10 (F4): câu nhắc nêu đúng tool của vai: Peer-impl `slp_report`, reviewer `slp_review`, cùng `slp_challenge`, `slp_ask` | `agent.turn_ended` | Dừng im lặng |
 | Commit thay Peer | Sau `slp_report` (chờ turn của Peer kết thúc hẳn; xử lý turn_ended tuần tự theo agent): `git status`; từ chối nếu không có thay đổi; loại file nhạy cảm (`.env*`, khoá) và file được bảo vệ (hook, `paseo.json`, `.claude/`, `.codex/`, `.mcp.json`) và báo; file ngoài touch set → vẫn commit, cờ cho Lead; `git add` + commit hook tắt, message = `T#: <message của Peer>` + trailer `SLP-Task`, `SLP-Agent` → `commit`. Báo đúng một lần cho mỗi cặp (report, kết quả xử lý: commit + kết quả kiểm, `blocked`, bị từ chối): plugin ghi `ops report_notified {reportSeq, result}` sau khi xếp tin, chỉ khi hàng đợi router đã nằm trên đĩa; report cũ gặp lại không báo lại, report mới trên commit cũ vẫn báo (nó mang câu trả lời của Peer), runner hỏng chỉ báo một lần cho tới khi kết quả đổi (B-5: T21 một report được báo 2 lần, thêm 3 bản trong hàng đợi). Worktree sạch mà HEAD là commit của plugin chưa có event (crash giữa commit và ghi) → ghi `commit` cho HEAD rồi verify tiếp | MCP + git (hook tắt, git dir tin cậy) | Peer khai sai commit; hook chạy ngoài sandbox; task kẹt sau crash |
 | Kiểm bằng chứng | Trên commit vừa tạo: chạy lệnh verify của task (từ plan đã duyệt) và hook pre-commit của repo nếu có, **trong sandbox**, có timeout → `evidence`. Trước mỗi lần verify, thử runner bằng `true`; runner hỏng → `ops runner_failed`, báo Supervisor, không nhắn Peer, không có `evidence` (fail closed); lần sau verify lại trên đúng commit. Khi nghiệm thu feature và trước ship: `verify` của project (full suite) trên HEAD, trong sandbox. Lệnh do Peer khai chỉ có `repro_command` của challenge, và chỉ chạy trong sandbox. Rev 5.9: runner dùng permission profile riêng (`-P slp-verify`, kế thừa `:workspace`, chặn đọc `~/.slp`, `~/.paseo`), vì test do Peer viết chạy trong runner và in được bí mật vào `stdoutTail` của evidence | `codex sandbox -P slp-verify` | ~25 claim "xong" sai; Peer đốt fix round vào lỗi hạ tầng |
 | Merge | `slp_accept` → plugin merge branch task vào `feat/<slug>` (hook tắt); Lead yêu cầu → plugin merge main vào `feat/<slug>`; conflict → báo Lead, không tự resolve; Lead giao task resolve bằng `slp_spawn … merge_base: true` | git (hook tắt) | Hook chạy với quyền của Lead |
@@ -527,7 +544,7 @@ Mục đích: bắt sớm agent quay vòng / overthink và đi sai hướng — 
 
 1. **Hẹn giờ.** Mỗi feature một timer của plugin, `watch.intervalMinutes` (mặc định 15). Bắt đầu khi Lead được tạo (kể cả Lead tham vấn trong brainstorm; lúc đó Lead thường rảnh nên phần lớn lần kiểm bị bỏ qua); dừng khi feature `shipped` hoặc dừng. Timer nằm trên đĩa như timer resume. Rev 5.9: timer chạy cả sau khi plugin reload mà chưa có hook nào (§7.1 Nhịp kiểm).
 2. **Bỏ qua.** Nếu từ lần kiểm trước không agent nào của feature chạy, không có event mới, và không file nào trong worktree đổi → không gửi, ghi `ops: watch_skipped`.
-3. **Gói kiểm** (plugin dựng, không LLM): digest của feature, cộng với mỗi agent đang sống của feature (Lead, Peer-impl, Peer-review), mặc định tối đa 16 dòng một agent:
+3. **Gói kiểm** (plugin dựng, không LLM): digest của feature (luật trình bày ở §5.4), cộng với mỗi agent đang sống của feature (Lead, Peer-impl, Peer-review), mặc định tối đa 16 dòng một agent. Rev 5.10: dòng đầu là `[SLP watch #n · <slug>] For the Supervisor; no action needed from you.`, vì gói hiện trong tab anh đọc. Mỗi agent:
    - vai, task và mục tiêu task (một dòng từ plan), trạng thái (`running` / `idle` / chờ permission của anh / chờ reset limit kèm giờ);
    - turn hiện tại đã chạy bao lâu; từ lúc nhận task bao lâu; fix round;
    - với Peer-impl: số lần verify fail, file chưa commit và lần đổi cuối (mtime mới nhất), `git diff --shortstat` so với BASE;
@@ -772,6 +789,12 @@ Kết quả đầy đủ: [`docs/research/spikes-2026-10-21.md`](../../research/
   - plugin reload xong thì timer vẫn chạy;
   - reviewer Codex không đọc được file mồi trong `~/.paseo`;
   - Peer chạy nền mở được.
+- **Kết quả lượt smoke lại** (2026-10-23/24): [`docs/research/smoke-2026-10-23-rerun.md`](../../research/smoke-2026-10-23-rerun.md). 10/12 mục đạt hoặc đạt một phần; tìm ra F1–F8. Máy khởi động lại làm mất repo trong `/tmp` trước bước ship, nên cổng ship chưa chạy live ở lượt này.
+- **Smoke ngắn sau rev 5.10:** repo dưới `$HOME` (không dùng `/tmp`), một feature. Đo:
+  - brief nhiều version không đẻ premise trùng; digest không còn dải "Awaiting spec approval" sau khi duyệt spec;
+  - Supervisor trả lời theo ngôn ngữ của anh và trình spec bằng bảng ví dụ;
+  - `agent reload` reviewer Codex: phiên mở lại được, `cat` file mồi trong `~/.paseo` vẫn bị chặn (R10 lần 2);
+  - cổng ship live: "ok ship" → push lên origin, không có PR khi `openPr: false`.
 
 ### 11.2 Unit test plugin
 

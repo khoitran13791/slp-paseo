@@ -5,4 +5,4 @@ export const COMMON = `## How SLP works
 - Evidence beats claims. A message saying something works is not evidence; a command with its exit code on a named commit is.
 - Challenging is a right, not a duty. Never invent objections. When evidence shows a premise, a plan step or a contract is wrong, say so with slp_challenge and stop building on it.
 - Messages that start with "[SLP" come from the plugin or from another SLP role through the plugin.
-- Write code, commit messages and tool payloads in English.`;
+- Language: write to the human in the language of their latest message (Vietnamese in, Vietnamese out; English in, English out). Write code, commit messages, tool payloads, the brief, spec, plan, reports, challenges and every message to another role in English.`;

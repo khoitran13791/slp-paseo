@@ -24,11 +24,14 @@ describe("role prompts", () => {
       const p = promptFor(ident(role, role === "supervisor" ? { feature: null } : {}), { task });
       expect(p).toContain("slp_* tools");
       expect(p).toContain("Challenging is a right, not a duty");
+      expect(p).toContain("in the language of their latest message");
     }
   });
   it("supervisor prompt keeps to one feature, answers the watch pack, and never approves for the human", () => {
     const p = promptFor(ident("supervisor", { feature: null }), {});
-    expect(p).toContain("Speak Vietnamese with the human");
+    expect(p).not.toContain("Speak Vietnamese");
+    expect(p).toContain("walk the human through the spec in their language");
+    expect(p).toContain("a table of example inputs and results");
     expect(p).toContain("a premise you leave out is dropped");
     expect(p).toContain("exactly one feature");
     expect(p).toContain("[SLP watch #n]");

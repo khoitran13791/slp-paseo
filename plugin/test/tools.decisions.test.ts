@@ -35,6 +35,11 @@ describe("brief and human decisions", () => {
     expect((await w.call(w.lead, "slp_human_decision", { feature: "cache", decides: "approve_spec", quote: "duyệt" })).isError).toBeFalsy();
     expect(w.ctx.router.pending().some((p) => p.to.role === "supervisor" && p.text.includes("The human decided in the Lead's tab: approve_spec"))).toBe(true);
   });
+  it("asks the Supervisor to walk the human through the spec in their language (rev 5.10 F2)", async () => {
+    const w = world();
+    await w.call(w.lead, "slp_spec", { markdown: "# Spec\n## Decisions added by the Lead\nNone." });
+    expect(w.ctx.router.pending().some((p) => p.to.role === "supervisor" && p.text.includes("walk the human through it in their language"))).toBe(true);
+  });
   it("stores a brief as the brainstorm record, with no approval step", async () => {
     const w = await world();
     const r = await w.call(w.sup, "slp_brief", { feature: "cache", title: "Cache", markdown: "# Brief", premises: [{ kind: "decision", title: "Redis", source: "human" }, { kind: "decision", title: "TTL 60s" }] });

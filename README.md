@@ -70,16 +70,7 @@ $PASEO reload --json
 
 `reload` should list `agents.providers`, `daemon.agentProfiles` and `pluginsEnabled` under `appliedPaths`. The Paseo tools stay off for every SLP role: they talk only through the plugin.
 
-**Write `~/.slp/config.json`** with your first project (see [`docs/examples/slp-config.example.json`](docs/examples/slp-config.example.json) and [Add a project](#add-a-project) below):
-
-```json
-{
-  "projects": {
-    "my-app": { "repo": "/Users/you/Projects/my-app", "baseBranch": "origin/main", "verify": ["npm test"] }
-  },
-  "ship": { "remote": "origin", "openPr": true }
-}
-```
+`~/.slp/config.json` is optional; create it only to change a setting below (example: [`docs/examples/slp-config.example.json`](docs/examples/slp-config.example.json)).
 
 **Install the plugin:**
 
@@ -91,32 +82,29 @@ $PASEO plugin ls          # slp should show "running"
 
 The plugin reads `~/.slp/config.json` only when it starts. After you change that file, run `$PASEO plugin reload slp`.
 
-## Add a project
+## Use it on any repo
 
-Everything above is done once per machine. Each new project needs only this:
+Everything above is done once per machine. There is no per-project step: open the repo in Paseo and start a Supervisor there (section 2).
 
-1. Add an entry under `projects` in `~/.slp/config.json`. One file holds all your projects:
-   - the key is the project name, a lowercase slug (`my-app`);
-   - `repo` is the absolute path of the repo's **main checkout**, the folder with the real `.git` directory. A git worktree or a submodule is rejected;
-   - `verify` is the command that has to pass on the finished feature before it can ship. In an empty repo it cannot pass yet, which is fine: the feature's first tasks create what it runs.
-2. Run `$PASEO plugin reload slp`. The plugin reads the config only when it starts.
-3. Open the repo in Paseo and start a Supervisor there (section 2).
+- The repo must be a **main checkout** (the folder with the real `.git` directory; a git worktree or a submodule is refused), with no git config that runs commands (fsmonitor, filter or diff drivers), and with the `ship.remote` remote (`origin` by default). If one of these is missing, the Supervisor does not start and the error says how to fix it.
+- The project is named after the repo's folder, as a lowercase slug (`My App` → `my-app`). A second repo with the same folder name gets a 4-character suffix (`api-3f2a`). A repo keeps its name once registered.
+- Each feature starts from the remote's default branch, fetched when its Lead starts (`origin/HEAD`, else the upstream of the checked-out branch, else `origin/main`, else `origin/master`). Commits you have not pushed are not included.
+- The Lead finds the command that runs the repo's whole test suite (the one CI runs, else `package.json`, a Makefile and so on), runs it once, and writes it with the result in the spec's `## Verify` section. You approve it with the spec, and the feature ships only when that command passes. In a repo with no tests yet, the feature's first tasks set up what it runs.
 
-SLP adds no files to the repo. Its records live in `~/.slp/<project>/`, its worktrees in `~/.slp-worktrees/<project>/`, and only the feature's code reaches the repo, on `feat/<slug>`. The plugin finds the project from the agent's folder.
+SLP adds no files to the repo. Its records live in `~/.slp/<project>/`, the list of repos it has taken on in `~/.slp/projects.json`, its worktrees in `~/.slp-worktrees/<project>/`, and only the feature's code reaches the repo, on `feat/<slug>`.
 
 ### Settings you may want to change
 
-All keys are optional except `projects`; defaults are in [`plugin/server/config.ts`](plugin/server/config.ts).
+All keys are optional; defaults are in [`plugin/server/config.ts`](plugin/server/config.ts).
 
 | Key | Default | Meaning |
 |---|---|---|
-| `projects.<name>.baseBranch` | `origin/main` | The branch features start from and the PR targets |
-| `projects.<name>.verify` | (required) | Feature-level check before shipping; several commands run joined with `&&` |
 | `ship.openPr` | `true` | `true`: push `feat/<slug>` and open a PR with `gh`. `false`: push only |
 | `ship.remote` | `origin` | Where `feat/<slug>` is pushed |
 | `watch.intervalMinutes` | `15` | How often the Supervisor gets a status pack |
 | `limits.humanReminderMinutes` | `30` | When the Supervisor reminds you of a decision still waiting on you |
 | `limits.verifyTimeoutSeconds` | `900` | Longest a single verify run may take |
+| `limits.maxWriters` | `2` | Peer-impls running at once in one project |
 | `models.allowed` | `[]` (any) | Models a plan may assign to a task |
 | `sandbox.denyRead` | `["~/.slp", "~/.paseo"]` | Paths no SLP sandbox may read. Add more, such as `~/.ssh` or `~/.aws` |
 | `sandbox.claudeAllowedDomains` | npm and PyPI registries | The only network domains the Claude roles' shell may reach |
@@ -125,10 +113,10 @@ All keys are optional except `projects`; defaults are in [`plugin/server/config.
 ## 2. Run a feature
 
 1. **Open the repo in Paseo** as a workspace (it gets the project's normal sidebar entry).
-2. **Start the Supervisor:** new agent → model chip → **Profiles** → **Supervisor**. Use the profile, not the plain Claude model: SLP only takes over agents of the `slp-*` providers whose folder is inside a `repo` from your config.
+2. **Start the Supervisor:** new agent → model chip → **Profiles** → **Supervisor**. Use the profile, not the plain Claude model: SLP only takes over agents of the `slp-*` providers.
 3. **Say what you want**, in your own language. The Supervisor answers in the language of your latest message. The brief, spec and plan are always written in English.
 4. **Brainstorm.** The Supervisor asks one question at a time, usually with options A/B/C. Answer with a letter or in your own words. For hard questions it may call the Lead in early, and a `[Lead] <slug>` workspace then appears in the sidebar.
-5. **Approve the spec.** The Supervisor walks you through it: what it does, a table of example inputs and results, the decisions the Lead added, and the file path. To approve, send a short message that is only a yes: `duyệt`, `ok`, `yes`, `lgtm`. To ask for changes, say what to change.
+5. **Approve the spec.** The Supervisor walks you through it: what it does, a table of example inputs and results, the decisions the Lead added, the verify command with its baseline result, and the file path. To approve, send a short message that is only a yes: `duyệt`, `ok`, `yes`, `lgtm`. To ask for changes, say what to change.
 6. **Let it work.** The Supervisor checks the Lead's plan. Then the Lead runs the tasks one at a time:
    - a Peer impl writes the code in its own worktree, with tests first;
    - the plugin commits its work and runs the task's verify;
@@ -178,7 +166,7 @@ The plugin removes Peer and reviewer worktrees when a task is accepted. The Lead
 
 | Symptom | Check |
 |---|---|
-| The Supervisor has no `slp_*` tools and behaves like plain Claude | It was not started from the **Supervisor** profile, its folder is not inside a configured `repo`, or the plugin is not running (`$PASEO plugin ls`, `$PASEO plugin logs slp`) |
+| The Supervisor has no `slp_*` tools and behaves like plain Claude | It was not started from the **Supervisor** profile, its folder is not inside a git main checkout with the `ship.remote` remote (the error says which), or the plugin is not running (`$PASEO plugin ls`, `$PASEO plugin logs slp`) |
 | `SLP config invalid: …` in the logs | Fix `~/.slp/config.json`, then `$PASEO plugin reload slp` |
 | "SLP will refuse to start agents here" | The repo's git config runs commands (fsmonitor, filter or diff driver). Remove them |
 | Verify fails with "cannot verify: …" | The Codex sandbox runner failed. Check `codex --version` and `sandbox.runner` |

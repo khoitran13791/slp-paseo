@@ -596,4 +596,15 @@ describe("report notices (T21 B-5, B-7)", () => {
     await onTurnEnded(w.ctx, { agent: { id: "rev-4" }, outcome: done });
     expect(w.paseo.sent.some((s) => s.agentId === "rev-4" && s.text.includes("without slp_report"))).toBe(false);
   });
+  it("tells a reviewer to finish with slp_review, not slp_report (rev 5.10 F4)", async () => {
+    const w = world();
+    const rwt = join(w.home, "rev5"); sh(w.repo, "git", ["-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "--detach", rwt, "main"]);
+    bound(w.ctx, { role: "peer-review", project: "demo", feature: "cache", task: "T1", worktree: rwt, reviewCommit: "abc", parentAgentId: "lead-1" }, "rev-5");
+    onTurnStarted(w.ctx, "rev-5");
+    await onTurnEnded(w.ctx, { agent: { id: "rev-5" }, outcome: done });
+    await w.ctx.router.flush();
+    const nudge = w.paseo.sent.find((s) => s.agentId === "rev-5")?.text ?? "";
+    expect(nudge).toContain("without slp_review, slp_challenge or slp_ask");
+    expect(nudge).not.toContain("slp_report");
+  });
 });

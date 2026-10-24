@@ -126,7 +126,9 @@ async function afterPeerImplTurn(ctx: Ctx, ident: Identity, calledTool: boolean)
 
 async function nudgeOrEscalate(ctx: Ctx, ident: Identity): Promise<void> {
   if (ctx.nudges.shouldNudge(ident.agentId!, ctx.config.limits.noReportNudges)) {
-    notify(ctx, addressOf(ident), "You ended your turn without slp_report, slp_challenge or slp_ask. Finish with one of them.");
+    // Each role's own report tool (rev 5.10 F4): a reviewer has slp_review, not slp_report.
+    const finish = ident.role === "peer-review" ? "slp_review" : "slp_report";
+    notify(ctx, addressOf(ident), `You ended your turn without ${finish}, slp_challenge or slp_ask. Finish with one of them.`);
   } else {
     notify(ctx, leadAddress(ident.project, ident.feature!), `${ident.role} ${ident.task} stopped without reporting.`);
   }

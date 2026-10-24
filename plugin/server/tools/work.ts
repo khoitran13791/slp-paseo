@@ -334,16 +334,19 @@ export function workTools(ctx: Ctx): ToolDef[] {
         const blockers = acceptanceBlockers(st, events, v.commit);
         if (blockers.length) throw new ToolError(`not ready to ship:\n${blockers.map((b) => `- ${b}`).join("\n")}${v.ok ? "" : `\nFull suite stderr:\n${v.stderrTail.slice(-800)}`}`);
         const base = ctx.config.projects[who.project]!.baseBranch;
+        const branch = lead.branch ?? `feat/${feature}`;
+        // Say exactly what slp_ship will do (rev 5.10 F7): with ship.openPr off there is no PR to promise.
+        const onApproval = `slp_ship pushes ${branch} to ${ctx.config.ship.remote}${ctx.config.ship.openPr ? ` and opens a PR against ${base.replace(/^origin\//, "")}.` : ". No PR is opened (ship.openPr is false)."}`;
         const rulings = events.filter((e) => e.kind === "ruling").map((e) => `- ${e.id}: ${String(e.data.decision)} (cost if wrong: ${String(e.data.cost_if_wrong)})`);
         const openH = [...st.premises.values()].filter((p) => p.status === "open").map((p) => `- ${p.id}: ${p.title}`);
-        const text = `# Ship package: ${feature} @ ${v.commit.slice(0, 7)}\n\n${a.summary}\n\n## Diff\n${diffStat(lead.worktree, base, v.commit)}\n\n## Evidence\n- full suite green on ${v.commit} (sandboxed)\n\n## Rulings\n${rulings.join("\n") || "- none"}\n\n## Open hypotheses\n${openH.join("\n") || "- none"}\n`;
+        const text = `# Ship package: ${feature} @ ${v.commit.slice(0, 7)}\n\n${a.summary}\n\n## Diff\n${diffStat(lead.worktree, base, v.commit)}\n\n## Evidence\n- full suite green on ${v.commit} (sandboxed)\n\n## Rulings\n${rulings.join("\n") || "- none"}\n\n## Open hypotheses\n${openH.join("\n") || "- none"}\n\n## On approval\n${onApproval}\n`;
         await syncHumanMessages(ctx, who); // a message typed while the suite ran is older than the package; nothing else may be awaited before the append
         appendAs(ctx, who, feature, { kind: "ship_package", data: { commit: v.commit, text } });
-        return `${text}\nShow this to the human. After they approve, call slp_ship with their exact words.`;
+        return `${text}\nShow this to the human, including its "On approval" line. After they approve, call slp_ship with their exact words.`;
       },
     }),
     defineTool({
-      name: "slp_ship", description: "Push the feature branch and open a PR, only after the human approved the latest ship package.",
+      name: "slp_ship", description: "Push the feature branch (and open a PR when ship.openPr is on), only after the human approved the latest ship package.",
       roles: ["supervisor"],
       input: z.object({ feature: SLUG.optional(), quote: z.string() }),
       async run(who, a) {

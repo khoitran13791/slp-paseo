@@ -372,6 +372,16 @@ describe("report → review → accept", () => {
 });
 
 describe("ship", () => {
+  it("tells the human what approval does: a push, and a PR only when ship.openPr is on (rev 5.10 F7)", async () => {
+    const r = await withLeadAndPlan();
+    r.ctx.stores.feature("demo", "cache").append({ feature: "cache", kind: "ruling", by_role: "lead", by_agent: r.lead.agentId, idPrefix: "R", data: { decision: "skip", reason: "r", cost_if_wrong: "c", drop: ["T1", "T2"] } });
+    r.ctx.config.ship.openPr = false;
+    const off = await r.call(r.sup, "slp_ship_package", { feature: "cache", summary: "s" });
+    expect(off.text).toContain("## On approval\nslp_ship pushes feat/cache to origin. No PR is opened (ship.openPr is false).");
+    r.ctx.config.ship.openPr = true;
+    const on = await r.call(r.sup, "slp_ship_package", { feature: "cache", summary: "s" });
+    expect(on.text).toMatch(/slp_ship pushes feat\/cache to origin and opens a PR against \S+\./);
+  });
   it("builds a package only when acceptance passes and ships only with a quoted approval of that commit", async () => {
     const r = await withLeadAndPlan();
     expect((await r.call(r.sup, "slp_ship_package", { feature: "cache", summary: "s" })).text).toMatch(/T1 is pending/);

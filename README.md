@@ -70,7 +70,7 @@ $PASEO reload --json
 
 `reload` should list `agents.providers`, `daemon.agentProfiles` and `pluginsEnabled` under `appliedPaths`. The Paseo tools stay off for every SLP role: they talk only through the plugin.
 
-**Write `~/.slp/config.json`** (see [`docs/examples/slp-config.example.json`](docs/examples/slp-config.example.json)). The project name is a lowercase slug, and `repo` is the absolute path of your checkout:
+**Write `~/.slp/config.json`** with your first project (see [`docs/examples/slp-config.example.json`](docs/examples/slp-config.example.json) and [Add a project](#add-a-project) below):
 
 ```json
 {
@@ -81,8 +81,6 @@ $PASEO reload --json
 }
 ```
 
-`verify` is the command that has to pass on the finished feature before it can ship. In an empty repo it cannot pass yet, which is fine: the feature's first tasks create what it runs.
-
 **Install the plugin:**
 
 ```bash
@@ -92,6 +90,19 @@ $PASEO plugin ls          # slp should show "running"
 ```
 
 The plugin reads `~/.slp/config.json` only when it starts. After you change that file, run `$PASEO plugin reload slp`.
+
+## Add a project
+
+Everything above is done once per machine. Each new project needs only this:
+
+1. Add an entry under `projects` in `~/.slp/config.json`. One file holds all your projects:
+   - the key is the project name, a lowercase slug (`my-app`);
+   - `repo` is the absolute path of the repo's **main checkout**, the folder with the real `.git` directory. A git worktree or a submodule is rejected;
+   - `verify` is the command that has to pass on the finished feature before it can ship. In an empty repo it cannot pass yet, which is fine: the feature's first tasks create what it runs.
+2. Run `$PASEO plugin reload slp`. The plugin reads the config only when it starts.
+3. Open the repo in Paseo and start a Supervisor there (section 2).
+
+SLP adds no files to the repo. Its records live in `~/.slp/<project>/`, its worktrees in `~/.slp-worktrees/<project>/`, and only the feature's code reaches the repo, on `feat/<slug>`. The plugin finds the project from the agent's folder.
 
 ### Settings you may want to change
 
